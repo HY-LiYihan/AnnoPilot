@@ -38,7 +38,7 @@ export function useDocumentReader() {
   const progressPercent = computed(() => Math.round(metrics.value.progress * 100))
   const reviewedSummary = computed(() => `${metrics.value.completed_count} / ${metrics.value.sentence_count || 0}`)
   const activeAnnotations = computed(() => currentSentence.value?.annotations ?? [])
-  const queueItems = computed(() => sentences.value.slice(0, 8))
+  const queueItems = computed(() => sentences.value)
 
   onMounted(async () => {
     window.addEventListener('keydown', handleKeydown)

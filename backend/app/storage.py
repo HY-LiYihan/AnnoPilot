@@ -15,12 +15,9 @@ DEFAULT_PROJECT_ID = "default"
 MAX_TXT_BYTES = 10 * 1024 * 1024
 
 DEFAULT_TAGS = [
-    {"id": "environmental_impact", "name": "Environmental Impact", "shortcut": "1", "color": "#0b7565"},
-    {"id": "action", "name": "Action", "shortcut": "2", "color": "#326bd8"},
-    {"id": "target", "name": "Target", "shortcut": "3", "color": "#c45a2e"},
-    {"id": "organization", "name": "Organization", "shortcut": "4", "color": "#7a3db8"},
-    {"id": "evidence", "name": "Evidence", "shortcut": "5", "color": "#b98600"},
-    {"id": "risk_signal", "name": "Risk Signal", "shortcut": "6", "color": "#b43b59"},
+    {"id": "noun", "name": "名词", "shortcut": "1", "color": "#0b7565"},
+    {"id": "verb", "name": "动词", "shortcut": "2", "color": "#326bd8"},
+    {"id": "adjective", "name": "形容词", "shortcut": "3", "color": "#c45a2e"},
 ]
 
 
@@ -447,18 +444,28 @@ class AnnotationStorage:
     def _seed_tags(self, conn: sqlite3.Connection, project_id: str) -> None:
         conn.executemany(
             """
-            INSERT OR IGNORE INTO tags (id, project_id, name, shortcut, color)
+            INSERT INTO tags (id, project_id, name, shortcut, color)
             VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(project_id, id) DO UPDATE SET
+              name = excluded.name,
+              shortcut = excluded.shortcut,
+              color = excluded.color
             """,
             [(tag["id"], project_id, tag["name"], tag["shortcut"], tag["color"]) for tag in DEFAULT_TAGS],
         )
 
     def _get_tags(self, conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:
+        tag_ids = [tag["id"] for tag in DEFAULT_TAGS]
+        placeholders = ", ".join("?" for _ in tag_ids)
         rows = conn.execute(
-            "SELECT id, name, shortcut, color FROM tags WHERE project_id = ? ORDER BY CAST(shortcut AS INTEGER)",
-            (project_id,),
+            f"SELECT id, name, shortcut, color FROM tags WHERE project_id = ? AND id IN ({placeholders})",
+            (project_id, *tag_ids),
         ).fetchall()
-        return [{**self._row_dict(row), "count": 0} for row in rows]
+        sort_order = {tag_id: index for index, tag_id in enumerate(tag_ids)}
+        return [
+            {**self._row_dict(row), "count": 0}
+            for row in sorted(rows, key=lambda row: sort_order.get(row["id"], len(sort_order)))
+        ]
 
     @staticmethod
     def _row_dict(row: sqlite3.Row, exclude: set[str] | None = None) -> dict[str, Any]:

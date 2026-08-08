@@ -21,8 +21,8 @@ const emit = defineEmits<{
   <aside class="side-panel tag-panel" aria-labelledby="tag-panel-title">
     <div class="panel-heading">
       <div>
-        <p class="section-kicker">Tags</p>
-        <h2 id="tag-panel-title">Label palette</h2>
+        <p class="section-kicker">POS Tags</p>
+        <h2 id="tag-panel-title">词性标签</h2>
       </div>
       <Tag :size="20" aria-hidden="true" />
     </div>
@@ -39,31 +39,39 @@ const emit = defineEmits<{
         <span class="tag-dot" aria-hidden="true"></span>
         <span class="tag-copy">
           <strong>{{ tagItem.name }}</strong>
-          <small>{{ tagItem.count }} spans</small>
+          <small>{{ tagItem.count }} 处标注</small>
         </span>
         <kbd>{{ tagItem.shortcut }}</kbd>
       </button>
     </div>
 
-    <div class="queue-block" aria-label="Corpus queue">
+    <div class="queue-block" aria-label="Sentence progress grid">
       <div class="mini-heading">
-        <span>Sentences</span>
+        <span>句子进度</span>
         <em>{{ reviewedSummary }}</em>
       </div>
-      <button
-        v-for="sentence in queueItems"
-        :key="sentence.id"
-        class="queue-row"
-        :class="{
-          active: sentence.index === currentSentenceIndex,
-          completed: sentence.completed,
-          pending: !sentence.completed,
-        }"
-        @click="emit('sentence-click', sentence.index)"
-      >
-        <span>#{{ sentence.index + 1 }}</span>
-        <strong>{{ sentence.completed ? 'Done' : sentence.index === currentSentenceIndex ? 'Active' : 'Pending' }}</strong>
-      </button>
+      <div class="sentence-dot-grid">
+        <button
+          v-for="sentence in queueItems"
+          :key="sentence.id"
+          class="sentence-dot"
+          :class="{
+            active: sentence.index === currentSentenceIndex,
+            completed: sentence.completed,
+            untouched: !sentence.completed,
+          }"
+          :aria-label="`Sentence ${sentence.index + 1}: ${sentence.completed ? 'completed' : 'untouched'}`"
+          :title="`#${sentence.index + 1} ${sentence.completed ? 'Completed' : 'Untouched'}`"
+          @click="emit('sentence-click', sentence.index)"
+        >
+          <span>{{ sentence.index + 1 }}</span>
+        </button>
+      </div>
+      <div class="sentence-dot-legend" aria-label="Sentence status legend">
+        <span><i class="legend-dot completed"></i>已标完</span>
+        <span><i class="legend-dot needs-review"></i>待确认</span>
+        <span><i class="legend-dot untouched"></i>未开始</span>
+      </div>
     </div>
   </aside>
 </template>

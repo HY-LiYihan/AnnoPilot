@@ -238,7 +238,6 @@ h2 {
 }
 
 .tag-option,
-.queue-row,
 .candidate-row {
   width: 100%;
   display: flex;
@@ -315,32 +314,80 @@ kbd {
   font-style: normal;
 }
 
-.queue-row {
-  min-height: 48px;
-  justify-content: space-between;
-  margin-top: 8px;
-  padding: 9px 10px;
+.sentence-dot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
+  gap: 9px;
 }
 
-.queue-row strong {
-  padding: 5px 8px;
-  border-radius: 6px;
+.sentence-dot {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #cfcac0;
+  border-radius: 999px;
+  color: transparent;
+  background: #d7d3ca;
+  cursor: pointer;
+}
+
+.sentence-dot span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.sentence-dot.completed {
+  border-color: #2f8d41;
+  background: #3f9d45;
+}
+
+.sentence-dot.needs-review {
+  border-color: #d39a00;
+  background: #f2bf3d;
+}
+
+.sentence-dot.untouched {
+  background: #d7d3ca;
+}
+
+.sentence-dot.active {
+  outline: 3px solid rgba(0, 104, 91, 0.22);
+  outline-offset: 3px;
+}
+
+.sentence-dot-legend {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  color: #626861;
   font-size: 0.78rem;
+  font-weight: 800;
 }
 
-.queue-row.active strong {
-  color: #00685b;
-  background: #cbe3dd;
+.sentence-dot-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.queue-row.pending strong {
-  color: #2659b8;
-  background: #dce6fb;
+.legend-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: #d7d3ca;
 }
 
-.queue-row.completed strong {
-  color: #2f7e24;
-  background: #dcedd7;
+.legend-dot.completed {
+  background: #3f9d45;
+}
+
+.legend-dot.needs-review {
+  background: #f2bf3d;
 }
 
 .editor-header {
@@ -463,8 +510,8 @@ kbd {
 .sentence-text {
   margin-bottom: 0;
   color: #141817;
-  font-size: clamp(1.35rem, 2.7vw, 2.12rem);
-  line-height: 1.76;
+  font-size: clamp(0.98rem, 1.15vw, 1.14rem);
+  line-height: 1.78;
   letter-spacing: 0;
 }
 
@@ -738,8 +785,12 @@ kbd {
     padding-bottom: 4px;
   }
 
-  .queue-block {
-    display: none;
+  .sentence-dot-grid {
+    grid-auto-flow: column;
+    grid-auto-columns: 24px;
+    grid-template-columns: none;
+    overflow-x: auto;
+    padding: 4px 4px 8px;
   }
 
   .editor-header,
@@ -782,7 +833,7 @@ kbd {
   }
 
   .sentence-text {
-    font-size: 1.22rem;
+    font-size: 1rem;
   }
 
   .verification-actions,

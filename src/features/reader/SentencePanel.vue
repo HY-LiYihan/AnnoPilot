@@ -120,7 +120,7 @@ const emit = defineEmits<{
       <div v-if="pendingSelection && pendingSelectionText" class="pending-card">
         <span>
           <strong>{{ pendingSelectionText }}</strong>
-          <small>Press 1-6 or click a tag on the left to apply</small>
+          <small>Press 1-3 or click a tag on the left to apply</small>
         </span>
         <em>Pending</em>
       </div>
@@ -139,7 +139,7 @@ const emit = defineEmits<{
           <em>Remove</em>
         </button>
       </div>
-      <p v-else class="candidate-empty">Select a word or span first, then press 1-6 or click a tag to label it.</p>
+      <p v-else class="candidate-empty">Select a word or span first, then press 1-3 or click a tag to label it.</p>
     </section>
 
     <section class="verification-card" aria-label="Human verification actions">

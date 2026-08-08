@@ -79,10 +79,7 @@ export type DragSelection = {
 }
 
 export const fallbackTags: TagDef[] = [
-  { id: 'environmental_impact', name: 'Environmental Impact', shortcut: '1', color: '#0b7565', count: 0 },
-  { id: 'action', name: 'Action', shortcut: '2', color: '#326bd8', count: 0 },
-  { id: 'target', name: 'Target', shortcut: '3', color: '#c45a2e', count: 0 },
-  { id: 'organization', name: 'Organization', shortcut: '4', color: '#7a3db8', count: 0 },
-  { id: 'evidence', name: 'Evidence', shortcut: '5', color: '#b98600', count: 0 },
-  { id: 'risk_signal', name: 'Risk Signal', shortcut: '6', color: '#b43b59', count: 0 },
+  { id: 'noun', name: '名词', shortcut: '1', color: '#0b7565', count: 0 },
+  { id: 'verb', name: '动词', shortcut: '2', color: '#326bd8', count: 0 },
+  { id: 'adjective', name: '形容词', shortcut: '3', color: '#c45a2e', count: 0 },
 ]

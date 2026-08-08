@@ -42,7 +42,7 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
 
         annotation_response = client.post(
             f"/api/projects/default/sentences/{sentence['id']}/annotations",
-            json={"tag_id": "action", "start_token_index": 2, "end_token_index": 2},
+            json={"tag_id": "verb", "start_token_index": 2, "end_token_index": 2},
         )
         assert annotation_response.status_code == 200
         assert annotation_response.json()["annotations"][0]["text"] == "reduced"
