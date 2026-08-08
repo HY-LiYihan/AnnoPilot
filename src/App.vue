@@ -1,119 +1,204 @@
 <script setup lang="ts">
-import { Activity, Play, Plus, Settings } from '@lucide/vue'
+import {
+  Activity,
+  BarChart3,
+  CheckCircle,
+  ChevronRight,
+  Clock,
+  Gauge,
+  Settings,
+  Tag,
+  Target,
+} from '@lucide/vue'
 
-const projectStats = [
-  { label: 'Examples', value: '1,248', tone: 'warm' },
-  { label: 'Review Queue', value: '86', tone: 'coral' },
-  { label: 'Agreement', value: '92%', tone: 'sage' },
+const annotationTags = [
+  { name: 'Environmental Impact', shortcut: '1', color: '#0b7565', count: 18, active: true },
+  { name: 'Action', shortcut: '2', color: '#326bd8', count: 24, active: false },
+  { name: 'Target', shortcut: '3', color: '#c45a2e', count: 11, active: false },
+  { name: 'Organization', shortcut: '4', color: '#7a3db8', count: 9, active: false },
+  { name: 'Evidence', shortcut: '5', color: '#b98600', count: 15, active: false },
+  { name: 'Risk Signal', shortcut: '6', color: '#b43b59', count: 6, active: false },
 ]
 
-const workflow = [
-  { name: 'Define', detail: 'Guidelines and labels', status: 'Ready' },
-  { name: 'Calibrate', detail: 'Gold examples and prompt tests', status: '12 checks' },
-  { name: 'Annotate', detail: 'Batch run with traces', status: 'Running' },
-  { name: 'Review', detail: 'Resolve uncertain outputs', status: '86 left' },
+const annotationQueue = [
+  { id: 'DOC-001', status: 'In progress', tone: 'active' },
+  { id: 'DOC-002', status: 'Pending', tone: 'pending' },
+  { id: 'DOC-003', status: 'Pending', tone: 'pending' },
+  { id: 'DOC-004', status: 'Empty', tone: 'empty' },
 ]
 
-const queueItems = [
-  { title: 'Borderline metaphor usage', label: 'Needs review', confidence: '64%' },
-  { title: 'Nested relation span', label: 'Conflict', confidence: '58%' },
-  { title: 'Guideline exception case', label: 'Low confidence', confidence: '61%' },
+const metrics = [
+  { label: 'Progress', value: '68%', detail: '842 / 1,248 examples', icon: Gauge },
+  { label: 'Accuracy', value: '92.4%', detail: '+3.1 pts vs last run', icon: Target },
+  { label: 'Agreement', value: '88%', detail: 'human and model match', icon: CheckCircle },
+]
+
+const activeSpans = [
+  { label: 'carbon emissions', tag: 'Environmental Impact', confidence: '94%' },
+  { label: 'reduce', tag: 'Action', confidence: '87%' },
+  { label: '50 percent by 2030', tag: 'Target', confidence: '76%' },
 ]
 </script>
 
 <template>
   <main class="app-shell">
-    <section class="hero" aria-labelledby="page-title">
-      <nav class="topbar" aria-label="Primary">
+    <nav class="topbar" aria-label="Primary">
+      <div class="brand-cluster">
         <div class="brand-mark" aria-hidden="true">A</div>
-        <span class="brand-name">AnnoPilot</span>
-        <button class="icon-button" aria-label="Open settings">
-          <Settings :size="19" aria-hidden="true" />
-        </button>
-      </nav>
-
-      <div class="hero-grid">
-        <div class="hero-copy">
-          <p class="eyebrow">Local-first annotation workbench</p>
-          <h1 id="page-title">Turn evolving concepts into auditable datasets.</h1>
-          <p class="lede">
-            Calibrate guidelines, run assisted annotation, and review uncertain cases from a clean mobile-ready workspace.
-          </p>
-          <div class="hero-actions" aria-label="Project actions">
-            <button class="primary-action">
-              <Play :size="18" aria-hidden="true" />
-              <span>Start review</span>
-            </button>
-            <button class="secondary-action">
-              <Plus :size="18" aria-hidden="true" />
-              <span>New project</span>
-            </button>
-          </div>
+        <div>
+          <span class="brand-name">AnnoPilot</span>
+          <small>Annotation Workbench</small>
         </div>
-
-        <aside class="run-card" aria-label="Current run status">
-          <div class="run-card-header">
-            <span class="run-title">
-              <Activity :size="18" aria-hidden="true" />
-              Batch Run
-            </span>
-            <strong>Live</strong>
-          </div>
-          <div class="progress-ring" aria-label="Run progress 71 percent">
-            <span>71%</span>
-          </div>
-          <div class="run-meta">
-            <span>2,930 traces written</span>
-            <span>JSONL synced</span>
-          </div>
-        </aside>
       </div>
-    </section>
 
-    <section class="stats-grid" aria-label="Project summary">
-      <article v-for="stat in projectStats" :key="stat.label" class="stat-card" :class="stat.tone">
-        <span>{{ stat.label }}</span>
-        <strong>{{ stat.value }}</strong>
-      </article>
-    </section>
+      <div class="run-status" aria-label="Current run status">
+        <Activity :size="17" aria-hidden="true" />
+        <span>Batch run live</span>
+      </div>
 
-    <section class="workspace-grid" aria-label="Workspace overview">
-      <article class="panel workflow-panel">
+      <button class="icon-button" aria-label="Open settings">
+        <Settings :size="19" aria-hidden="true" />
+      </button>
+    </nav>
+
+    <section class="workbench" aria-label="Annotation workspace">
+      <aside class="side-panel tag-panel" aria-labelledby="tag-panel-title">
         <div class="panel-heading">
           <div>
-            <p class="section-kicker">Workflow</p>
-            <h2>Project pipeline</h2>
+            <p class="section-kicker">Tags</p>
+            <h2 id="tag-panel-title">Label palette</h2>
           </div>
-          <button class="text-button">View runs</button>
+          <Tag :size="20" aria-hidden="true" />
         </div>
-        <ol class="workflow-list">
-          <li v-for="step in workflow" :key="step.name">
-            <div>
-              <strong>{{ step.name }}</strong>
-              <span>{{ step.detail }}</span>
-            </div>
-            <em>{{ step.status }}</em>
-          </li>
-        </ol>
-      </article>
 
-      <article class="panel review-panel">
-        <div class="panel-heading compact">
-          <div>
-            <p class="section-kicker">Review</p>
-            <h2>Next uncertain cases</h2>
-          </div>
-        </div>
-        <div class="queue-list">
-          <button v-for="item in queueItems" :key="item.title" class="queue-item">
-            <span>
-              <strong>{{ item.title }}</strong>
-              <small>{{ item.label }}</small>
+        <div class="tag-list" aria-label="Available annotation tags">
+          <button
+            v-for="tagItem in annotationTags"
+            :key="tagItem.name"
+            class="tag-option"
+            :class="{ selected: tagItem.active }"
+            :style="{ '--tag-color': tagItem.color }"
+          >
+            <span class="tag-dot" aria-hidden="true"></span>
+            <span class="tag-copy">
+              <strong>{{ tagItem.name }}</strong>
+              <small>{{ tagItem.count }} spans</small>
             </span>
-            <em>{{ item.confidence }}</em>
+            <kbd>{{ tagItem.shortcut }}</kbd>
           </button>
         </div>
-      </article>
+
+        <div class="queue-block" aria-label="Corpus queue">
+          <div class="mini-heading">
+            <span>Corpus queue</span>
+            <em>42 left</em>
+          </div>
+          <button v-for="item in annotationQueue" :key="item.id" class="queue-row" :class="item.tone">
+            <span>{{ item.id }}</span>
+            <strong>{{ item.status }}</strong>
+          </button>
+        </div>
+      </aside>
+
+      <section class="editor-panel" aria-labelledby="editor-title">
+        <div class="editor-header">
+          <div>
+            <p class="section-kicker">Annotation Editor</p>
+            <h1 id="editor-title">Climate policy extraction</h1>
+          </div>
+          <div class="document-pill">
+            <Clock :size="16" aria-hidden="true" />
+            <span>DOC-001</span>
+          </div>
+        </div>
+
+        <article class="text-surface" aria-label="Text needing annotation">
+          <p>
+            The company announced a new plan to
+            <mark class="span-action">reduce</mark>
+            <mark class="span-impact">carbon emissions</mark>
+            by <mark class="span-target">50 percent by the year 2030</mark> across all global operations.
+            The disclosure cites verified energy procurement records and supplier audits as supporting evidence.
+            Analysts flagged the transition plan as credible but dependent on regional policy incentives.
+          </p>
+        </article>
+
+        <section class="candidate-card" aria-labelledby="candidate-title">
+          <div class="candidate-heading">
+            <h2 id="candidate-title">Detected candidates</h2>
+            <span>3 selected</span>
+          </div>
+          <div class="candidate-list">
+            <button v-for="span in activeSpans" :key="span.label" class="candidate-row">
+              <span>
+                <strong>{{ span.label }}</strong>
+                <small>{{ span.tag }}</small>
+              </span>
+              <em>{{ span.confidence }}</em>
+            </button>
+          </div>
+        </section>
+
+        <section class="verification-card" aria-label="Human verification actions">
+          <div>
+            <p class="section-kicker">Human Verification</p>
+            <h2>Confirm current spans</h2>
+          </div>
+          <div class="verification-actions">
+            <button class="accept-button">Accept</button>
+            <button class="edit-button">Edit span</button>
+            <button class="skip-button">Skip</button>
+          </div>
+        </section>
+      </section>
+
+      <aside class="side-panel stats-panel" aria-labelledby="stats-panel-title">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Evidence</p>
+            <h2 id="stats-panel-title">Run metrics</h2>
+          </div>
+          <BarChart3 :size="21" aria-hidden="true" />
+        </div>
+
+        <div class="metric-stack">
+          <article v-for="metric in metrics" :key="metric.label" class="metric-card">
+            <component :is="metric.icon" :size="22" aria-hidden="true" />
+            <span>{{ metric.label }}</span>
+            <strong>{{ metric.value }}</strong>
+            <small>{{ metric.detail }}</small>
+          </article>
+        </div>
+
+        <section class="progress-card" aria-label="Annotation progress">
+          <div class="progress-header">
+            <span>Today</span>
+            <strong>126 reviewed</strong>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <span></span>
+          </div>
+          <div class="quality-list">
+            <div>
+              <span>High confidence</span>
+              <strong>74%</strong>
+            </div>
+            <div>
+              <span>Needs review</span>
+              <strong>18%</strong>
+            </div>
+            <div>
+              <span>Rejected</span>
+              <strong>8%</strong>
+            </div>
+          </div>
+        </section>
+
+        <button class="export-button">
+          Export JSONL
+          <ChevronRight :size="18" aria-hidden="true" />
+        </button>
+      </aside>
     </section>
   </main>
 </template>
