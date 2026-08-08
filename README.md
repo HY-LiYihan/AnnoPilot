@@ -40,7 +40,7 @@ The original implementation is being migrated from the Rosetta codebase. Until t
 
 ## Planned Scope
 
-- Streamlit-based local application
+- lightweight mobile-ready web application
 - project overview and task setup
 - guideline and gold-example management
 - prompt validation and optimization
@@ -52,7 +52,8 @@ The original implementation is being migrated from the Rosetta codebase. Until t
 - JSONL export, reports, and run manifests
 - Docker deployment path
 
+See [Architecture](docs/architecture.md) for the proposed non-Streamlit runtime design.
+
 ## License
 
 MIT license is planned for this project.
-
