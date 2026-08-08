@@ -157,10 +157,6 @@ button:disabled {
   color: #00685b;
 }
 
-.tag-heading {
-  margin-top: 18px;
-}
-
 .section-kicker {
   margin: 0 0 4px;
   font-size: 0.72rem;
@@ -199,6 +195,24 @@ h2 {
   color: #00685b;
   background: #eef8f4;
   cursor: pointer;
+}
+
+.editor-upload {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-style: solid;
+  background: #ffffff;
+}
+
+.editor-upload small {
+  font-size: 0.72rem;
+}
+
+.empty-upload {
+  width: min(320px, 100%);
+  justify-content: center;
+  margin-top: 4px;
+  text-align: left;
 }
 
 .upload-card span,
@@ -331,6 +345,14 @@ kbd {
   justify-content: space-between;
   gap: 14px;
   margin-bottom: 12px;
+}
+
+.editor-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
 }
 
 .document-pill {
@@ -684,6 +706,7 @@ kbd {
   }
 
   .editor-header,
+  .editor-tools,
   .verification-card {
     display: grid;
     grid-template-columns: 1fr;

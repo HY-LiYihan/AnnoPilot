@@ -412,16 +412,7 @@ async function responseMessage(response: Response) {
 
     <section class="workbench" aria-label="Annotation workspace">
       <aside class="side-panel tag-panel" aria-labelledby="tag-panel-title">
-        <label class="upload-card">
-          <Upload :size="22" aria-hidden="true" />
-          <span>
-            <strong>{{ isUploading ? 'Importing TXT...' : 'Import TXT' }}</strong>
-            <small>UTF-8, up to 10 MB</small>
-          </span>
-          <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="handleImport" />
-        </label>
-
-        <div class="panel-heading tag-heading">
+        <div class="panel-heading">
           <div>
             <p class="section-kicker">Tags</p>
             <h2 id="tag-panel-title">Label palette</h2>
@@ -475,9 +466,19 @@ async function responseMessage(response: Response) {
             <p class="section-kicker">Annotation Reader</p>
             <h1 id="editor-title">{{ documentMeta?.filename ?? 'Import a TXT file to begin' }}</h1>
           </div>
-          <div class="document-pill">
-            <Clock :size="16" aria-hidden="true" />
-            <span>{{ currentSentence ? `Sentence ${currentSentence.index + 1}` : 'No document' }}</span>
+          <div class="editor-tools">
+            <label class="upload-card editor-upload">
+              <Upload :size="19" aria-hidden="true" />
+              <span>
+                <strong>{{ isUploading ? 'Importing...' : 'Import TXT' }}</strong>
+                <small>UTF-8 · 10 MB</small>
+              </span>
+              <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="handleImport" />
+            </label>
+            <div class="document-pill">
+              <Clock :size="16" aria-hidden="true" />
+              <span>{{ currentSentence ? `Sentence ${currentSentence.index + 1}` : 'No document' }}</span>
+            </div>
           </div>
         </div>
 
@@ -490,6 +491,14 @@ async function responseMessage(response: Response) {
             AnnoPilot will split it into sentences, tokenize each sentence, and keep annotation progress in SQLite
             while writing audit events to JSONL.
           </p>
+          <label class="upload-card empty-upload">
+            <Upload :size="22" aria-hidden="true" />
+            <span>
+              <strong>{{ isUploading ? 'Importing TXT...' : 'Choose TXT from Downloads' }}</strong>
+              <small>Pick your prepared test file</small>
+            </span>
+            <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="handleImport" />
+          </label>
         </article>
 
         <article v-else class="text-reader" aria-label="Scrollable text annotation reader">
