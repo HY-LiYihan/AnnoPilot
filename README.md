@@ -38,6 +38,12 @@ This repository is being prepared as the public project home for AnnoPilot.
 
 The original implementation is being migrated from the Rosetta codebase. Until the migration is complete, this repository may contain project notes, design documents, and release planning before the full application code lands.
 
+## Documentation
+
+- Documentation site: <https://hy-liyihan.github.io/AnnoPilot/>
+- Architecture notes: [docs/architecture.md](docs/architecture.md)
+- Documentation maintenance: [docs/guide/documentation.md](docs/guide/documentation.md)
+
 ## Planned Scope
 
 - lightweight mobile-ready web application

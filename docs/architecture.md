@@ -443,7 +443,7 @@ Operational headroom                  300-500 MB
 
 默认配置：
 
-```env
+```text
 WEB_CONCURRENCY=1
 BATCH_CONCURRENCY=2
 SQLITE_CACHE_SIZE_MB=64
