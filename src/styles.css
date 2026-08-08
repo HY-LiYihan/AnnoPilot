@@ -263,6 +263,10 @@ h2 {
   box-shadow: inset 4px 0 0 var(--tag-color);
 }
 
+.tag-option.applyable {
+  border-style: dashed;
+}
+
 .tag-dot {
   width: 13px;
   height: 13px;
@@ -477,9 +481,15 @@ kbd {
 }
 
 .sentence-card.active .token:hover,
-.token.selecting {
+.token.selecting,
+.token.pending {
   background: color-mix(in srgb, var(--token-color) 22%, #ffffff);
   box-shadow: inset 0 -0.18em color-mix(in srgb, var(--token-color) 38%, transparent);
+}
+
+.token.pending {
+  outline: 2px solid color-mix(in srgb, var(--token-color) 64%, #ffffff);
+  outline-offset: 2px;
 }
 
 .token.annotated {
@@ -516,6 +526,33 @@ kbd {
   display: grid;
   gap: 8px;
   margin-top: 12px;
+}
+
+.pending-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px dashed rgba(0, 104, 91, 0.45);
+  border-radius: 8px;
+  background: #eef8f4;
+}
+
+.pending-card span {
+  display: grid;
+  gap: 3px;
+}
+
+.pending-card small {
+  color: #61706b;
+}
+
+.pending-card em {
+  color: #00685b;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .candidate-row {

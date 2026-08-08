@@ -110,6 +110,7 @@ const metrics = ref<Metrics>({
 const selectedTagId = ref(fallbackTags[0].id)
 const currentSentenceIndex = ref(0)
 const dragSelection = ref<DragSelection | null>(null)
+const pendingSelection = ref<DragSelection | null>(null)
 const isUploading = ref(false)
 const isSaving = ref(false)
 const readerError = ref('')
@@ -121,6 +122,17 @@ const progressPercent = computed(() => Math.round(metrics.value.progress * 100))
 const reviewedSummary = computed(() => `${metrics.value.completed_count} / ${metrics.value.sentence_count || 0}`)
 const activeAnnotations = computed(() => currentSentence.value?.annotations ?? [])
 const queueItems = computed(() => sentences.value.slice(0, 8))
+const pendingSelectionText = computed(() => {
+  const selection = pendingSelection.value
+  if (!selection) return ''
+  const sentence = sentences.value.find((item) => item.id === selection.sentenceId)
+  if (!sentence) return ''
+  const [startIndex, endIndex] = normalizedRange(selection.start, selection.end)
+  const startToken = sentence.tokens[startIndex]
+  const endToken = sentence.tokens[endIndex]
+  if (!startToken || !endToken) return ''
+  return sentence.text.slice(startToken.start_char - sentence.start_char, endToken.end_char - sentence.start_char)
+})
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown)
@@ -153,6 +165,7 @@ async function handleImport(event: Event) {
     const imported = await response.json()
     tags.value = imported.tags
     selectedTagId.value = imported.tags[0]?.id ?? selectedTagId.value
+    clearSelection()
     window.localStorage.setItem(ACTIVE_DOCUMENT_KEY, imported.document_id)
     await loadDocument(imported.document_id)
   } catch (error) {
@@ -174,6 +187,7 @@ async function loadDocument(documentId: string, preserveCurrent = false) {
     tags.value = payload.tags.length ? payload.tags : fallbackTags
     selectedTagId.value = tags.value.find((tagItem) => tagItem.id === selectedTagId.value)?.id ?? tags.value[0].id
     metrics.value = payload.metrics
+    clearSelection()
     currentSentenceIndex.value = preserveCurrent
       ? clampIndex(previousIndex)
       : Math.max(
@@ -191,6 +205,7 @@ async function loadDocument(documentId: string, preserveCurrent = false) {
 function setCurrentSentence(index: number) {
   if (!sentences.value.length) return
   currentSentenceIndex.value = clampIndex(index)
+  clearSelection()
   void centerCurrentSentence()
 }
 
@@ -219,6 +234,12 @@ async function completeCurrentSentence() {
 function handleKeydown(event: KeyboardEvent) {
   const target = event.target as HTMLElement | null
   if (target?.matches('input, textarea, select')) return
+  const shortcutTag = tags.value.find((tagItem) => tagItem.shortcut === event.key)
+  if (shortcutTag) {
+    event.preventDefault()
+    void applyTagToSelection(shortcutTag.id)
+    return
+  }
   if (event.key === 'Enter') {
     event.preventDefault()
     void completeCurrentSentence()
@@ -254,11 +275,7 @@ function onTokenPointerDown(sentence: SentenceDef, tokenIndex: number, event: Po
     return
   }
   event.preventDefault()
-  const existing = annotationForToken(sentence, tokenIndex)
-  if (existing) {
-    void deleteAnnotation(existing.id)
-    return
-  }
+  pendingSelection.value = null
   dragSelection.value = { sentenceId: sentence.id, start: tokenIndex, end: tokenIndex }
 }
 
@@ -270,17 +287,32 @@ function onTokenPointerEnter(sentence: SentenceDef, tokenIndex: number) {
 function onTokenPointerUp(sentence: SentenceDef, tokenIndex: number) {
   const selection = dragSelection.value
   if (!selection || selection.sentenceId !== sentence.id) return
+  pendingSelection.value = { sentenceId: sentence.id, start: selection.start, end: tokenIndex }
   dragSelection.value = null
-  void createAnnotation(sentence, selection.start, tokenIndex)
 }
 
-async function createAnnotation(sentence: SentenceDef, start: number, end: number) {
-  const tag = selectedTag.value
+function handleTagClick(tagId: string) {
+  void applyTagToSelection(tagId)
+}
+
+async function applyTagToSelection(tagId: string) {
+  selectedTagId.value = tagId
+  const selection = pendingSelection.value
+  if (!selection) return
+  const sentence = sentences.value.find((item) => item.id === selection.sentenceId)
+  if (!sentence) return
+  await createAnnotation(sentence, selection.start, selection.end, tagId)
+}
+
+async function createAnnotation(sentence: SentenceDef, start: number, end: number, tagId: string) {
+  const tag = tags.value.find((tagItem) => tagItem.id === tagId)
   if (!tag || isSaving.value) return
   isSaving.value = true
   readerError.value = ''
-  const [startTokenIndex, endTokenIndex] = [Math.min(start, end), Math.max(start, end)]
+  const [startTokenIndex, endTokenIndex] = normalizedRange(start, end)
   try {
+    const overlaps = overlappingAnnotations(sentence, startTokenIndex, endTokenIndex)
+    await Promise.all(overlaps.map((annotation) => deleteAnnotationRequest(annotation.id)))
     const response = await fetch(`/api/projects/${PROJECT_ID}/sentences/${sentence.id}/annotations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -293,6 +325,7 @@ async function createAnnotation(sentence: SentenceDef, start: number, end: numbe
     if (!response.ok) throw new Error(await responseMessage(response))
     const payload = await response.json()
     replaceSentenceAnnotations(sentence.id, payload.annotations)
+    pendingSelection.value = null
   } catch (error) {
     readerError.value = error instanceof Error ? error.message : 'Could not save annotation.'
   } finally {
@@ -305,8 +338,7 @@ async function deleteAnnotation(annotationId: string) {
   isSaving.value = true
   readerError.value = ''
   try {
-    const response = await fetch(`/api/projects/${PROJECT_ID}/annotations/${annotationId}`, { method: 'DELETE' })
-    if (!response.ok) throw new Error(await responseMessage(response))
+    await deleteAnnotationRequest(annotationId)
     sentences.value = sentences.value.map((sentence) => ({
       ...sentence,
       annotations: sentence.annotations.filter((annotation) => annotation.id !== annotationId),
@@ -317,6 +349,11 @@ async function deleteAnnotation(annotationId: string) {
   } finally {
     isSaving.value = false
   }
+}
+
+async function deleteAnnotationRequest(annotationId: string) {
+  const response = await fetch(`/api/projects/${PROJECT_ID}/annotations/${annotationId}`, { method: 'DELETE' })
+  if (!response.ok) throw new Error(await responseMessage(response))
 }
 
 function replaceSentenceAnnotations(sentenceId: string, annotations: AnnotationDef[]) {
@@ -354,7 +391,15 @@ function annotationForToken(sentence: SentenceDef, tokenIndex: number) {
 function isTokenInDrag(sentence: SentenceDef, tokenIndex: number) {
   const selection = dragSelection.value
   if (!selection || selection.sentenceId !== sentence.id) return false
-  return tokenIndex >= Math.min(selection.start, selection.end) && tokenIndex <= Math.max(selection.start, selection.end)
+  const [start, end] = normalizedRange(selection.start, selection.end)
+  return tokenIndex >= start && tokenIndex <= end
+}
+
+function isTokenPending(sentence: SentenceDef, tokenIndex: number) {
+  const selection = pendingSelection.value
+  if (!selection || selection.sentenceId !== sentence.id) return false
+  const [start, end] = normalizedRange(selection.start, selection.end)
+  return tokenIndex >= start && tokenIndex <= end
 }
 
 function tokenPrefix(sentence: SentenceDef, tokenIndex: number) {
@@ -366,8 +411,25 @@ function tokenPrefix(sentence: SentenceDef, tokenIndex: number) {
 function tokenStyle(sentence: SentenceDef, tokenIndex: number) {
   const annotation = annotationForToken(sentence, tokenIndex)
   if (annotation) return { '--token-color': annotation.tag_color }
-  if (isTokenInDrag(sentence, tokenIndex) && selectedTag.value) return { '--token-color': selectedTag.value.color }
+  if ((isTokenInDrag(sentence, tokenIndex) || isTokenPending(sentence, tokenIndex)) && selectedTag.value) {
+    return { '--token-color': selectedTag.value.color }
+  }
   return {}
+}
+
+function overlappingAnnotations(sentence: SentenceDef, start: number, end: number) {
+  return sentence.annotations.filter(
+    (annotation) => annotation.start_token_index <= end && annotation.end_token_index >= start,
+  )
+}
+
+function normalizedRange(start: number, end: number) {
+  return [Math.min(start, end), Math.max(start, end)] as const
+}
+
+function clearSelection() {
+  dragSelection.value = null
+  pendingSelection.value = null
 }
 
 function exportJsonl() {
@@ -425,9 +487,9 @@ async function responseMessage(response: Response) {
             v-for="tagItem in tags"
             :key="tagItem.id"
             class="tag-option"
-            :class="{ selected: tagItem.id === selectedTagId }"
+            :class="{ selected: tagItem.id === selectedTagId, applyable: Boolean(pendingSelection) }"
             :style="{ '--tag-color': tagItem.color }"
-            @click="selectedTagId = tagItem.id"
+            @click="handleTagClick(tagItem.id)"
           >
             <span class="tag-dot" aria-hidden="true"></span>
             <span class="tag-copy">
@@ -525,6 +587,7 @@ async function responseMessage(response: Response) {
                   :class="{
                     annotated: annotationForToken(sentence, token.token_index),
                     selecting: isTokenInDrag(sentence, token.token_index),
+                    pending: isTokenPending(sentence, token.token_index),
                   }"
                   :style="tokenStyle(sentence, token.token_index)"
                   @pointerdown="onTokenPointerDown(sentence, token.token_index, $event)"
@@ -541,6 +604,13 @@ async function responseMessage(response: Response) {
             <h2 id="candidate-title">Current sentence spans</h2>
             <span>{{ activeAnnotations.length }} selected</span>
           </div>
+          <div v-if="pendingSelection && pendingSelectionText" class="pending-card">
+            <span>
+              <strong>{{ pendingSelectionText }}</strong>
+              <small>Press 1-6 or click a tag on the left to apply</small>
+            </span>
+            <em>Pending</em>
+          </div>
           <div v-if="activeAnnotations.length" class="candidate-list">
             <button
               v-for="annotation in activeAnnotations"
@@ -556,7 +626,7 @@ async function responseMessage(response: Response) {
               <em>Remove</em>
             </button>
           </div>
-          <p v-else class="candidate-empty">Select a tag, then click or drag tokens in the active sentence.</p>
+          <p v-else class="candidate-empty">Select a word or span first, then press 1-6 or click a tag to label it.</p>
         </section>
 
         <section class="verification-card" aria-label="Human verification actions">
