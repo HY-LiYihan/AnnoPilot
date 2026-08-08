@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "api": "DATABASE_PATH=.runtime/annopilot.sqlite DATA_ROOT=.runtime/projects uvicorn backend.app.main:app --host 0.0.0.0 --port 8000",
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",

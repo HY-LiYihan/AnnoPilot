@@ -25,6 +25,11 @@ button {
   font: inherit;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .app-shell {
   width: min(1440px, calc(100% - 32px));
   margin: 0 auto;
@@ -50,7 +55,8 @@ button {
 .progress-header,
 .quality-list div,
 .export-button,
-.document-pill {
+.document-pill,
+.upload-card {
   display: flex;
   align-items: center;
 }
@@ -89,7 +95,9 @@ button {
 .tag-copy small,
 .candidate-row small,
 .metric-card small,
-.quality-list span {
+.quality-list span,
+.upload-card small,
+.candidate-empty {
   color: #6f726e;
 }
 
@@ -130,12 +138,9 @@ button {
   background: #fbfaf6;
 }
 
-.side-panel {
-  padding: 14px;
-}
-
+.side-panel,
 .editor-panel {
-  padding: 18px;
+  padding: 14px;
 }
 
 .panel-heading,
@@ -150,6 +155,10 @@ button {
 .panel-heading {
   margin-bottom: 16px;
   color: #00685b;
+}
+
+.tag-heading {
+  margin-top: 18px;
 }
 
 .section-kicker {
@@ -169,8 +178,8 @@ p {
 h1 {
   margin-bottom: 0;
   color: #17201d;
-  font-size: clamp(1.45rem, 3.6vw, 2.45rem);
-  line-height: 1.1;
+  font-size: clamp(1.35rem, 3.2vw, 2.1rem);
+  line-height: 1.15;
   letter-spacing: 0;
 }
 
@@ -178,6 +187,33 @@ h2 {
   margin-bottom: 0;
   font-size: 1.1rem;
   line-height: 1.15;
+}
+
+.upload-card {
+  position: relative;
+  gap: 12px;
+  min-height: 70px;
+  padding: 12px;
+  border: 1px dashed rgba(0, 104, 91, 0.45);
+  border-radius: 8px;
+  color: #00685b;
+  background: #eef8f4;
+  cursor: pointer;
+}
+
+.upload-card span,
+.tag-copy,
+.candidate-row span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.upload-card input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .tag-list,
@@ -219,12 +255,6 @@ h2 {
   flex: 0 0 auto;
   border-radius: 999px;
   background: var(--tag-color);
-}
-
-.tag-copy {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
 }
 
 .tag-copy strong {
@@ -290,9 +320,9 @@ kbd {
   background: #dce6fb;
 }
 
-.queue-row.empty strong {
-  color: #6f6b68;
-  background: #e8e5e0;
+.queue-row.completed strong {
+  color: #2f7e24;
+  background: #dcedd7;
 }
 
 .editor-header {
@@ -300,7 +330,7 @@ kbd {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .document-pill {
@@ -314,40 +344,125 @@ kbd {
   font-weight: 800;
 }
 
-.text-surface {
-  min-height: 292px;
-  padding: clamp(18px, 3vw, 30px);
+.reader-error {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e2a9a9;
+  border-radius: 8px;
+  color: #8f2626;
+  background: #fff2f2;
+}
+
+.empty-reader,
+.text-reader {
   border: 1px solid #c9c6bf;
   border-radius: 8px;
   background: #fffefb;
 }
 
-.text-surface p {
+.empty-reader {
+  min-height: 420px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+  padding: 32px;
+  color: #00685b;
+  text-align: center;
+}
+
+.empty-reader p {
+  max-width: 560px;
   margin-bottom: 0;
-  font-size: clamp(1.45rem, 2.9vw, 2.25rem);
+  color: #5f6561;
   line-height: 1.65;
+}
+
+.text-reader {
+  height: min(58vh, 640px);
+  min-height: 420px;
+  overflow-y: auto;
+  padding: clamp(18px, 2.4vw, 32px);
+  scroll-behavior: smooth;
+}
+
+.sentence-card {
+  position: relative;
+  margin: 0 auto 28px;
+  padding: clamp(18px, 2.5vw, 30px);
+  border: 1px solid #ddd8ce;
+  border-radius: 8px;
+  background: #ffffff;
+  transition: opacity 180ms ease, transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.sentence-card.dimmed {
+  opacity: 0.38;
+  transform: scale(0.985);
+}
+
+.sentence-card.dimmed::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(245, 243, 238, 0.42);
+  content: "";
+  pointer-events: none;
+}
+
+.sentence-card.active {
+  border-color: rgba(0, 104, 91, 0.55);
+  box-shadow: 0 18px 56px rgba(0, 64, 56, 0.13);
+}
+
+.sentence-card.completed {
+  border-left: 5px solid #3b8f2f;
+}
+
+.sentence-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #6f726e;
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.sentence-meta strong {
+  color: #00685b;
+}
+
+.sentence-text {
+  margin-bottom: 0;
+  color: #141817;
+  font-size: clamp(1.35rem, 2.7vw, 2.12rem);
+  line-height: 1.76;
   letter-spacing: 0;
 }
 
-mark {
-  padding: 0.02em 0.14em;
+.token {
+  display: inline;
+  margin: 0;
+  padding: 0.03em 0.08em;
+  border: 0;
   border-radius: 5px;
-  color: #111a18;
+  color: inherit;
+  background: transparent;
+  cursor: text;
+  line-height: inherit;
 }
 
-.span-impact {
-  background: #9fd8d0;
-  box-shadow: inset 0 -0.18em rgba(0, 104, 91, 0.24);
+.sentence-card.active .token:hover,
+.token.selecting {
+  background: color-mix(in srgb, var(--token-color) 22%, #ffffff);
+  box-shadow: inset 0 -0.18em color-mix(in srgb, var(--token-color) 38%, transparent);
 }
 
-.span-action {
-  background: #bfd3ff;
-  box-shadow: inset 0 -0.18em rgba(50, 107, 216, 0.24);
-}
-
-.span-target {
-  background: #ffd8c8;
-  box-shadow: inset 0 -0.18em rgba(196, 90, 46, 0.22);
+.token.annotated {
+  background: color-mix(in srgb, var(--token-color) 30%, #ffffff);
+  box-shadow: inset 0 -0.18em color-mix(in srgb, var(--token-color) 42%, transparent);
 }
 
 .candidate-card,
@@ -385,17 +500,18 @@ mark {
   justify-content: space-between;
   min-height: 58px;
   padding: 10px 12px;
-}
-
-.candidate-row span {
-  display: grid;
-  gap: 3px;
+  box-shadow: inset 4px 0 0 var(--token-color);
 }
 
 .candidate-row em {
-  color: #00685b;
+  color: #b43b59;
   font-style: normal;
   font-weight: 900;
+}
+
+.candidate-empty {
+  margin: 12px 0 0;
+  line-height: 1.5;
 }
 
 .verification-card {
@@ -441,8 +557,8 @@ mark {
 }
 
 .skip-button {
-  border: 1px solid #b43b59;
-  color: #b43b59;
+  border: 1px solid #b98600;
+  color: #946900;
   background: #ffffff;
 }
 
@@ -459,6 +575,9 @@ mark {
 }
 
 .metric-card strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: #151918;
   font-size: clamp(2rem, 5vw, 2.9rem);
   line-height: 1;
@@ -483,7 +602,6 @@ mark {
 
 .progress-track span {
   display: block;
-  width: 68%;
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #00685b, #44a386);
@@ -495,6 +613,9 @@ mark {
 }
 
 .quality-list strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: #151918;
 }
 
@@ -572,8 +693,9 @@ mark {
     width: max-content;
   }
 
-  .text-surface {
-    min-height: 240px;
+  .text-reader {
+    height: 62vh;
+    min-height: 360px;
   }
 
   .metric-stack {
@@ -595,8 +717,12 @@ mark {
     padding: 12px;
   }
 
-  .text-surface p {
-    font-size: 1.32rem;
+  .sentence-card {
+    padding: 16px;
+  }
+
+  .sentence-text {
+    font-size: 1.22rem;
   }
 
   .verification-actions,

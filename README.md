@@ -60,6 +60,24 @@ The original implementation is being migrated from the Rosetta codebase. Until t
 
 See [Architecture](docs/architecture.md) for the proposed non-Streamlit runtime design.
 
+## Local Development
+
+Install frontend and backend dependencies:
+
+```bash
+npm install
+python3 -m pip install -r backend/requirements-dev.txt
+```
+
+Run the API and web UI in two terminals:
+
+```bash
+npm run api
+npm run dev
+```
+
+The web UI runs on `http://localhost:5173` and proxies `/api` requests to the FastAPI backend on port `8000`.
+
 ## License
 
 MIT license is planned for this project.
