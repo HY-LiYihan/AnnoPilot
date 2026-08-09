@@ -157,6 +157,7 @@ const {
   acceptSuggestedSpan,
   rejectSuggestedSpan,
   acceptCurrentSentenceSuggestions,
+  autoAnnotateDocument,
   autoAcceptDocumentSuggestions,
   rejectCurrentSentenceSuggestions,
   autoRejectDocumentSuggestions,
@@ -327,6 +328,7 @@ const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.valu
         @undo="undoLastSpanAction"
         @generate-current-suggestions="generateCurrentSentenceSuggestions"
         @generate-suggestions="generateDocumentSuggestions"
+        @auto-annotate-document="autoAnnotateDocument"
         @accept-suggestion="acceptSuggestedSpan"
         @reject-suggestion="rejectSuggestedSpan"
         @accept-current-suggestions="acceptCurrentSentenceSuggestions"

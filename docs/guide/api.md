@@ -60,6 +60,7 @@ Annotation create 使用 token range：`tag_id`、`start_token_index`、`end_tok
 POST /api/projects/{project_id}/documents/{document_id}/suggestions/run
 POST /api/projects/{project_id}/documents/{document_id}/sentences/{sentence_id}/suggestions/run
 POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-accept
+POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-annotate
 POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-reject
 POST /api/projects/{project_id}/suggestions/{suggestion_id}/accept
 POST /api/projects/{project_id}/suggestions/{suggestion_id}/reject
@@ -70,6 +71,7 @@ POST /api/projects/{project_id}/suggestions/{suggestion_id}/llm-review
 
 - Suggestions 当前由 Character RAG 生成，支持 document scope 和 sentence scope。
 - `limit_per_sentence` 默认 6，上限 20；`min_confidence` 取值范围 0 到 1。
+- `auto-annotate` 会先运行 Character RAG suggestions，再按同一 `min_confidence` 自动接受高置信 span，形成一键低算力自动标注 slice。
 - Accept 会创建 `source=accepted_suggestion` annotation，并把 suggestion 状态改为 `accepted`。
 - Reject 会把 suggestion 状态改为 `rejected`，后续 Character RAG 会把同 tag + text 当作 negative example。
 - Sentence-level accept/reject 会在一个 SQLite transaction 中批量处理当前句 pending suggestions，UI 的 `A` / `X` 快捷键走这组 endpoint。

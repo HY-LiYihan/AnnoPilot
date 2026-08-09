@@ -234,6 +234,10 @@ GET /api/projects/{project_id}/documents?limit=50
 GET /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50
 GET /api/projects/{project_id}/documents/{document_id}/review-queue?limit=20&order=position
 POST /api/projects/{project_id}/documents/{document_id}/session/cursor
+POST /api/projects/{project_id}/documents/{document_id}/suggestions/run
+POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-annotate
+POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-accept
+POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-reject
 POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/accept
 POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/reject
 GET /api/projects/{project_id}/documents/{document_id}/export.jsonl

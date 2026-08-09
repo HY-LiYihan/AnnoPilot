@@ -75,6 +75,7 @@ DELETE /api/projects/{project_id}/tags/{tag_id}
 POST   /api/projects/{project_id}/documents/{document_id}/suggestions/run
 POST   /api/projects/{project_id}/documents/{document_id}/sentences/{sentence_id}/suggestions/run
 POST   /api/projects/{project_id}/documents/{document_id}/suggestions/auto-accept
+POST   /api/projects/{project_id}/documents/{document_id}/suggestions/auto-annotate
 POST   /api/projects/{project_id}/documents/{document_id}/suggestions/auto-reject
 POST   /api/projects/{project_id}/suggestions/{suggestion_id}/accept
 POST   /api/projects/{project_id}/suggestions/{suggestion_id}/reject

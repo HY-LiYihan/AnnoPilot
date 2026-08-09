@@ -2171,6 +2171,21 @@ class AnnotationStorage:
             "affected_sentence_ids": affected_sentence_ids,
         }
 
+    def auto_annotate_document_suggestions(
+        self,
+        project_id: str,
+        document_id: str,
+        limit_per_sentence: int = 6,
+        min_confidence: float = 0.9,
+    ) -> dict[str, Any]:
+        generated = self.generate_suggestions(project_id, document_id, limit_per_sentence, min_confidence)
+        accepted = self.auto_accept_document_suggestions(project_id, document_id, min_confidence)
+        return {
+            "run_id": generated["run_id"],
+            "suggestions_created": generated["suggestions_created"],
+            **accepted,
+        }
+
     def reject_suggestion(self, project_id: str, suggestion_id: str) -> dict[str, Any]:
         suggestion = self._get_suggestion_row(project_id, suggestion_id)
         if suggestion["status"] != "pending":

@@ -1444,6 +1444,57 @@ def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:
         assert manifest["source_run_ids"] == [suggestion_payload["run_id"]]
 
 
+def test_auto_annotate_generates_and_accepts_high_confidence_spans(tmp_path: Path) -> None:
+    with TestClient(
+        create_app(
+            AnnotationStorage(
+                database_path=tmp_path / "runtime" / "annopilot.sqlite",
+                data_root=tmp_path / "projects",
+            )
+        )
+    ) as client:
+        seed_pos_span_labels(client)
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("story.txt", "清晨，小猫看见金色的叶子。小猫坐在桥边。", "text/plain")},
+        )
+        document_id = response.json()["document_id"]
+
+        auto_annotate = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/auto-annotate",
+            json={"limit_per_sentence": 4, "min_confidence": 0.98},
+        )
+        assert auto_annotate.status_code == 200
+        payload = auto_annotate.json()
+        assert payload["run_id"].startswith("run_")
+        assert payload["suggestions_created"] >= 2
+        assert payload["accepted"] == payload["suggestions_created"]
+        assert payload["skipped"] == 0
+        assert len(payload["accepted_suggestion_ids"]) == payload["accepted"]
+        assert payload["affected_sentence_ids"]
+
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        annotations = [annotation for sentence in document["sentences"] for annotation in sentence["annotations"]]
+        assert len(annotations) == payload["accepted"]
+        assert all(annotation["source"] == "accepted_suggestion" for annotation in annotations)
+        assert document["metrics"]["suggestion_count"] == 0
+
+        runs = client.get(f"/api/projects/default/runs?document_id={document_id}").json()["runs"]
+        assert runs[0]["id"] == payload["run_id"]
+        assert runs[0]["accepted_count"] == payload["accepted"]
+        assert runs[0]["pending_count"] == 0
+
+        events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
+        assert sum(1 for event in events if event["type"] == "suggestions.generated") == 1
+        assert sum(1 for event in events if event["type"] == "annotation.created") == payload["accepted"]
+        assert sum(1 for event in events if event["type"] == "suggestion.accepted") == payload["accepted"]
+        assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert manifest["source_run_ids"] == [payload["run_id"]]
+        assert manifest["annotation_source_counts"] == {"accepted_suggestion": payload["accepted"]}
+
+
 def test_auto_reject_document_suggestions_clears_review_queue(tmp_path: Path) -> None:
     with TestClient(
         create_app(

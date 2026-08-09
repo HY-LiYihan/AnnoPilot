@@ -8,6 +8,7 @@ from ..llm import LlmError
 from ..schemas import (
     AcceptSentenceSuggestionsResponse,
     AcceptSuggestionResponse,
+    AutoAnnotateSuggestionsResponse,
     AutoAcceptSuggestionsRequest,
     AutoAcceptSuggestionsResponse,
     AutoRejectSuggestionsResponse,
@@ -69,6 +70,23 @@ def auto_accept_suggestions(
     try:
         min_confidence = payload.min_confidence if payload else 0.9
         return storage.auto_accept_document_suggestions(project_id, document_id, min_confidence)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/documents/{document_id}/suggestions/auto-annotate", response_model=AutoAnnotateSuggestionsResponse)
+def auto_annotate_suggestions(
+    project_id: str,
+    document_id: str,
+    payload: Optional[GenerateSuggestionsRequest] = None,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> dict:
+    try:
+        limit = payload.limit_per_sentence if payload else 6
+        min_confidence = payload.min_confidence if payload else 0.9
+        return storage.auto_annotate_document_suggestions(project_id, document_id, limit, min_confidence)
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except NotFoundError as exc:

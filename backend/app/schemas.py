@@ -320,6 +320,16 @@ class AutoAcceptSuggestionsRequest(BaseModel):
     min_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
 
 
+class AutoAnnotateSuggestionsResponse(BaseModel):
+    run_id: str
+    suggestions_created: int
+    accepted: int
+    skipped: int
+    min_confidence: float
+    accepted_suggestion_ids: list[str]
+    affected_sentence_ids: list[str]
+
+
 class AutoAcceptSuggestionsResponse(BaseModel):
     accepted: int
     skipped: int

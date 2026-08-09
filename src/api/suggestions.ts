@@ -56,6 +56,23 @@ export async function autoAcceptSuggestions(projectId: string, documentId: strin
   }>(response)
 }
 
+export async function autoAnnotateSuggestions(projectId: string, documentId: string, limitPerSentence = 6, minConfidence = 0.9) {
+  const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/suggestions/auto-annotate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ limit_per_sentence: limitPerSentence, min_confidence: minConfidence }),
+  })
+  return parseJsonResponse<{
+    run_id: string
+    suggestions_created: number
+    accepted: number
+    skipped: number
+    min_confidence: number
+    accepted_suggestion_ids: string[]
+    affected_sentence_ids: string[]
+  }>(response)
+}
+
 export async function rejectSuggestion(projectId: string, suggestionId: string) {
   const response = await fetch(`/api/projects/${projectId}/suggestions/${suggestionId}/reject`, { method: 'POST' })
   return parseJsonResponse<{ rejected: boolean; suggestion_id: string }>(response)

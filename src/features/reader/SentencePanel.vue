@@ -62,6 +62,7 @@ const emit = defineEmits<{
   undo: []
   'generate-current-suggestions': []
   'generate-suggestions': []
+  'auto-annotate-document': []
   'accept-suggestion': [suggestion: SuggestionDef]
   'reject-suggestion': [suggestion: SuggestionDef]
   'accept-current-suggestions': []
@@ -390,6 +391,10 @@ function predicatePositionClasses(
           <button class="suggest-button secondary" :disabled="!documentMeta || isSuggesting" @click="emit('generate-suggestions')">
             <Sparkles :size="16" aria-hidden="true" />
             {{ labels.wholeDoc }}
+          </button>
+          <button class="batch-review-button accept" :disabled="!documentMeta || isSuggesting || isSaving" @click="emit('auto-annotate-document')">
+            <Check :size="16" aria-hidden="true" />
+            {{ labels.autoAnnotate }}
           </button>
           <button class="batch-review-button accept" :disabled="!activeSuggestions.length || isSaving" @click="emit('accept-current-suggestions')">
             <Check :size="16" aria-hidden="true" />

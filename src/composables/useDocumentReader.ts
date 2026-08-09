@@ -22,6 +22,7 @@ import { fetchRuns, runProvenanceExportUrl } from '../api/runs'
 import {
   acceptSuggestion,
   acceptSentenceSuggestions,
+  autoAnnotateSuggestions,
   autoAcceptSuggestions,
   autoRejectSuggestions,
   generateSentenceSuggestions,
@@ -836,6 +837,27 @@ export function useDocumentReader() {
     }
   }
 
+  async function autoAnnotateDocument() {
+    if (!documentMeta.value || isSaving.value || isSuggesting.value) return
+    isSaving.value = true
+    isSuggesting.value = true
+    readerError.value = ''
+    try {
+      const result = await autoAnnotateSuggestions(PROJECT_ID, documentMeta.value.id, suggestionLimit.value, suggestionMinConfidence.value)
+      await loadDocument(documentMeta.value.id, true)
+      await refreshRunHistory()
+      await refreshAuditSummary()
+      if (result.accepted === 0) {
+        readerError.value = `No character RAG spans met the ${Math.round(result.min_confidence * 100)}% threshold.`
+      }
+    } catch (error) {
+      readerError.value = error instanceof Error ? error.message : 'Could not auto-annotate document.'
+    } finally {
+      isSaving.value = false
+      isSuggesting.value = false
+    }
+  }
+
   async function rejectSuggestedSpan(suggestion: SuggestionDef) {
     if (isSaving.value) return
     isSaving.value = true
@@ -1125,6 +1147,7 @@ export function useDocumentReader() {
     acceptSuggestedSpan,
     rejectSuggestedSpan,
     acceptCurrentSentenceSuggestions,
+    autoAnnotateDocument,
     autoAcceptDocumentSuggestions,
     rejectCurrentSentenceSuggestions,
     autoRejectDocumentSuggestions,
