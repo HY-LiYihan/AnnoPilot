@@ -210,6 +210,8 @@ class SuggestionResponse(BaseModel):
     confidence: float
     source: str
     evidence_text: Optional[str] = None
+    match_key: Optional[str] = None
+    evidence_match_key: Optional[str] = None
     context_before: Optional[str] = None
     context_after: Optional[str] = None
     status: str
@@ -424,6 +426,8 @@ class RunProvenanceSuggestionResponse(BaseModel):
     confidence: float
     source: str
     evidence_text: Optional[str] = None
+    match_key: Optional[str] = None
+    evidence_match_key: Optional[str] = None
     context_before: Optional[str] = None
     context_after: Optional[str] = None
     status: str

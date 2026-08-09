@@ -1100,6 +1100,9 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert len(suggestions) <= 4
         assert all(suggestion["run_id"] == suggestion_payload["run_id"] for suggestion in suggestions)
         assert all(suggestion["evidence_text"] for suggestion in suggestions)
+        assert all(suggestion["match_key"] for suggestion in suggestions)
+        assert all(suggestion["evidence_match_key"] for suggestion in suggestions)
+        assert any(suggestion["match_key"] == suggestion["evidence_match_key"] for suggestion in suggestions)
         assert all("context_before" in suggestion and "context_after" in suggestion for suggestion in suggestions)
         assert any(suggestion["context_before"] or suggestion["context_after"] for suggestion in suggestions)
         assert all(suggestion["confidence"] >= 0.98 for suggestion in suggestions)
@@ -1185,6 +1188,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert len(provenance["suggestions"]) == len(suggestions)
         assert provenance["suggestions"][0]["sentence_index"] == 0
         assert provenance["suggestions"][0]["evidence_text"]
+        assert provenance["suggestions"][0]["match_key"]
+        assert provenance["suggestions"][0]["evidence_match_key"]
         assert "context_before" in provenance["suggestions"][0]
         assert "context_after" in provenance["suggestions"][0]
         assert provenance["suggestions"][0]["latest_review"] is None
@@ -1260,6 +1265,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert generated_event["suggestions"][0]["id"] == suggestions[0]["id"]
         assert generated_event["suggestions"][0]["status"] == "pending"
         assert generated_event["suggestions"][0]["evidence_text"] == suggestions[0]["evidence_text"]
+        assert generated_event["suggestions"][0]["match_key"] == suggestions[0]["match_key"]
+        assert generated_event["suggestions"][0]["evidence_match_key"] == suggestions[0]["evidence_match_key"]
         assert generated_event["suggestions"][0]["context_before"] == suggestions[0]["context_before"]
         assert generated_event["suggestions"][0]["context_after"] == suggestions[0]["context_after"]
         assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
@@ -1766,6 +1773,8 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert any(item["latest_review"] and item["latest_review"]["recommendation"] == "accept" for item in exported_suggestions)
         assert any(item["latest_review"] and item["latest_review"]["context_sha256"] == expected_context_sha256 for item in exported_suggestions)
         assert all("evidence_text" in item for item in exported_suggestions)
+        assert all("match_key" in item and item["match_key"] for item in exported_suggestions)
+        assert all("evidence_match_key" in item and item["evidence_match_key"] for item in exported_suggestions)
         assert all("context_before" in item and "context_after" in item for item in exported_suggestions)
 
         accept_response = client.post(f"/api/projects/default/suggestions/{suggestion_id}/accept")
@@ -1878,6 +1887,11 @@ def test_rebuild_project_from_events_restores_runtime_state(tmp_path: Path) -> N
     assert rebuilt_review_hash == original_review_hash
     assert any(
         suggestion["evidence_text"]
+        for sentence in rebuilt_document["sentences"]
+        for suggestion in sentence["suggestions"]
+    )
+    assert any(
+        suggestion["match_key"] and suggestion["evidence_match_key"]
         for sentence in rebuilt_document["sentences"]
         for suggestion in sentence["suggestions"]
     )

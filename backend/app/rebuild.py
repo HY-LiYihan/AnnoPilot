@@ -288,9 +288,10 @@ def _apply_suggestions_generated(conn, project_id: str, event: dict[str, Any]) -
             """
         INSERT OR REPLACE INTO annotation_suggestions (
           id, run_id, sentence_id, tag_id, start_token_index, end_token_index,
-          start_char, end_char, text, confidence, source, evidence_text, context_before, context_after, status, created_at
+          start_char, end_char, text, confidence, source, evidence_text, match_key, evidence_match_key,
+          context_before, context_after, status, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 suggestion["id"],
@@ -305,6 +306,8 @@ def _apply_suggestions_generated(conn, project_id: str, event: dict[str, Any]) -
                 suggestion["confidence"],
                 suggestion["source"],
                 suggestion.get("evidence_text"),
+                suggestion.get("match_key"),
+                suggestion.get("evidence_match_key"),
                 suggestion.get("context_before"),
                 suggestion.get("context_after"),
                 suggestion["status"],

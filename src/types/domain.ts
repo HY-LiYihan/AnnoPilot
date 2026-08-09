@@ -51,6 +51,8 @@ export type SuggestionDef = {
   confidence: number
   source: string
   evidence_text?: string | null
+  match_key?: string | null
+  evidence_match_key?: string | null
   context_before?: string | null
   context_after?: string | null
   status: string

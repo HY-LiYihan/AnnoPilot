@@ -35,6 +35,8 @@ class CandidateSpan:
     confidence: float
     source: str
     evidence_text: str
+    match_key: str
+    evidence_match_key: str
 
 
 def build_examples(tags: list[dict[str, Any]], annotations: list[dict[str, Any]]) -> dict[str, list[str]]:
@@ -87,7 +89,7 @@ def generate_candidate_spans(
             match = _best_match(span_text, examples_by_tag)
             if match is None:
                 continue
-            tag_id, confidence, source, evidence_text = match
+            tag_id, confidence, source, evidence_text, match_key, evidence_match_key = match
             if _is_negative_example(span_text, tag_id, negative_examples_by_tag):
                 continue
             if confidence < min_confidence:
@@ -103,6 +105,8 @@ def generate_candidate_spans(
                     confidence=confidence,
                     source=source,
                     evidence_text=evidence_text,
+                    match_key=match_key,
+                    evidence_match_key=evidence_match_key,
                 )
             )
 
@@ -116,34 +120,34 @@ def generate_candidate_spans(
     return sorted(selected, key=lambda item: (item.start_token_index, item.end_token_index))
 
 
-def _best_match(text: str, examples_by_tag: dict[str, list[str]]) -> tuple[str, float, str, str] | None:
-    best: tuple[str, float, str, str] | None = None
+def _best_match(text: str, examples_by_tag: dict[str, list[str]]) -> tuple[str, float, str, str, str, str] | None:
+    best: tuple[str, float, str, str, str, str] | None = None
     for tag_id, examples in examples_by_tag.items():
         for example in examples:
-            score, source = _score(text, example)
+            score, source, match_key, evidence_match_key = _score(text, example)
             if score <= 0:
                 continue
             if best is None or score > best[1]:
-                best = (tag_id, score, source, example)
+                best = (tag_id, score, source, example, match_key, evidence_match_key)
     return best
 
 
-def _score(text: str, example: str) -> tuple[float, str]:
+def _score(text: str, example: str) -> tuple[float, str, str, str]:
     normalized_text = _normalize_match_text(text)
     normalized_example = _normalize_match_text(example)
     if not normalized_text or not normalized_example:
-        return 0, ""
+        return 0, "", normalized_text, normalized_example
     if normalized_text == normalized_example:
-        return 0.98, "lexical_exact"
+        return 0.98, "lexical_exact", normalized_text, normalized_example
     if len(normalized_text) > 1 and len(normalized_example) > 1 and (
         normalized_text in normalized_example or normalized_example in normalized_text
     ):
         length_ratio = min(len(normalized_text), len(normalized_example)) / max(len(normalized_text), len(normalized_example))
-        return round(0.74 + 0.12 * length_ratio, 4), "lexical_contains"
+        return round(0.74 + 0.12 * length_ratio, 4), "lexical_contains", normalized_text, normalized_example
     similarity = _char_ngram_jaccard(normalized_text, normalized_example)
     if similarity >= MIN_FUZZY_SCORE:
-        return round(0.55 + 0.25 * similarity, 4), "char_ngram"
-    return 0, ""
+        return round(0.55 + 0.25 * similarity, 4), "char_ngram", normalized_text, normalized_example
+    return 0, "", normalized_text, normalized_example
 
 
 def _is_negative_example(text: str, tag_id: str, negative_examples_by_tag: dict[str, list[str]]) -> bool:

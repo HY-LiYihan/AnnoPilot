@@ -74,6 +74,7 @@ POST /api/projects/{project_id}/suggestions/{suggestion_id}/llm-review
 - Suggestions 当前由 Character RAG 生成，支持 document scope 和 sentence scope。
 - `limit_per_sentence` 默认 6，上限 20；`min_confidence` 取值范围 0 到 1。
 - `auto-annotate` 会先运行 Character RAG suggestions，再按同一 `min_confidence` 自动接受高置信 span，形成一键低算力自动标注 slice。
+- Suggestion payload 保留 `evidence_text`、`match_key` 和 `evidence_match_key`，用于审计字符规则实际命中的原始证据与归一化匹配键。
 - Accept 会创建 `source=accepted_suggestion` annotation，并把 suggestion 状态改为 `accepted`。
 - Reject 会把 suggestion 状态改为 `rejected`，后续 Character RAG 会把同 tag + text 当作 negative example。
 - Sentence-level accept/reject 会在一个 SQLite transaction 中批量处理当前句 pending suggestions，UI 的 `A` / `X` 快捷键走这组 endpoint。

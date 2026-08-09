@@ -551,7 +551,7 @@ class AnnotationStorage:
                 f"""
                 SELECT sg.id, sg.run_id, sg.sentence_id, sg.tag_id, tags.name AS tag_name, tags.color AS tag_color,
                        sg.start_token_index, sg.end_token_index, sg.start_char, sg.end_char, sg.text,
-                       sg.confidence, sg.source, sg.evidence_text, sg.context_before, sg.context_after, sg.status, sg.created_at,
+                       sg.confidence, sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after, sg.status, sg.created_at,
                        rev.model AS review_model, rev.recommendation AS review_recommendation,
                        rev.confidence AS review_confidence, rev.rationale AS review_rationale,
                        rev.context_sha256 AS review_context_sha256,
@@ -682,7 +682,7 @@ class AnnotationStorage:
                     f"""
                     SELECT sg.id, sg.run_id, sg.sentence_id, sg.tag_id, tags.name AS tag_name, tags.color AS tag_color,
                            sg.start_token_index, sg.end_token_index, sg.start_char, sg.end_char, sg.text,
-                           sg.confidence, sg.source, sg.evidence_text, sg.context_before, sg.context_after, sg.status, sg.created_at,
+                           sg.confidence, sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after, sg.status, sg.created_at,
                            rev.model AS review_model, rev.recommendation AS review_recommendation,
                            rev.confidence AS review_confidence, rev.rationale AS review_rationale,
                            rev.context_sha256 AS review_context_sha256,
@@ -1722,7 +1722,7 @@ class AnnotationStorage:
                 SELECT sg.id, sg.run_id, sg.sentence_id, s.sentence_index, sg.tag_id,
                        tags.name AS tag_name, tags.color AS tag_color,
                        sg.start_token_index, sg.end_token_index, sg.start_char, sg.end_char,
-                       sg.text, sg.confidence, sg.source, sg.evidence_text, sg.context_before, sg.context_after, sg.status, sg.created_at,
+                       sg.text, sg.confidence, sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after, sg.status, sg.created_at,
                        rev.model AS review_model, rev.recommendation AS review_recommendation,
                        rev.confidence AS review_confidence, rev.rationale AS review_rationale,
                        rev.context_sha256 AS review_context_sha256,
@@ -2008,6 +2008,8 @@ class AnnotationStorage:
                         "confidence": candidate.confidence,
                         "source": candidate.source,
                         "evidence_text": candidate.evidence_text,
+                        "match_key": candidate.match_key,
+                        "evidence_match_key": candidate.evidence_match_key,
                         "context_before": context["context_before"],
                         "context_after": context["context_after"],
                         "status": "pending",
@@ -2018,9 +2020,10 @@ class AnnotationStorage:
                         """
                         INSERT INTO annotation_suggestions (
                           id, run_id, sentence_id, tag_id, start_token_index, end_token_index,
-                          start_char, end_char, text, confidence, source, evidence_text, context_before, context_after, status, created_at
+                          start_char, end_char, text, confidence, source, evidence_text, match_key, evidence_match_key,
+                          context_before, context_after, status, created_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
                         """,
                         (
                             suggestion_record["id"],
@@ -2035,6 +2038,8 @@ class AnnotationStorage:
                             suggestion_record["confidence"],
                             suggestion_record["source"],
                             suggestion_record["evidence_text"],
+                            suggestion_record["match_key"],
+                            suggestion_record["evidence_match_key"],
                             suggestion_record["context_before"],
                             suggestion_record["context_after"],
                             now,
@@ -2413,7 +2418,7 @@ class AnnotationStorage:
                 """
                 SELECT sg.id, sg.tag_id, tags.name AS tag_name, sg.text AS span_text,
                        sg.start_token_index, sg.end_token_index, sg.confidence AS lexical_confidence,
-                       sg.source, sg.evidence_text, sg.context_before, sg.context_after,
+                       sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after,
                        s.id AS sentence_id, s.sentence_index, s.text AS sentence_text,
                        d.id AS document_id, d.filename
                 FROM annotation_suggestions sg
@@ -2454,6 +2459,8 @@ class AnnotationStorage:
                 "lexical_confidence": row["lexical_confidence"],
                 "source": row["source"],
                 "evidence_text": row["evidence_text"],
+                "match_key": row["match_key"],
+                "evidence_match_key": row["evidence_match_key"],
                 "context_before": row["context_before"],
                 "context_after": row["context_after"],
                 "span_context": f"{row['context_before'] or ''}[{row['span_text']}]{row['context_after'] or ''}",
@@ -2518,7 +2525,7 @@ class AnnotationStorage:
                 f"""
                 SELECT sg.id, sg.run_id, sg.sentence_id, sg.tag_id, tags.name AS tag_name, tags.color AS tag_color,
                        sg.start_token_index, sg.end_token_index, sg.start_char, sg.end_char, sg.text,
-                       sg.confidence, sg.source, sg.evidence_text, sg.context_before, sg.context_after, sg.status, sg.created_at,
+                       sg.confidence, sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after, sg.status, sg.created_at,
                        rev.model AS review_model, rev.recommendation AS review_recommendation,
                        rev.confidence AS review_confidence, rev.rationale AS review_rationale,
                        rev.context_sha256 AS review_context_sha256,
@@ -3306,6 +3313,8 @@ class AnnotationStorage:
             "confidence": suggestion["confidence"],
             "match_source": suggestion["source"],
             "evidence_text": suggestion.get("evidence_text"),
+            "match_key": suggestion.get("match_key"),
+            "evidence_match_key": suggestion.get("evidence_match_key"),
             "context_before": suggestion.get("context_before"),
             "context_after": suggestion.get("context_after"),
             "status": suggestion["status"],
@@ -3743,6 +3752,8 @@ class AnnotationStorage:
             "confidence": suggestion["confidence"],
             "source": suggestion["source"],
             "evidence_text": suggestion.get("evidence_text"),
+            "match_key": suggestion.get("match_key"),
+            "evidence_match_key": suggestion.get("evidence_match_key"),
             "context_before": suggestion.get("context_before"),
             "context_after": suggestion.get("context_after"),
             "status": suggestion["status"],
