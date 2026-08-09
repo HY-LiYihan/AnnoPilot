@@ -1004,6 +1004,66 @@ def test_generate_sentence_suggestions_only_scopes_current_sentence(tmp_path: Pa
         assert runs[0]["config"]["sentence_id"] == first_sentence_id
 
 
+def test_sentence_batch_accept_and_reject_suggestions(tmp_path: Path) -> None:
+    with TestClient(
+        create_app(
+            AnnotationStorage(
+                database_path=tmp_path / "runtime" / "annopilot.sqlite",
+                data_root=tmp_path / "projects",
+            )
+        )
+    ) as client:
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("story.txt", "小猫看见金色的叶子。男孩走来。", "text/plain")},
+        )
+        document_id = response.json()["document_id"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=2").json()
+        first_sentence_id = page["sentences"][0]["id"]
+        second_sentence_id = page["sentences"][1]["id"]
+
+        first_payload = client.post(
+            f"/api/projects/default/documents/{document_id}/sentences/{first_sentence_id}/suggestions/run",
+            json={"limit_per_sentence": 4, "min_confidence": 0.98},
+        ).json()
+        second_payload = client.post(
+            f"/api/projects/default/documents/{document_id}/sentences/{second_sentence_id}/suggestions/run",
+            json={"limit_per_sentence": 4, "min_confidence": 0.98},
+        ).json()
+        first_ids = {suggestion["id"] for suggestion in first_payload["suggestions"]}
+        second_ids = {suggestion["id"] for suggestion in second_payload["suggestions"]}
+        assert first_ids
+        assert second_ids
+
+        accepted = client.post(f"/api/projects/default/sentences/{first_sentence_id}/suggestions/accept")
+        assert accepted.status_code == 200
+        accepted_payload = accepted.json()
+        assert accepted_payload["accepted"] == len(first_ids)
+        assert accepted_payload["skipped"] == 0
+        assert set(accepted_payload["accepted_suggestion_ids"]) == first_ids
+        assert accepted_payload["affected_sentence_ids"] == [first_sentence_id]
+        assert len(accepted_payload["annotations"]) == len(first_ids)
+        assert all(annotation["source"] == "accepted_suggestion" for annotation in accepted_payload["annotations"])
+
+        rejected = client.post(f"/api/projects/default/sentences/{second_sentence_id}/suggestions/reject")
+        assert rejected.status_code == 200
+        rejected_payload = rejected.json()
+        assert rejected_payload["rejected"] == len(second_ids)
+        assert set(rejected_payload["rejected_suggestion_ids"]) == second_ids
+        assert rejected_payload["affected_sentence_ids"] == [second_sentence_id]
+
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        assert document["metrics"]["annotation_count"] == len(first_ids)
+        assert document["metrics"]["suggestion_count"] == 0
+        assert all(not sentence["suggestions"] for sentence in document["sentences"])
+
+        events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
+        assert sum(1 for event in events if event["type"] == "annotation.created") == len(first_ids)
+        assert sum(1 for event in events if event["type"] == "suggestion.accepted") == len(first_ids)
+        assert sum(1 for event in events if event["type"] == "suggestion.rejected") == len(second_ids)
+        assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
+
+
 def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:
     with TestClient(
         create_app(

@@ -30,6 +30,17 @@ export async function acceptSuggestion(projectId: string, suggestionId: string) 
   return parseJsonResponse<{ accepted: boolean; annotations: AnnotationDef[] }>(response)
 }
 
+export async function acceptSentenceSuggestions(projectId: string, sentenceId: string) {
+  const response = await fetch(`/api/projects/${projectId}/sentences/${sentenceId}/suggestions/accept`, { method: 'POST' })
+  return parseJsonResponse<{
+    accepted: number
+    skipped: number
+    accepted_suggestion_ids: string[]
+    affected_sentence_ids: string[]
+    annotations: AnnotationDef[]
+  }>(response)
+}
+
 export async function autoAcceptSuggestions(projectId: string, documentId: string, minConfidence = 0.9) {
   const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/suggestions/auto-accept`, {
     method: 'POST',
@@ -48,6 +59,15 @@ export async function autoAcceptSuggestions(projectId: string, documentId: strin
 export async function rejectSuggestion(projectId: string, suggestionId: string) {
   const response = await fetch(`/api/projects/${projectId}/suggestions/${suggestionId}/reject`, { method: 'POST' })
   return parseJsonResponse<{ rejected: boolean; suggestion_id: string }>(response)
+}
+
+export async function rejectSentenceSuggestions(projectId: string, sentenceId: string) {
+  const response = await fetch(`/api/projects/${projectId}/sentences/${sentenceId}/suggestions/reject`, { method: 'POST' })
+  return parseJsonResponse<{
+    rejected: number
+    rejected_suggestion_ids: string[]
+    affected_sentence_ids: string[]
+  }>(response)
 }
 
 export async function autoRejectSuggestions(projectId: string, documentId: string) {

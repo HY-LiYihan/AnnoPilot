@@ -18,11 +18,13 @@ import {
 import { fetchRuns, runProvenanceExportUrl } from '../api/runs'
 import {
   acceptSuggestion,
+  acceptSentenceSuggestions,
   autoAcceptSuggestions,
   autoRejectSuggestions,
   generateSentenceSuggestions,
   generateSuggestions,
   rejectSuggestion,
+  rejectSentenceSuggestions,
   reviewSuggestion,
 } from '../api/suggestions'
 import { createTag, deleteTag as deleteProjectTag, fetchTags, importTagSchema, renameTag as renameProjectTag } from '../api/tags'
@@ -683,19 +685,20 @@ export function useDocumentReader() {
   }
 
   async function acceptCurrentSentenceSuggestions() {
-    const suggestions = [...activeSuggestions.value]
-    if (!suggestions.length || isSaving.value) return
+    const sentence = currentSentence.value
+    if (!sentence || !activeSuggestions.value.length || isSaving.value) return
     isSaving.value = true
     readerError.value = ''
     try {
-      for (const suggestion of suggestions) {
-        const payload = await acceptSuggestion(PROJECT_ID, suggestion.id)
-        replaceSentenceAnnotations(suggestionSentenceId(suggestion), payload.annotations)
-        removeSuggestion(suggestion.id)
-      }
+      const payload = await acceptSentenceSuggestions(PROJECT_ID, sentence.id)
+      replaceSentenceAnnotations(sentence.id, payload.annotations)
       await refreshDocumentSummary()
+      if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
       await refreshAuditSummary()
       jumpToNextReviewIfCurrentCleared()
+      if (payload.accepted === 0 && payload.skipped > 0) {
+        readerError.value = 'Current suggestions overlap existing annotations and were skipped.'
+      }
     } catch (error) {
       readerError.value = error instanceof Error ? error.message : 'Could not accept current suggestions.'
     } finally {
@@ -738,16 +741,14 @@ export function useDocumentReader() {
   }
 
   async function rejectCurrentSentenceSuggestions() {
-    const suggestions = [...activeSuggestions.value]
-    if (!suggestions.length || isSaving.value) return
+    const sentence = currentSentence.value
+    if (!sentence || !activeSuggestions.value.length || isSaving.value) return
     isSaving.value = true
     readerError.value = ''
     try {
-      for (const suggestion of suggestions) {
-        await rejectSuggestion(PROJECT_ID, suggestion.id)
-        removeSuggestion(suggestion.id)
-      }
+      await rejectSentenceSuggestions(PROJECT_ID, sentence.id)
       await refreshDocumentSummary()
+      if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
       await refreshAuditSummary()
       jumpToNextReviewIfCurrentCleared()
     } catch (error) {

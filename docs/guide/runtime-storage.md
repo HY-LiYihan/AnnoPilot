@@ -191,6 +191,8 @@ actor_id
 
 `suggestions.generated` 支持 document scope 和 sentence scope。Sentence scope 用于 UI 的当前句 suggestion action，只清理并替换该句 pending suggestions；document scope 会清理并替换整个 document 的 pending suggestions。
 
+当前句批量 accept/reject 使用 sentence-scoped endpoints，在一个 SQLite transaction 中更新该句所有 pending suggestions。Accept 仍逐条生成可重放的 `annotation.created` 和 `suggestion.accepted` events；reject 逐条生成 `suggestion.rejected` events，保持 JSONL audit trail 可重放。
+
 `suggestion.llm_reviewed` 保存 `context_sha256`，即发送给 OpenAI-compatible reviewer 的完整结构化 context 的 SHA-256 hash。后续 audit 可以区分“同一个 suggestion + model”与“同一个 suggestion 在变化后的 sentence/tag/annotation context 下重新 review”。
 
 `annotations.imported` 是 batch summary event。JSONL annotation import 产生的可重放状态变化，由同一 import transaction 中逐条写出的 `tag.created`、`annotation.deleted`、`annotation.created` 和 `sentence.completed` events 表达。
@@ -223,6 +225,8 @@ GET /api/projects/{project_id}/documents/{document_id}/summary
 GET /api/projects/{project_id}/documents?limit=50
 GET /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50
 POST /api/projects/{project_id}/documents/{document_id}/session/cursor
+POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/accept
+POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/reject
 GET /api/projects/{project_id}/documents/{document_id}/export.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.prodigy.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.manifest.json

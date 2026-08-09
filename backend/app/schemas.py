@@ -295,7 +295,21 @@ class AutoAcceptSuggestionsResponse(BaseModel):
     affected_sentence_ids: list[str]
 
 
+class AcceptSentenceSuggestionsResponse(BaseModel):
+    accepted: int
+    skipped: int
+    accepted_suggestion_ids: list[str]
+    affected_sentence_ids: list[str]
+    annotations: list[AnnotationResponse]
+
+
 class AutoRejectSuggestionsResponse(BaseModel):
+    rejected: int
+    rejected_suggestion_ids: list[str]
+    affected_sentence_ids: list[str]
+
+
+class RejectSentenceSuggestionsResponse(BaseModel):
     rejected: int
     rejected_suggestion_ids: list[str]
     affected_sentence_ids: list[str]

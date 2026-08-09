@@ -6,12 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..llm import LlmError
 from ..schemas import (
+    AcceptSentenceSuggestionsResponse,
     AcceptSuggestionResponse,
     AutoAcceptSuggestionsRequest,
     AutoAcceptSuggestionsResponse,
     AutoRejectSuggestionsResponse,
     GenerateSuggestionsRequest,
     GenerateSuggestionsResponse,
+    RejectSentenceSuggestionsResponse,
     RejectSuggestionResponse,
     ReviewSuggestionResponse,
 )
@@ -101,6 +103,20 @@ def accept_suggestion(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/sentences/{sentence_id}/suggestions/accept", response_model=AcceptSentenceSuggestionsResponse)
+def accept_sentence_suggestions(
+    project_id: str,
+    sentence_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> dict:
+    try:
+        return storage.accept_sentence_suggestions(project_id, sentence_id)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.post("/suggestions/{suggestion_id}/reject", response_model=RejectSuggestionResponse)
 def reject_suggestion(
     project_id: str,
@@ -109,6 +125,20 @@ def reject_suggestion(
 ) -> dict:
     try:
         return storage.reject_suggestion(project_id, suggestion_id)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/sentences/{sentence_id}/suggestions/reject", response_model=RejectSentenceSuggestionsResponse)
+def reject_sentence_suggestions(
+    project_id: str,
+    sentence_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> dict:
+    try:
+        return storage.reject_sentence_suggestions(project_id, sentence_id)
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except NotFoundError as exc:

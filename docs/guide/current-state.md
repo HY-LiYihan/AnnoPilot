@@ -32,6 +32,7 @@ AnnoPilot 现在同时维护两个 surface：
 - 支持只为当前句生成 Character RAG suggestions，也支持全文 suggestions run、批量接受 / 拒绝和 LLM review。
 - Suggestion row 会展示匹配方法、标签、置信度、token/char range、evidence text 和原文上下文窗口，方便人工 review 时判断是否接受。
 - 当前句第一条 suggestion 会标成 `Y/N target`，键盘 `Y` 接受单条、`N` 拒绝单条；`A` / `X` 仍用于当前句批量接受 / 拒绝。
+- 当前句 `A` / `X` 走 sentence-scoped batch endpoint，在一个 SQLite transaction 中处理该句所有 pending suggestions，避免前端逐条循环写入。
 - 支持 review queue position；处理完当前句建议后会自动跳到下一句待确认，保留 `R` 快捷键手动跳转。
 - 支持导出 task JSONL、Prodigy-compatible JSONL、manifest JSON、events JSONL 和 Character RAG run provenance JSON。
 
@@ -76,6 +77,8 @@ POST   /api/projects/{project_id}/documents/{document_id}/suggestions/auto-accep
 POST   /api/projects/{project_id}/documents/{document_id}/suggestions/auto-reject
 POST   /api/projects/{project_id}/suggestions/{suggestion_id}/accept
 POST   /api/projects/{project_id}/suggestions/{suggestion_id}/reject
+POST   /api/projects/{project_id}/sentences/{sentence_id}/suggestions/accept
+POST   /api/projects/{project_id}/sentences/{sentence_id}/suggestions/reject
 POST   /api/projects/{project_id}/suggestions/{suggestion_id}/llm-review
 GET    /api/projects/{project_id}/runs
 GET    /api/projects/{project_id}/runs/{run_id}/provenance.json
