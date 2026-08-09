@@ -1004,6 +1004,7 @@ class AnnotationStorage:
         tag_schema_payload = self.export_tag_schema(project_id)
         tag_schema_line = json.dumps(tag_schema_payload, ensure_ascii=False, sort_keys=True) + "\n"
         runs = self.list_runs(project_id, document_id=document_id, limit=50)
+        annotation_imports = self.list_annotation_imports(project_id, document_id=document_id, limit=50)["imports"]
         run_provenance_artifacts: dict[str, dict[str, Any]] = {}
         for run in runs:
             payload = self.export_run_provenance(project_id, run["id"])
@@ -1030,6 +1031,7 @@ class AnnotationStorage:
             "annotation_source_counts": dict(sorted(source_counts.items())),
             "source_run_ids": [run["id"] for run in runs],
             "runs": runs,
+            "annotation_imports": annotation_imports,
             "event_audit": self._manifest_event_audit(audit_summary),
             "run_provenance_artifacts": run_provenance_artifacts,
             "artifacts": {

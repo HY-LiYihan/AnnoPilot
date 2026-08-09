@@ -206,6 +206,7 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert manifest["metrics"]["answer_counts"] == {"accept": 1, "reject": 0, "ignore": 0, "pending": 1}
         assert manifest["annotation_source_counts"] == {"human": 1}
         assert manifest["source_run_ids"] == []
+        assert manifest["annotation_imports"] == []
         assert manifest["event_audit"]["rebuild_status"] == "ready"
         assert manifest["event_audit"]["event_count"] == manifest["artifacts"]["events_jsonl"]["line_count"]
         assert manifest["event_audit"]["actor_type_counts"] == {"human": manifest["event_audit"]["event_count"]}
@@ -733,6 +734,11 @@ def test_import_prodigy_jsonl_updates_annotations_and_answers(tmp_path: Path) ->
         assert import_history[0]["matched_count"] == 2
         assert import_history[0]["source_sha256"] == imported["source_sha256"]
         assert import_history[0]["source_record_results"][0]["source_metadata"]["_session_id"] == "review-session-1"
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert manifest["annotation_imports"][0]["event_id"] == imported_event["event_id"]
+        assert manifest["annotation_imports"][0]["source_sha256"] == imported["source_sha256"]
+        assert manifest["annotation_imports"][0]["source_record_results"][0]["source_metadata"]["_annotator_id"] == "reviewer-a"
 
         event_path = tmp_path / "projects" / "default" / "events.jsonl"
 
