@@ -11,8 +11,13 @@ AnnoPilot 使用 **VitePress** 维护独立 documentation site。产品 Web UI �
     index.md
     architecture.md
     guide/
+      api.md
+      current-state.md
       documentation.md
       deployment.md
+      development.md
+      runtime-storage.md
+      rosetta-docker-deployment.md
     .vitepress/
       config.ts
 ```
@@ -44,12 +49,12 @@ npm run preview
 - 架构决策、模块边界、部署方式和演进记录放在 `docs/`。
 - 新增大主题时优先放在 `docs/guide/` 或后续新建的专题目录中。
 - 每次改架构文档时，确认 Product Web UI 和 Documentation Site 的边界没有混在一起。
+- 文档描述当前实现时使用“当前已实现”；描述未来能力时使用“后续”“建议”“目标”，避免把 roadmap 写成 shipped feature。
 
 ## 推荐新增页面
 
 后续可以逐步增加：
 
-- `docs/guide/getting-started.md`：本地启动和开发流程。
-- `docs/guide/runtime-storage.md`：SQLite 与 JSONL 的职责分工。
-- `docs/guide/api.md`：FastAPI endpoint 和 OpenAPI 维护方式。
+- `docs/guide/getting-started.md`：面向新用户的最短启动路径。
 - `docs/guide/release-notes.md`：项目演进记录。
+- `docs/guide/operations.md`：Docker 运行、备份、恢复、LLM provider 和常见故障处理。
