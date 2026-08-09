@@ -26,6 +26,37 @@ STATIC_DIR=/app/static
 
 当前服务器上已有一个 `rosetta-app` 容器，公开端口是 `8501`，并把宿主机目录挂载到容器内。新的方案建议把部署整理成一个 compose project，名称使用 `rosetta`，服务名使用 `rosetta-web` 和 `rosetta-api`。
 
+## 当前闭环状态
+
+截至 2026-08-09，Rosetta 自动部署链路已经进入“基本闭环可用”状态：
+
+- GitHub Actions 已新增 `.github/workflows/deploy-rosetta.yml`，只在 `CI` 对 `main` push 成功后构建 `annopilot-api` / `annopilot-web` 镜像，并触发服务器 webhook。
+- 部署资产已进入仓库：`deploy/Dockerfile.api`、`deploy/Dockerfile.web`、`deploy/nginx.conf`、`deploy/compose.rosetta.yml`、`deploy/server/webhook.py`、`deploy/server/deploy.sh` 和 `deploy/server/rosetta-webhook.service`。
+- 服务器侧已安装到 `/opt/rosetta`，`rosetta-webhook.service` 当前验证为 `active`。
+- GitHub secrets 已配置：`ROSETTA_DEPLOY_URL` 和 `ROSETTA_WEBHOOK_SECRET`。
+- 阿里云安全组尚未开放 `9010`，因此当前使用已有 OpenResty 80 端口增加窄路由：`http://8.217.119.172/deploy/rosetta` -> `127.0.0.1:9010/deploy/rosetta`。
+- 新 stack 暂用灰度端口 `18501`，避免影响旧 `rosetta-app` 在 `8501` 上继续运行。
+- 当前 webhook 健康检查已通过：`http://8.217.119.172/rosetta-webhook-healthz`。
+
+已验证的安全行为：
+
+```text
+坏签名 POST -> 400 invalid signature
+有效签名但错误 repo -> 400 repository is not allowed
+```
+
+已验证的本地质量门：
+
+```text
+npm run build                  passed
+npm run docs:build             passed
+python3 -m pytest backend/tests 27 passed
+```
+
+当前本机 Docker daemon 没有开启，因此两个拆分 Dockerfile 的本地 build smoke test 暂未执行；实际镜像 build 会由 GitHub Actions 在 `Deploy Rosetta` workflow 中完成。
+
+最后触发条件：把本地改动 push 到 `main` 后，`CI` 成功会自动触发 `Deploy Rosetta`，由 GitHub Actions 构建 GHCR 镜像并调用服务器 webhook。旧的 `open-webui-openwebui-1` 容器曾被观察到 `Exited (137)`，这与本次 Rosetta 部署链路无直接关系。
+
 ## 推荐目标架构
 
 ```text
