@@ -17,6 +17,7 @@ AnnoPilot 现在同时维护两个 surface：
 
 - 上传 `.txt` 文件到 backend。
 - 自动加载上一次 active document，document id 保存在 `localStorage`。
+- 中间 header 提供 runtime document switcher，可在最近导入的 TXT 文档之间切换，并显示 progress、span count 和待确认建议数。
 - 将文档切分为 sentences，并展示 token-level annotation UI。
 - 中间 reader 使用 sentence window 加载，避免长文档一次性把所有 tokens / annotations / suggestions 塞给前端。
 - 左侧保留全局 sentence dot grid，绿色表示已完成，紫灰色表示已忽略，黄色表示有待确认建议，灰色表示未开始。
@@ -33,7 +34,7 @@ AnnoPilot 现在同时维护两个 surface：
 - 支持 review queue position；处理完当前句建议后会自动跳到下一句待确认，保留 `R` 快捷键手动跳转。
 - 支持导出 task JSONL、Prodigy-compatible JSONL、manifest JSON、events JSONL 和 Character RAG run provenance JSON。
 
-当前 backend 已支持 Prodigy / AnnoPilot style annotations JSONL 导入，但 frontend 入口还没有接上；这块是下一轮 UI 补齐的自然任务。
+当前 backend 和 frontend 已支持 Prodigy / AnnoPilot style annotations JSONL 导入，入口位于右侧 metrics/export panel。
 
 当前默认 tags：
 
@@ -55,6 +56,7 @@ AnnoPilot 现在同时维护两个 surface：
 GET    /api/health
 POST   /api/projects/{project_id}/import-txt
 POST   /api/projects/{project_id}/documents/{document_id}/import-annotations-jsonl
+GET    /api/projects/{project_id}/documents?limit=50
 GET    /api/projects/{project_id}/documents/{document_id}
 GET    /api/projects/{project_id}/documents/{document_id}/summary
 GET    /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50

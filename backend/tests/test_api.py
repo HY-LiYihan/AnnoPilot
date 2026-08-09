@@ -252,6 +252,59 @@ def test_document_summary_and_sentence_paging(tmp_path: Path) -> None:
         assert len(legacy_response.json()["sentences"]) == 4
 
 
+def test_list_documents_returns_runtime_document_index(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        first_import = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("first.txt", "第一句。第二句。", "text/plain")},
+        ).json()
+        second_import = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("second.txt", "清晨，小猫看见金色的叶子。", "text/plain")},
+        ).json()
+
+        first_page = client.get(f"/api/projects/default/documents/{first_import['document_id']}/sentences").json()
+        first_sentence = first_page["sentences"][0]
+        assert client.post(
+            f"/api/projects/default/sentences/{first_sentence['id']}/annotations",
+            json={"tag_id": "noun", "start_token_index": 0, "end_token_index": 1},
+        ).status_code == 200
+        assert client.post(
+            f"/api/projects/default/sentences/{first_sentence['id']}/complete",
+            json={"completed": True, "answer": "accept"},
+        ).status_code == 200
+
+        second_suggestions = client.post(
+            f"/api/projects/default/documents/{second_import['document_id']}/suggestions/run",
+            json={"limit_per_sentence": 2, "min_confidence": 0.98},
+        ).json()["suggestions"]
+        assert second_suggestions
+
+        response = client.get("/api/projects/default/documents?limit=10")
+        assert response.status_code == 200
+        documents = response.json()["documents"]
+        assert [document["id"] for document in documents] == [second_import["document_id"], first_import["document_id"]]
+
+        by_id = {document["id"]: document for document in documents}
+        first = by_id[first_import["document_id"]]
+        assert first["filename"] == "first.txt"
+        assert first["sentence_count"] == 2
+        assert first["completed_count"] == 1
+        assert first["progress"] == 0.5
+        assert first["annotation_count"] == 1
+        assert first["suggestion_count"] == 0
+
+        second = by_id[second_import["document_id"]]
+        assert second["filename"] == "second.txt"
+        assert second["sentence_count"] == 1
+        assert second["annotation_count"] == 0
+        assert second["suggestion_count"] == len(second_suggestions)
+
+
 def test_sentence_ignore_answer_exports_as_ignore(tmp_path: Path) -> None:
     with TestClient(
         create_app(

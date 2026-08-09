@@ -209,6 +209,7 @@ Frontend 在右侧 metrics/export panel 暴露 `Import JSONL` 入口，可把外
 
 ```text
 GET /api/projects/{project_id}/documents/{document_id}/summary
+GET /api/projects/{project_id}/documents?limit=50
 GET /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50
 GET /api/projects/{project_id}/documents/{document_id}/export.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.prodigy.jsonl

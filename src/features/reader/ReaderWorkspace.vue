@@ -30,6 +30,7 @@ onMounted(async () => {
 
 const {
   tags,
+  documents,
   documentMeta,
   sentences,
   metrics,
@@ -61,6 +62,7 @@ const {
   pendingSelection,
   pendingSelectionText,
   handleImport,
+  switchDocument,
   setCurrentSentence,
   jumpToNextReviewSentence,
   completeCurrentSentence,
@@ -152,6 +154,7 @@ const {
 
       <SentencePanel
         :document-meta="documentMeta"
+        :documents="documents"
         :current-sentence="currentSentence"
         :current-sentence-index="currentSentenceIndex"
         :sentences="sentences"
@@ -178,6 +181,7 @@ const {
         :token-prefix="tokenPrefix"
         :token-style="tokenStyle"
         @import="handleImport"
+        @document-change="switchDocument"
         @set-sentence-element="setSentenceElement"
         @sentence-click="onSentenceClick"
         @token-pointer-down="onTokenPointerDown"

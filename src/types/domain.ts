@@ -96,6 +96,13 @@ export type DocumentMeta = {
   token_count: number
 }
 
+export type DocumentListItem = DocumentMeta & {
+  completed_count: number
+  progress: number
+  annotation_count: number
+  suggestion_count: number
+}
+
 export type Metrics = {
   sentence_count: number
   completed_count: number
@@ -175,6 +182,10 @@ export type DocumentPayload = {
   tags: TagDef[]
   sentences: SentenceDef[]
   metrics: Metrics
+}
+
+export type DocumentListPayload = {
+  documents: DocumentListItem[]
 }
 
 export type DocumentSummaryPayload = {

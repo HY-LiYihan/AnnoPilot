@@ -665,6 +665,36 @@ kbd {
   flex: 0 0 auto;
 }
 
+.document-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+  max-width: min(36vw, 420px);
+  padding: 8px 10px;
+  border: 1px solid rgba(24, 31, 36, 0.14);
+  border-radius: 8px;
+  background: #fffefb;
+  color: #4b514f;
+}
+
+.document-switcher svg {
+  flex: 0 0 auto;
+  color: #00685b;
+}
+
+.document-switcher select {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #1f2926;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
 .document-pill {
   gap: 7px;
   flex: 0 0 auto;
@@ -1502,6 +1532,11 @@ kbd {
 
   .document-pill {
     width: max-content;
+  }
+
+  .document-switcher {
+    width: 100%;
+    max-width: none;
   }
 
   .text-reader {

@@ -5,6 +5,7 @@ import {
   completeSentence,
   documentExportUrl,
   eventsExportUrl,
+  fetchDocuments,
   fetchDocumentSentences,
   fetchDocumentSummary,
   importAnnotationsJsonl,
@@ -32,6 +33,7 @@ import {
   type AnnotationRun,
   type AnnotationDef,
   type DocumentMeta,
+  type DocumentListItem,
   type DocumentSummaryPayload,
   type Metrics,
   type RebuildPreview,
@@ -63,6 +65,7 @@ type UndoableSpanAction =
 
 export function useDocumentReader() {
   const tags = ref<TagDef[]>(fallbackTags)
+  const documents = ref<DocumentListItem[]>([])
   const documentMeta = ref<DocumentMeta | null>(null)
   const sentences = ref<SentenceDef[]>([])
   const sentenceQueue = ref<SentenceQueueItem[]>([])
@@ -115,9 +118,12 @@ export function useDocumentReader() {
 
   onMounted(async () => {
     window.addEventListener('keydown', handleKeydown)
+    await loadDocumentList()
     const activeDocumentId = window.localStorage.getItem(ACTIVE_DOCUMENT_KEY)
     if (activeDocumentId) {
       await loadDocument(activeDocumentId)
+    } else if (documents.value.length) {
+      await loadDocument(documents.value[0].id)
     } else {
       await loadProjectTags()
       await refreshAuditSummary()
@@ -155,6 +161,7 @@ export function useDocumentReader() {
       const previousIndex = currentSentenceIndex.value
       const payload = await fetchDocumentSummary(PROJECT_ID, documentId)
       applyDocumentSummary(payload)
+      window.localStorage.setItem(ACTIVE_DOCUMENT_KEY, documentId)
       selection.clearSelection()
       currentSentenceIndex.value = preserveCurrent
         ? clampIndex(previousIndex)
@@ -167,10 +174,28 @@ export function useDocumentReader() {
       await centerCurrentSentence()
       await refreshAuditSummary()
       await refreshRunHistory()
+      await loadDocumentList()
     } catch (error) {
       window.localStorage.removeItem(ACTIVE_DOCUMENT_KEY)
       readerError.value = error instanceof Error ? error.message : 'Could not load document.'
     }
+  }
+
+  async function loadDocumentList() {
+    try {
+      const payload = await fetchDocuments(PROJECT_ID)
+      documents.value = payload.documents
+    } catch {
+      documents.value = []
+    }
+  }
+
+  async function switchDocument(documentId: string) {
+    if (!documentId || documentId === documentMeta.value?.id) return
+    readerError.value = ''
+    lastUndoAction.value = null
+    selection.clearSelection()
+    await loadDocument(documentId)
   }
 
   function applyDocumentSummary(payload: DocumentSummaryPayload) {
@@ -196,6 +221,7 @@ export function useDocumentReader() {
     if (!documentMeta.value) return
     const payload = await fetchDocumentSummary(PROJECT_ID, documentMeta.value.id)
     applyDocumentSummary(payload)
+    await loadDocumentList()
   }
 
   async function loadSentenceWindow(documentId: string, targetIndex: number, force = false) {
@@ -880,6 +906,7 @@ export function useDocumentReader() {
 
   return {
     tags,
+    documents,
     documentMeta,
     sentences,
     metrics,
@@ -911,6 +938,7 @@ export function useDocumentReader() {
     pendingSelection: selection.pendingSelection,
     pendingSelectionText: selection.pendingSelectionText,
     handleImport,
+    switchDocument,
     setCurrentSentence,
     jumpToNextReviewSentence,
     completeCurrentSentence,

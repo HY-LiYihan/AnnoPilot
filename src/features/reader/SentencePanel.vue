@@ -1,13 +1,22 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { Check, Clock, FileText, Sparkles, Undo2, Upload, X } from '@lucide/vue'
-import type { AnnotationDef, DocumentMeta, DragSelection, SentenceDef, SuggestionDef, SuggestionReview } from '../../types/domain'
+import type {
+  AnnotationDef,
+  DocumentListItem,
+  DocumentMeta,
+  DragSelection,
+  SentenceDef,
+  SuggestionDef,
+  SuggestionReview,
+} from '../../types/domain'
 
 const SWIPE_MIN_DISTANCE = 56
 const SWIPE_AXIS_RATIO = 1.4
 
 defineProps<{
   documentMeta: DocumentMeta | null
+  documents: DocumentListItem[]
   currentSentence: SentenceDef | null
   currentSentenceIndex: number
   sentences: SentenceDef[]
@@ -37,6 +46,7 @@ defineProps<{
 
 const emit = defineEmits<{
   import: [event: Event]
+  'document-change': [documentId: string]
   'set-sentence-element': [sentenceId: string, element: unknown]
   'sentence-click': [sentenceIndex: number]
   'token-pointer-down': [sentence: SentenceDef, tokenIndex: number, event: PointerEvent]
@@ -70,6 +80,17 @@ function handleSuggestionLimitInput(event: Event) {
 function handleSuggestionMinConfidenceInput(event: Event) {
   const input = event.target as HTMLInputElement
   emit('suggestion-min-confidence-change', Number(input.value) / 100)
+}
+
+function handleDocumentChange(event: Event) {
+  const select = event.target as HTMLSelectElement
+  emit('document-change', select.value)
+}
+
+function documentOptionText(document: DocumentListItem) {
+  const progress = Math.round(document.progress * 100)
+  const suggestions = document.suggestion_count ? ` · ${document.suggestion_count} AI` : ''
+  return `${document.filename} · ${progress}% · ${document.annotation_count} spans${suggestions}`
 }
 
 const swipeStart = ref<{ x: number; y: number; pointerId: number } | null>(null)
@@ -127,6 +148,14 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
         <h1 id="editor-title">{{ documentMeta?.filename ?? 'Import a TXT file to begin' }}</h1>
       </div>
       <div class="editor-tools">
+        <label v-if="documents.length" class="document-switcher">
+          <FileText :size="16" aria-hidden="true" />
+          <select :value="documentMeta?.id ?? ''" :disabled="isUploading" @change="handleDocumentChange">
+            <option v-for="document in documents" :key="document.id" :value="document.id">
+              {{ documentOptionText(document) }}
+            </option>
+          </select>
+        </label>
         <label class="upload-card editor-upload">
           <Upload :size="19" aria-hidden="true" />
           <span>

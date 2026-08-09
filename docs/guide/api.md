@@ -15,6 +15,7 @@ GET /api/health
 ```text
 POST /api/projects/{project_id}/import-txt
 POST /api/projects/{project_id}/documents/{document_id}/import-annotations-jsonl
+GET  /api/projects/{project_id}/documents?limit=50
 GET  /api/projects/{project_id}/documents/{document_id}
 GET  /api/projects/{project_id}/documents/{document_id}/summary
 GET  /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50
@@ -23,6 +24,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/complete
 
 - `import-txt` 接收 UTF-8 `.txt`，当前大小上限为 10 MB。
 - `import-annotations-jsonl` 接收 Prodigy / AnnoPilot style `.jsonl` annotation records；frontend 在右侧 metrics/export panel 暴露 `Import JSONL` 入口。
+- `documents` 返回最近 runtime documents 的轻量索引，包含 progress、annotation count 和 pending suggestion count，供 frontend 切换已导入文档。
 - `summary` 返回 document meta、tags、metrics 和全局 sentence queue，不返回完整 tokens。
 - `sentences` 返回分页 sentence window，当前 API limit 上限为 200。
 - `complete` 写入 `completed` 和 Prodigy-compatible `answer`，当前支持 `accept`、`ignore`、`reject`、`pending`。

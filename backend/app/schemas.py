@@ -110,6 +110,17 @@ class DocumentMetaResponse(BaseModel):
     token_count: int
 
 
+class DocumentListItemResponse(DocumentMetaResponse):
+    completed_count: int = 0
+    progress: float = 0.0
+    annotation_count: int = 0
+    suggestion_count: int = 0
+
+
+class DocumentListResponse(BaseModel):
+    documents: list[DocumentListItemResponse]
+
+
 class TokenResponse(BaseModel):
     id: str
     token_index: int

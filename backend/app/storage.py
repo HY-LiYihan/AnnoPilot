@@ -222,6 +222,60 @@ class AnnotationStorage:
             "tags": self.get_tags(project_id),
         }
 
+    def list_documents(self, project_id: str, limit: int = 50) -> dict[str, Any]:
+        safe_limit = max(1, min(int(limit), 100))
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                  d.id,
+                  d.project_id,
+                  d.filename,
+                  d.created_at,
+                  (SELECT COUNT(*) FROM sentences s WHERE s.document_id = d.id) AS sentence_count,
+                  (SELECT COUNT(*) FROM tokens t JOIN sentences s ON s.id = t.sentence_id WHERE s.document_id = d.id) AS token_count,
+                  (SELECT COUNT(*) FROM sentences s WHERE s.document_id = d.id AND s.completed = 1) AS completed_count,
+                  (SELECT COUNT(*) FROM annotations a JOIN sentences s ON s.id = a.sentence_id WHERE s.document_id = d.id) AS annotation_count,
+                  (
+                    SELECT COUNT(*)
+                    FROM annotation_suggestions sg
+                    JOIN sentences s ON s.id = sg.sentence_id
+                    WHERE s.document_id = d.id AND sg.status = 'pending'
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM annotations a
+                        WHERE a.sentence_id = sg.sentence_id
+                          AND a.start_token_index <= sg.end_token_index
+                          AND a.end_token_index >= sg.start_token_index
+                      )
+                  ) AS suggestion_count
+                FROM documents d
+                WHERE d.project_id = ?
+                ORDER BY d.created_at DESC, d.id DESC
+                LIMIT ?
+                """,
+                (project_id, safe_limit),
+            ).fetchall()
+        documents = []
+        for row in rows:
+            sentence_count = int(row["sentence_count"] or 0)
+            completed_count = int(row["completed_count"] or 0)
+            documents.append(
+                {
+                    "id": row["id"],
+                    "project_id": row["project_id"],
+                    "filename": row["filename"],
+                    "created_at": row["created_at"],
+                    "sentence_count": sentence_count,
+                    "token_count": int(row["token_count"] or 0),
+                    "completed_count": completed_count,
+                    "progress": completed_count / sentence_count if sentence_count else 0,
+                    "annotation_count": int(row["annotation_count"] or 0),
+                    "suggestion_count": int(row["suggestion_count"] or 0),
+                }
+            )
+        return {"documents": documents}
+
     def get_document(self, project_id: str, document_id: str) -> dict[str, Any]:
         summary = self.get_document_summary(project_id, document_id)
         page = self.get_document_sentences(

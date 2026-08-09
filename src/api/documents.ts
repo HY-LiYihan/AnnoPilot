@@ -1,4 +1,11 @@
-import type { DocumentPayload, DocumentSummaryPayload, ImportAnnotationsResponse, ImportTxtResponse, SentencesPagePayload } from '../types/domain'
+import type {
+  DocumentListPayload,
+  DocumentPayload,
+  DocumentSummaryPayload,
+  ImportAnnotationsResponse,
+  ImportTxtResponse,
+  SentencesPagePayload,
+} from '../types/domain'
 import { parseJsonResponse, responseMessage } from './http'
 
 export async function importTxt(projectId: string, file: File): Promise<ImportTxtResponse> {
@@ -24,6 +31,12 @@ export async function importAnnotationsJsonl(projectId: string, documentId: stri
 export async function fetchDocument(projectId: string, documentId: string): Promise<DocumentPayload> {
   const response = await fetch(`/api/projects/${projectId}/documents/${documentId}`)
   return parseJsonResponse<DocumentPayload>(response)
+}
+
+export async function fetchDocuments(projectId: string, limit = 50): Promise<DocumentListPayload> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  const response = await fetch(`/api/projects/${projectId}/documents?${params.toString()}`)
+  return parseJsonResponse<DocumentListPayload>(response)
 }
 
 export async function fetchDocumentSummary(projectId: string, documentId: string): Promise<DocumentSummaryPayload> {

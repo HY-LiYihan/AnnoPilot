@@ -8,6 +8,7 @@ from ..schemas import (
     CompleteSentenceRequest,
     CompleteSentenceResponse,
     ImportAnnotationsResponse,
+    DocumentListResponse,
     DocumentResponse,
     DocumentSummaryResponse,
     ImportTxtResponse,
@@ -34,6 +35,15 @@ async def import_txt(
         return storage.import_txt(project_id, filename, data)
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/documents", response_model=DocumentListResponse)
+def list_documents(
+    project_id: str,
+    limit: int = Query(50, ge=1, le=100),
+    storage: AnnotationStorage = Depends(get_storage),
+) -> dict:
+    return storage.list_documents(project_id, limit=limit)
 
 
 @router.post("/documents/{document_id}/import-annotations-jsonl", response_model=ImportAnnotationsResponse)
