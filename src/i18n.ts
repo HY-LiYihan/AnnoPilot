@@ -68,7 +68,7 @@ export const UI_LABELS = {
       progressAria: '句子进度点阵',
       progressTitle: '句子进度',
       overallProgress: '总体进度',
-      windowSummary: (start: number, end: number, total: number) => `附近 ${start}-${end} / ${total}`,
+      windowSummary: (start: number, end: number, total: number) => `${start}-${end} / ${total}`,
       windowEmpty: '暂无句子',
       suggestionsWaiting: (count: number) => `${count} 待确认`,
       legendAria: '句子状态图例',
