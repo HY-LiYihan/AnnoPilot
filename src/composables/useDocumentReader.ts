@@ -89,6 +89,8 @@ export function useDocumentReader() {
     progress: 0,
     annotation_count: 0,
     suggestion_count: 0,
+    suggestion_source_counts: {},
+    suggestion_confidence_counts: {},
     accuracy: null,
     accuracy_label: 'Waiting for review data',
   })

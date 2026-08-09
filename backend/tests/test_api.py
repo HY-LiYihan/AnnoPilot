@@ -341,6 +341,8 @@ def test_document_summary_and_sentence_paging(tmp_path: Path) -> None:
         assert summary["document"]["sentence_count"] == 4
         assert summary["document"]["token_count"] > 0
         assert summary["metrics"]["sentence_count"] == 4
+        assert summary["metrics"]["suggestion_source_counts"] == {}
+        assert summary["metrics"]["suggestion_confidence_counts"] == {}
         assert [item["index"] for item in summary["queue"]] == [0, 1, 2, 3]
         assert all(item["completed"] is False for item in summary["queue"])
         assert all(item["suggestion_count"] == 0 for item in summary["queue"])
@@ -1162,6 +1164,11 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert sum(runs[0]["source_counts"].values()) == len(suggestions)
         assert set(runs[0]["source_counts"]).issubset({"lexical_exact", "lexical_contains", "char_ngram"})
 
+        generated_summary = client.get(f"/api/projects/default/documents/{document_id}/summary").json()
+        assert generated_summary["metrics"]["suggestion_count"] == len(suggestions)
+        assert generated_summary["metrics"]["suggestion_source_counts"] == suggestion_payload["source_counts"]
+        assert generated_summary["metrics"]["suggestion_confidence_counts"] == suggestion_payload["confidence_counts"]
+
         accepted = client.post(f"/api/projects/default/suggestions/{suggestions[0]['id']}/accept")
         assert accepted.status_code == 200
         assert accepted.json()["accepted"] is True
@@ -1224,6 +1231,9 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
 
         document = client.get(f"/api/projects/default/documents/{document_id}").json()
         assert document["metrics"]["annotation_count"] == 1
+        assert document["metrics"]["suggestion_count"] == len(suggestions) - 2
+        assert sum(document["metrics"]["suggestion_source_counts"].values()) == len(suggestions) - 2
+        assert sum(document["metrics"]["suggestion_confidence_counts"].values()) == len(suggestions) - 2
         document_annotation = document["sentences"][0]["annotations"][0]
         assert document_annotation["source"] == "accepted_suggestion"
         assert document_annotation["source_suggestion_id"] == suggestions[0]["id"]
@@ -1248,6 +1258,9 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
 
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert manifest["source_run_ids"] == [suggestion_payload["run_id"]]
+        assert manifest["metrics"]["suggestion_count"] == len(suggestions) - 2
+        assert sum(manifest["metrics"]["suggestion_source_counts"].values()) == len(suggestions) - 2
+        assert sum(manifest["metrics"]["suggestion_confidence_counts"].values()) == len(suggestions) - 2
         assert manifest["annotation_source_counts"] == {"accepted_suggestion": 1}
         assert manifest["event_audit"]["event_types"]["suggestions.generated"] == 1
         assert manifest["event_audit"]["actor_type_counts"]["system"] >= 2

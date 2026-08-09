@@ -40,7 +40,11 @@ function runLimit(run: AnnotationRun) {
 }
 
 function runSourceSummary(run: AnnotationRun, labels: UiLabels['metrics']) {
-  const sourceCounts = Object.entries(run.source_counts ?? {})
+  return sourceSummary(run.source_counts, labels)
+}
+
+function sourceSummary(counts: Record<string, number> | undefined, labels: UiLabels['metrics']) {
+  const sourceCounts = Object.entries(counts ?? {})
     .filter(([, count]) => count > 0)
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
   if (!sourceCounts.length) return ''
@@ -51,7 +55,11 @@ function runSourceSummary(run: AnnotationRun, labels: UiLabels['metrics']) {
 }
 
 function runConfidenceSummary(run: AnnotationRun, labels: UiLabels['metrics']) {
-  const confidenceCounts = Object.entries(run.confidence_counts ?? {})
+  return confidenceSummary(run.confidence_counts, labels)
+}
+
+function confidenceSummary(counts: Record<string, number> | undefined, labels: UiLabels['metrics']) {
+  const confidenceCounts = Object.entries(counts ?? {})
     .filter(([, count]) => count > 0)
     .sort(([leftBucket], [rightBucket]) => confidenceBucketOrder(leftBucket) - confidenceBucketOrder(rightBucket))
   if (!confidenceCounts.length) return ''
@@ -119,7 +127,11 @@ function shortHash(value: string) {
         <Sparkles :size="22" aria-hidden="true" />
         <span>{{ labels.suggestions }}</span>
         <strong>{{ metrics.suggestion_count }}</strong>
-        <small>{{ labels.ragQueue }}</small>
+        <small>
+          {{ labels.ragQueue }}
+          <template v-if="sourceSummary(metrics.suggestion_source_counts, labels)"> · {{ labels.sourceMix }} {{ sourceSummary(metrics.suggestion_source_counts, labels) }}</template>
+          <template v-if="confidenceSummary(metrics.suggestion_confidence_counts, labels)"> · {{ labels.confidenceMix }} {{ confidenceSummary(metrics.suggestion_confidence_counts, labels) }}</template>
+        </small>
       </article>
       <article class="metric-card" :class="{ warning: auditSummary?.rebuild_status === 'needs_attention' }">
         <DatabaseZap :size="22" aria-hidden="true" />

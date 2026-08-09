@@ -364,6 +364,22 @@ class AnnotationStorage:
                 """,
                 (document_id,),
             ).fetchone()["count"]
+            suggestion_metric_rows = conn.execute(
+                """
+                SELECT sg.source, sg.confidence
+                FROM annotation_suggestions sg
+                JOIN sentences s ON s.id = sg.sentence_id
+                WHERE s.document_id = ? AND sg.status = 'pending'
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM annotations a
+                    WHERE a.sentence_id = sg.sentence_id
+                      AND a.start_token_index <= sg.end_token_index
+                      AND a.end_token_index >= sg.start_token_index
+                  )
+                """,
+                (document_id,),
+            ).fetchall()
             review_metric_rows = conn.execute(
                 """
                 SELECT sg.status, rev.recommendation
@@ -430,6 +446,7 @@ class AnnotationStorage:
         tag_counts = {row["tag_id"]: row["count"] for row in tag_count_rows}
         for tag in tags:
             tag["count"] = tag_counts.get(tag["id"], 0)
+        visible_suggestion_metrics = [self._row_dict(row) for row in suggestion_metric_rows]
 
         return {
             "document": {
@@ -448,6 +465,8 @@ class AnnotationStorage:
                 "progress": completed_count / sentence_count if sentence_count else 0,
                 "annotation_count": annotation_count,
                 "suggestion_count": suggestion_count,
+                "suggestion_source_counts": self._suggestion_source_counts(visible_suggestion_metrics),
+                "suggestion_confidence_counts": self._suggestion_confidence_counts(visible_suggestion_metrics),
                 "accuracy": review_agreements / review_total if review_total else None,
                 "accuracy_label": (
                     f"LLM review agreement ({review_agreements}/{review_total})"

@@ -261,6 +261,8 @@ class MetricsResponse(BaseModel):
     progress: float
     annotation_count: int
     suggestion_count: int = 0
+    suggestion_source_counts: dict[str, int] = Field(default_factory=dict)
+    suggestion_confidence_counts: dict[str, int] = Field(default_factory=dict)
     accuracy: Optional[float]
     accuracy_label: str
 
