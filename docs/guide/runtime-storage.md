@@ -31,7 +31,14 @@ Docker runtime 默认：
 
 当前 SQLite schema 主要服务 TXT reader、manual annotation、Character RAG suggestions 和 JSONL rebuild/audit。
 
+Schema lifecycle 由 `backend/app/db/migrations.py` 管理。`schema_version` 记录已经应用的 migration version；baseline table/index SQL 放在 `backend/app/db/schema.py`，`AnnotationStorage` 只在初始化时调用 migration runner，不再直接持有建表 SQL。
+
 ```text
+schema_version
+  version
+  name
+  applied_at
+
 tags
   id
   project_id
@@ -114,6 +121,7 @@ annotation_suggestion_reviews
   recommendation
   confidence
   rationale
+  context_sha256
   created_at
 
 annotation_sessions

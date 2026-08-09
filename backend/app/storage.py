@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from .db.connection import configure_connection, connect_database
+from .db.migrations import migrate_database
 from .rag import (
     CHARACTER_RAG_RETRIEVAL,
     build_examples,
@@ -109,16 +111,14 @@ class AnnotationStorage:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.data_root.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys=ON")
-            self._create_schema(conn)
+            configure_connection(conn, enable_wal=True)
+            migrate_database(conn)
+            self._backfill_default_tag_descriptions(conn)
+            self._backfill_default_tag_examples(conn)
             self._seed_tags(conn, DEFAULT_PROJECT_ID)
 
     def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.database_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        return connect_database(self.database_path)
 
     def import_txt(self, project_id: str, filename: str, data: bytes) -> dict[str, Any]:
         text = self._decode_txt_payload(data)
@@ -2670,150 +2670,6 @@ class AnnotationStorage:
             return {"actor_type": "system", "actor_id": CHARACTER_RAG_ACTOR_ID}
         return {"actor_type": "human", "actor_id": HUMAN_ACTOR_ID}
 
-    def _create_schema(self, conn: sqlite3.Connection) -> None:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS tags (
-              id TEXT NOT NULL,
-              project_id TEXT NOT NULL,
-              name TEXT NOT NULL,
-              description TEXT,
-              examples_json TEXT NOT NULL DEFAULT '[]',
-              shortcut TEXT NOT NULL,
-              color TEXT NOT NULL,
-              PRIMARY KEY (project_id, id)
-            );
-
-            CREATE TABLE IF NOT EXISTS runtime_settings (
-              key TEXT PRIMARY KEY,
-              value TEXT NOT NULL,
-              updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS documents (
-              id TEXT PRIMARY KEY,
-              project_id TEXT NOT NULL,
-              filename TEXT NOT NULL,
-              text TEXT NOT NULL,
-              created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS sentences (
-              id TEXT PRIMARY KEY,
-              document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-              sentence_index INTEGER NOT NULL,
-              text TEXT NOT NULL,
-              start_char INTEGER NOT NULL,
-              end_char INTEGER NOT NULL,
-              completed INTEGER NOT NULL DEFAULT 0,
-              answer TEXT NOT NULL DEFAULT 'pending'
-            );
-
-            CREATE TABLE IF NOT EXISTS tokens (
-              id TEXT PRIMARY KEY,
-              sentence_id TEXT NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
-              token_index INTEGER NOT NULL,
-              text TEXT NOT NULL,
-              start_char INTEGER NOT NULL,
-              end_char INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS annotations (
-              id TEXT PRIMARY KEY,
-              sentence_id TEXT NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
-              tag_id TEXT NOT NULL,
-              start_token_index INTEGER NOT NULL,
-              end_token_index INTEGER NOT NULL,
-              start_char INTEGER NOT NULL,
-              end_char INTEGER NOT NULL,
-              text TEXT NOT NULL,
-              source TEXT NOT NULL DEFAULT 'human',
-              source_suggestion_id TEXT,
-              created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS annotation_suggestions (
-              id TEXT PRIMARY KEY,
-              run_id TEXT,
-              sentence_id TEXT NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
-              tag_id TEXT NOT NULL,
-              start_token_index INTEGER NOT NULL,
-              end_token_index INTEGER NOT NULL,
-              start_char INTEGER NOT NULL,
-              end_char INTEGER NOT NULL,
-              text TEXT NOT NULL,
-              confidence REAL NOT NULL,
-              source TEXT NOT NULL,
-              evidence_text TEXT,
-              context_before TEXT,
-              context_after TEXT,
-              status TEXT NOT NULL DEFAULT 'pending',
-              created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS annotation_runs (
-              id TEXT PRIMARY KEY,
-              project_id TEXT NOT NULL,
-              document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-              recipe TEXT NOT NULL,
-              config_json TEXT NOT NULL,
-              input_count INTEGER NOT NULL,
-              suggestion_count INTEGER NOT NULL,
-              created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS annotation_suggestion_reviews (
-              id TEXT PRIMARY KEY,
-              suggestion_id TEXT NOT NULL REFERENCES annotation_suggestions(id) ON DELETE CASCADE,
-              model TEXT NOT NULL,
-              recommendation TEXT NOT NULL,
-              confidence REAL NOT NULL,
-              rationale TEXT NOT NULL,
-              context_sha256 TEXT,
-              created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS annotation_sessions (
-              id TEXT NOT NULL,
-              project_id TEXT NOT NULL,
-              document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-              actor_id TEXT NOT NULL,
-              current_sentence_index INTEGER NOT NULL,
-              updated_at TEXT NOT NULL,
-              PRIMARY KEY (project_id, document_id, id)
-            );
-
-            CREATE TABLE IF NOT EXISTS event_outbox (
-              id TEXT PRIMARY KEY,
-              project_id TEXT NOT NULL,
-              event_json TEXT NOT NULL,
-              created_at TEXT NOT NULL,
-              flushed_at TEXT
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_sentences_document ON sentences(document_id, sentence_index);
-            CREATE INDEX IF NOT EXISTS idx_tokens_sentence ON tokens(sentence_id, token_index);
-            CREATE INDEX IF NOT EXISTS idx_annotations_sentence ON annotations(sentence_id, start_token_index);
-            CREATE INDEX IF NOT EXISTS idx_suggestions_sentence ON annotation_suggestions(sentence_id, status, start_token_index);
-            CREATE INDEX IF NOT EXISTS idx_annotation_runs_project ON annotation_runs(project_id, document_id, created_at);
-            CREATE INDEX IF NOT EXISTS idx_suggestion_reviews ON annotation_suggestion_reviews(suggestion_id, created_at);
-            CREATE INDEX IF NOT EXISTS idx_annotation_sessions_document ON annotation_sessions(project_id, document_id, updated_at);
-            CREATE INDEX IF NOT EXISTS idx_event_outbox_pending ON event_outbox(project_id, flushed_at, created_at);
-            """
-        )
-        self._ensure_column(conn, "tags", "description", "TEXT")
-        self._ensure_column(conn, "tags", "examples_json", "TEXT")
-        self._ensure_column(conn, "sentences", "answer", "TEXT NOT NULL DEFAULT 'pending'")
-        self._ensure_column(conn, "annotations", "source", "TEXT NOT NULL DEFAULT 'human'")
-        self._ensure_column(conn, "annotations", "source_suggestion_id", "TEXT")
-        self._ensure_column(conn, "annotation_suggestions", "run_id", "TEXT")
-        self._ensure_column(conn, "annotation_suggestions", "evidence_text", "TEXT")
-        self._ensure_column(conn, "annotation_suggestions", "context_before", "TEXT")
-        self._ensure_column(conn, "annotation_suggestions", "context_after", "TEXT")
-        self._ensure_column(conn, "annotation_suggestion_reviews", "context_sha256", "TEXT")
-        self._backfill_default_tag_descriptions(conn)
-        self._backfill_default_tag_examples(conn)
-
     def _seed_tags(self, conn: sqlite3.Connection, project_id: str) -> None:
         self._remove_legacy_seeded_tags(conn, project_id)
         existing_count = conn.execute("SELECT COUNT(*) AS count FROM tags WHERE project_id = ?", (project_id,)).fetchone()[
@@ -3225,12 +3081,6 @@ class AnnotationStorage:
     @staticmethod
     def _shortcut_order(shortcut: str) -> int:
         return int(shortcut) if shortcut.isdigit() else 10_000
-
-    @staticmethod
-    def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, column_type: str) -> None:
-        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
-        if column_name not in columns:
-            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
 
     def _get_suggestion_row(self, project_id: str, suggestion_id: str) -> sqlite3.Row:
         with self.connect() as conn:
