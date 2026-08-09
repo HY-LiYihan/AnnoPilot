@@ -609,8 +609,17 @@ class AnnotationStorage:
             "has_more": offset + len(sentences) < total,
         }
 
-    def get_review_queue(self, project_id: str, document_id: str, limit: int = 20) -> dict[str, Any]:
+    def get_review_queue(self, project_id: str, document_id: str, limit: int = 20, order: str = "position") -> dict[str, Any]:
         safe_limit = max(1, min(int(limit), 100))
+        normalized_order = str(order or "position").strip().lower()
+        if normalized_order not in {"position", "uncertain"}:
+            raise ValidationError("Review queue order must be position or uncertain.")
+        order_sql = "MIN(sg.confidence) ASC, s.sentence_index" if normalized_order == "uncertain" else "s.sentence_index"
+        suggestion_order_sql = (
+            "s.sentence_index, sg.confidence ASC, sg.start_token_index, sg.id"
+            if normalized_order == "uncertain"
+            else "s.sentence_index, sg.start_token_index, sg.confidence DESC, sg.id"
+        )
         with self.connect() as conn:
             document = conn.execute(
                 "SELECT id FROM documents WHERE id = ? AND project_id = ?",
@@ -640,8 +649,9 @@ class AnnotationStorage:
                 (document_id,),
             ).fetchone()["count"]
             sentence_rows = conn.execute(
-                """
-                SELECT s.id, s.sentence_index, s.text, COUNT(DISTINCT sg.id) AS suggestion_count
+                f"""
+                SELECT s.id, s.sentence_index, s.text, COUNT(DISTINCT sg.id) AS suggestion_count,
+                       MIN(sg.confidence) AS priority_score
                 FROM sentences s
                 JOIN annotation_suggestions sg ON sg.sentence_id = s.id
                 WHERE s.document_id = ? AND s.completed = 0 AND sg.status = 'pending'
@@ -653,7 +663,7 @@ class AnnotationStorage:
                       AND a.end_token_index >= sg.start_token_index
                   )
                 GROUP BY s.id, s.sentence_index, s.text
-                ORDER BY s.sentence_index
+                ORDER BY {order_sql}
                 LIMIT ?
                 """,
                 (document_id, safe_limit),
@@ -690,7 +700,7 @@ class AnnotationStorage:
                           AND a.start_token_index <= sg.end_token_index
                           AND a.end_token_index >= sg.start_token_index
                       )
-                    ORDER BY s.sentence_index, sg.start_token_index, sg.confidence DESC, sg.id
+                    ORDER BY {suggestion_order_sql}
                     """,
                     sentence_ids,
                 ).fetchall()
@@ -704,6 +714,7 @@ class AnnotationStorage:
                     "index": row["sentence_index"],
                     "text": row["text"],
                     "suggestion_count": row["suggestion_count"],
+                    "priority_score": float(row["priority_score"] or 0),
                     "first_suggestion": first_suggestion_by_sentence.get(row["id"]),
                 }
                 for row in sentence_rows

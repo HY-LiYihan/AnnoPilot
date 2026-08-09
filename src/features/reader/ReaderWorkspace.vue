@@ -48,6 +48,7 @@ const {
   runHistory,
   reviewQueueDetails,
   reviewQueueTotal,
+  reviewQueueOrder,
   suggestionReviews,
   reviewingSuggestionId,
   currentSentence,
@@ -67,6 +68,7 @@ const {
   switchDocument,
   setCurrentSentence,
   jumpToNextReviewSentence,
+  setReviewQueueOrder,
   completeCurrentSentence,
   reopenCurrentSentence,
   generateDocumentSuggestions,
@@ -220,6 +222,7 @@ const {
         :run-history="runHistory"
         :review-queue-details="reviewQueueDetails"
         :review-queue-total="reviewQueueTotal"
+        :review-queue-order="reviewQueueOrder"
         :progress-percent="progressPercent"
         :reviewed-summary="reviewedSummary"
         :is-verifying-rebuild="isVerifyingRebuild"
@@ -227,6 +230,7 @@ const {
         @export-prodigy="exportProdigyJsonl"
         @import-annotations="handleAnnotationImport"
         @review-sentence="setCurrentSentence"
+        @review-order-change="setReviewQueueOrder"
         @export-manifest="exportManifestJson"
         @export-events="exportEventsJsonl"
         @export-tag-schema="exportTagSchemaJson"

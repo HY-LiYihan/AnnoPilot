@@ -101,6 +101,7 @@ export function useDocumentReader() {
   const runHistory = ref<AnnotationRun[]>([])
   const reviewQueueDetails = ref<ReviewQueueItem[]>([])
   const reviewQueueTotal = ref(0)
+  const reviewQueueOrder = ref<'position' | 'uncertain'>('position')
   const suggestionReviews = ref<Record<string, SuggestionReview>>({})
   const reviewingSuggestionId = ref('')
   const lastUndoAction = ref<UndoableSpanAction | null>(null)
@@ -253,13 +254,19 @@ export function useDocumentReader() {
       return
     }
     try {
-      const payload = await fetchReviewQueue(PROJECT_ID, documentMeta.value.id)
+      const payload = await fetchReviewQueue(PROJECT_ID, documentMeta.value.id, 20, reviewQueueOrder.value)
       reviewQueueDetails.value = payload.items
       reviewQueueTotal.value = payload.total
     } catch {
       reviewQueueDetails.value = []
       reviewQueueTotal.value = 0
     }
+  }
+
+  function setReviewQueueOrder(order: 'position' | 'uncertain') {
+    if (reviewQueueOrder.value === order) return
+    reviewQueueOrder.value = order
+    void refreshReviewQueue()
   }
 
   async function loadSentenceWindow(documentId: string, targetIndex: number, force = false) {
@@ -1016,6 +1023,7 @@ export function useDocumentReader() {
     runHistory,
     reviewQueueDetails,
     reviewQueueTotal,
+    reviewQueueOrder,
     suggestionReviews,
     reviewingSuggestionId,
     currentSentence,
@@ -1035,6 +1043,7 @@ export function useDocumentReader() {
     switchDocument,
     setCurrentSentence,
     jumpToNextReviewSentence,
+    setReviewQueueOrder,
     completeCurrentSentence,
     reopenCurrentSentence,
     generateDocumentSuggestions,

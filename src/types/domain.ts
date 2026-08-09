@@ -94,6 +94,7 @@ export type ReviewQueueItem = {
   index: number
   text: string
   suggestion_count: number
+  priority_score: number
   first_suggestion: SuggestionDef | null
 }
 

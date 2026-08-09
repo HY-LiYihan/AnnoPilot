@@ -56,8 +56,8 @@ export async function fetchDocumentSentences(
   return parseJsonResponse<SentencesPagePayload>(response)
 }
 
-export async function fetchReviewQueue(projectId: string, documentId: string, limit = 20): Promise<ReviewQueuePayload> {
-  const params = new URLSearchParams({ limit: String(limit) })
+export async function fetchReviewQueue(projectId: string, documentId: string, limit = 20, order: 'position' | 'uncertain' = 'position'): Promise<ReviewQueuePayload> {
+  const params = new URLSearchParams({ limit: String(limit), order })
   const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/review-queue?${params.toString()}`)
   return parseJsonResponse<ReviewQueuePayload>(response)
 }

@@ -1128,6 +1128,53 @@ def test_review_queue_lists_pending_suggestion_sentences(tmp_path: Path) -> None
         assert updated_queue["items"] == []
 
 
+def test_review_queue_can_prioritize_uncertain_suggestions(tmp_path: Path) -> None:
+    with TestClient(
+        create_app(
+            AnnotationStorage(
+                database_path=tmp_path / "runtime" / "annopilot.sqlite",
+                data_root=tmp_path / "projects",
+            )
+        )
+    ) as client:
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("report.txt", "Carbon emissions rose. Carbon emission rose.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        concept_tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "概念", "description": "英文或中文概念短语。", "examples": ["carbon emissions"]},
+        ).json()["tag"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=2").json()
+        exact_sentence_id = page["sentences"][0]["id"]
+        uncertain_sentence_id = page["sentences"][1]["id"]
+
+        suggestion_response = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 3, "min_confidence": 0.7},
+        )
+        assert suggestion_response.status_code == 200
+        suggestions = suggestion_response.json()["suggestions"]
+        assert any(suggestion["sentence_id"] == exact_sentence_id and suggestion["confidence"] == 0.98 for suggestion in suggestions)
+        assert any(
+            suggestion["sentence_id"] == uncertain_sentence_id
+            and suggestion["tag_id"] == concept_tag["id"]
+            and suggestion["confidence"] < 0.98
+            for suggestion in suggestions
+        )
+
+        by_position = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=position").json()
+        assert [item["id"] for item in by_position["items"]] == [exact_sentence_id, uncertain_sentence_id]
+
+        by_uncertainty = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=uncertain").json()
+        assert [item["id"] for item in by_uncertainty["items"]] == [uncertain_sentence_id, exact_sentence_id]
+        assert by_uncertainty["items"][0]["priority_score"] < by_uncertainty["items"][1]["priority_score"]
+
+        invalid_order = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=random")
+        assert invalid_order.status_code == 400
+
+
 def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:
     with TestClient(
         create_app(

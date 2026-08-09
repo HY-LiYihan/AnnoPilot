@@ -10,6 +10,7 @@ defineProps<{
   runHistory: AnnotationRun[]
   reviewQueueDetails: ReviewQueueItem[]
   reviewQueueTotal: number
+  reviewQueueOrder: 'position' | 'uncertain'
   progressPercent: number
   reviewedSummary: string
   isVerifyingRebuild: boolean
@@ -24,6 +25,7 @@ const emit = defineEmits<{
   'export-run-provenance': [runId: string]
   'import-annotations': [file: File]
   'review-sentence': [sentenceIndex: number]
+  'review-order-change': [order: 'position' | 'uncertain']
   'verify-rebuild': []
 }>()
 
@@ -49,7 +51,8 @@ function submitAnnotationImport(event: Event) {
 
 function queuePreviewText(item: ReviewQueueItem) {
   const suggestion = item.first_suggestion
-  return suggestion ? `${suggestion.tag_name}: ${suggestion.text}` : `${item.suggestion_count} pending suggestions`
+  const confidence = `${Math.round(item.priority_score * 100)}%`
+  return suggestion ? `${suggestion.tag_name}: ${suggestion.text} · ${confidence}` : `${item.suggestion_count} pending suggestions`
 }
 </script>
 
@@ -201,6 +204,14 @@ function queuePreviewText(item: ReviewQueueItem) {
       <div class="progress-header">
         <span>Review Queue</span>
         <strong>{{ reviewQueueTotal }} pending</strong>
+      </div>
+      <div class="review-order-toggle" aria-label="Review queue ordering">
+        <button type="button" :class="{ active: reviewQueueOrder === 'position' }" @click="emit('review-order-change', 'position')">
+          Position
+        </button>
+        <button type="button" :class="{ active: reviewQueueOrder === 'uncertain' }" @click="emit('review-order-change', 'uncertain')">
+          Uncertain
+        </button>
       </div>
       <div class="review-queue-list">
         <button
