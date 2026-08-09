@@ -9,11 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import annotations, documents, exports, health
+from .api import annotations, audit, documents, exports, health, runs, suggestions, tags
 from .storage import AnnotationStorage
 
 
-def create_app(storage: AnnotationStorage | None = None) -> FastAPI:
+def create_app(storage: AnnotationStorage | None = None, suggestion_reviewer=None) -> FastAPI:
     storage = storage or AnnotationStorage(
         database_path=Path(os.getenv("DATABASE_PATH", "/data/runtime/annopilot.sqlite")),
         data_root=Path(os.getenv("DATA_ROOT", "/data/projects")),
@@ -26,6 +26,7 @@ def create_app(storage: AnnotationStorage | None = None) -> FastAPI:
 
     app = FastAPI(title="AnnoPilot API", lifespan=lifespan)
     app.state.storage = storage
+    app.state.suggestion_reviewer = suggestion_reviewer
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -34,8 +35,12 @@ def create_app(storage: AnnotationStorage | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health.router)
+    app.include_router(audit.router)
     app.include_router(documents.router)
+    app.include_router(runs.router)
     app.include_router(annotations.router)
+    app.include_router(tags.router)
+    app.include_router(suggestions.router)
     app.include_router(exports.router)
 
     static_dir = Path(os.getenv("STATIC_DIR", Path.cwd() / "static"))

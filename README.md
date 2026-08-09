@@ -34,9 +34,7 @@ This makes it useful for linguistics, digital humanities, NLP research, and doma
 
 ## Status
 
-This repository is being prepared as the public project home for AnnoPilot.
-
-The original implementation is being migrated from the Rosetta codebase. Until the migration is complete, this repository may contain project notes, design documents, and release planning before the full application code lands.
+AnnoPilot currently has a runnable first slice: Vue 3 + Vite web UI, FastAPI backend, SQLite runtime state, JSONL audit/export artifacts, character-match RAG suggestions, and Docker deployment support. The project is still early, but it is no longer documentation-only.
 
 ## Documentation
 
@@ -57,6 +55,7 @@ The original implementation is being migrated from the Rosetta codebase. Until t
 - manual span and relation annotation
 - JSONL export, reports, and run manifests
 - Docker deployment path
+- one-container Docker compose with `/data` persistence
 
 See [Architecture](docs/architecture.md) for the proposed non-Streamlit runtime design.
 

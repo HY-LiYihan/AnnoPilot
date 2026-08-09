@@ -1,0 +1,19 @@
+[Unit]
+Description=Rosetta deployment webhook
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/opt/rosetta/webhook.env
+ExecStart=/usr/bin/python3 /opt/rosetta/bin/webhook.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/opt/rosetta /tmp
+
+[Install]
+WantedBy=multi-user.target

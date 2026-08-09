@@ -1,0 +1,32 @@
+name: rosetta
+
+services:
+  rosetta-api:
+    image: ghcr.io/hy-liyihan/annopilot-api:${ROSETTA_IMAGE_TAG:-main}
+    container_name: rosetta-api
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      DATA_ROOT: /data/projects
+      DATABASE_PATH: /data/runtime/annopilot.sqlite
+      STATIC_DIR: /app/static
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - /opt/rosetta/data:/data
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  rosetta-web:
+    image: ghcr.io/hy-liyihan/annopilot-web:${ROSETTA_IMAGE_TAG:-main}
+    container_name: rosetta-web
+    restart: unless-stopped
+    depends_on:
+      rosetta-api:
+        condition: service_healthy
+    ports:
+      - "${ROSETTA_WEB_PORT:-8501}:80"

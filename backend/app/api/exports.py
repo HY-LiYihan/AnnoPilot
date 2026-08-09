@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
+from ..schemas import ExportManifestResponse, TagSchemaExportResponse
 from ..storage import AnnotationStorage, NotFoundError
 from .dependencies import get_storage
 
@@ -22,3 +23,51 @@ def export_document(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     headers = {"Content-Disposition": f'attachment; filename="{document_id}.jsonl"'}
     return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
+
+
+@router.get("/documents/{document_id}/export.prodigy.jsonl")
+def export_prodigy_document(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> StreamingResponse:
+    try:
+        lines = storage.export_prodigy_document_lines(project_id, document_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.prodigy.jsonl"'}
+    return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
+
+
+@router.get("/documents/{document_id}/export.manifest.json", response_model=ExportManifestResponse)
+def export_manifest(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> JSONResponse:
+    try:
+        manifest = storage.export_manifest(project_id, document_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.manifest.json"'}
+    return JSONResponse(manifest, headers=headers)
+
+
+@router.get("/events.jsonl")
+def export_events(
+    project_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> StreamingResponse:
+    lines = storage.export_event_lines(project_id)
+    headers = {"Content-Disposition": f'attachment; filename="{project_id}-events.jsonl"'}
+    return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
+
+
+@router.get("/tags/schema.json", response_model=TagSchemaExportResponse)
+def export_tag_schema(
+    project_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> JSONResponse:
+    schema = storage.export_tag_schema(project_id)
+    headers = {"Content-Disposition": f'attachment; filename="{project_id}-tag-schema.json"'}
+    return JSONResponse(schema, headers=headers)
