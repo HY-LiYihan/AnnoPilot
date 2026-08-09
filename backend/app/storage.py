@@ -55,7 +55,9 @@ REPLAYABLE_EVENT_FIELDS = {
     "suggestion.rejected": {"suggestion_id"},
 }
 
-DEFAULT_TAGS = [
+DEFAULT_TAGS: list[dict[str, Any]] = []
+
+LEGACY_SEEDED_TAGS = [
     {
         "id": "noun",
         "name": "名词",
@@ -2515,12 +2517,6 @@ class AnnotationStorage:
             if tag is None:
                 raise NotFoundError("Tag not found.")
 
-            tag_count = conn.execute("SELECT COUNT(*) AS count FROM tags WHERE project_id = ?", (project_id,)).fetchone()[
-                "count"
-            ]
-            if tag_count <= 1:
-                raise ValidationError("At least one tag is required.")
-
             annotation_count = conn.execute(
                 """
                 SELECT COUNT(*) AS count
@@ -2790,6 +2786,7 @@ class AnnotationStorage:
         self._backfill_default_tag_examples(conn)
 
     def _seed_tags(self, conn: sqlite3.Connection, project_id: str) -> None:
+        self._remove_unused_legacy_seeded_tags(conn, project_id)
         existing_count = conn.execute("SELECT COUNT(*) AS count FROM tags WHERE project_id = ?", (project_id,)).fetchone()[
             "count"
         ]
@@ -2819,6 +2816,32 @@ class AnnotationStorage:
                 for tag in DEFAULT_TAGS
             ],
         )
+
+    def _remove_unused_legacy_seeded_tags(self, conn: sqlite3.Connection, project_id: str) -> None:
+        for tag in LEGACY_SEEDED_TAGS:
+            conn.execute(
+                """
+                DELETE FROM tags
+                WHERE project_id = ?
+                  AND id = ?
+                  AND name = ?
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM annotations a
+                    JOIN sentences s ON s.id = a.sentence_id
+                    JOIN documents d ON d.id = s.document_id
+                    WHERE d.project_id = tags.project_id AND a.tag_id = tags.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM annotation_suggestions sg
+                    JOIN sentences s ON s.id = sg.sentence_id
+                    JOIN documents d ON d.id = s.document_id
+                    WHERE d.project_id = tags.project_id AND sg.tag_id = tags.id
+                  )
+                """,
+                (project_id, tag["id"], tag["name"]),
+            )
 
     def _backfill_default_tag_descriptions(self, conn: sqlite3.Connection) -> None:
         conn.executemany(

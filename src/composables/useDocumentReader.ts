@@ -87,7 +87,7 @@ export function useDocumentReader() {
     accuracy: null,
     accuracy_label: 'Waiting for review data',
   })
-  const selectedTagId = ref(fallbackTags[0].id)
+  const selectedTagId = ref(fallbackTags[0]?.id ?? '')
   const currentSentenceIndex = ref(0)
   const suggestionLimit = ref(6)
   const suggestionMinConfidence = ref(0.7)
@@ -212,7 +212,7 @@ export function useDocumentReader() {
   function applyDocumentSummary(payload: DocumentSummaryPayload) {
     documentMeta.value = payload.document
     activeSession.value = payload.session
-    tags.value = payload.tags.length ? payload.tags : fallbackTags
+    tags.value = payload.tags
     selectedTagId.value = tags.value.find((tagItem) => tagItem.id === selectedTagId.value)?.id ?? tags.value[0]?.id ?? ''
     metrics.value = payload.metrics
     sentenceQueue.value = payload.queue
@@ -232,7 +232,7 @@ export function useDocumentReader() {
   async function loadProjectTags() {
     try {
       const payload = await fetchTags(PROJECT_ID)
-      tags.value = payload.tags.length ? payload.tags : fallbackTags
+      tags.value = payload.tags
       selectedTagId.value = tags.value.find((tagItem) => tagItem.id === selectedTagId.value)?.id ?? tags.value[0]?.id ?? ''
     } catch (error) {
       readerError.value = error instanceof Error ? error.message : 'Could not load project tags.'
@@ -576,7 +576,7 @@ export function useDocumentReader() {
     try {
       const schema = JSON.parse(await file.text())
       const payload = await importTagSchema(PROJECT_ID, schema)
-      tags.value = payload.tags.length ? payload.tags : fallbackTags
+      tags.value = payload.tags
       selectedTagId.value = tags.value.find((tagItem) => tagItem.id === selectedTagId.value)?.id ?? tags.value[0]?.id ?? ''
       if (documentMeta.value) {
         await refreshDocumentSummary()

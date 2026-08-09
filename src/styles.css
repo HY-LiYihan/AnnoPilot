@@ -289,6 +289,17 @@ h2 {
   gap: 10px;
 }
 
+.tag-empty-state {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed #d6d2c9;
+  border-radius: 8px;
+  color: #6f726e;
+  background: #fffdf8;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .tag-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 38px;

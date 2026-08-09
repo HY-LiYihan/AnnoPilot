@@ -166,6 +166,7 @@ function confirmDeleteTag() {
     </label>
 
     <div class="tag-list" :aria-label="labels.availableAria">
+      <p v-if="!tags.length" class="tag-empty-state">{{ labels.emptyState }}</p>
       <div
         v-for="tagItem in tags"
         :key="tagItem.id"
@@ -225,14 +226,8 @@ function confirmDeleteTag() {
           v-if="editingTagId !== tagItem.id"
           type="button"
           class="tag-delete-button"
-          :disabled="isSaving || tags.length <= 1"
-          :title="
-            tags.length <= 1
-              ? labels.keepOneTitle
-              : hasDeleteImpact(tagItem)
-                ? labels.deleteWithDataTitle(deleteImpactSummary(tagItem, labels))
-                : labels.deleteTitle
-          "
+          :disabled="isSaving"
+          :title="hasDeleteImpact(tagItem) ? labels.deleteWithDataTitle(deleteImpactSummary(tagItem, labels)) : labels.deleteTitle"
           @click="requestDeleteTag(tagItem)"
         >
           <Trash2 :size="15" aria-hidden="true" />

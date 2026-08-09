@@ -256,38 +256,4 @@ export type DragSelection = {
   end: number
 }
 
-export const fallbackTags: TagDef[] = [
-  {
-    id: 'noun',
-    name: '名词',
-    description: '人、物、地点、抽象概念等实体或对象。',
-    examples: ['小猫', '柳树', '小河', '石桥', '叶子', '太阳', '男孩', '书包', '爪子', '水流', '桥边'],
-    shortcut: '1',
-    color: '#0b7565',
-    count: 0,
-    usage_count: 0,
-    suggestion_count: 0,
-  },
-  {
-    id: 'verb',
-    name: '动词',
-    description: '动作、变化、状态或行为。',
-    examples: ['发芽', '走来', '看见', '伸出', '碰', '漂走', '坐', '看着', '升起来', '经过', '笑', '说', '抬起', '回答'],
-    shortcut: '2',
-    color: '#326bd8',
-    count: 0,
-    usage_count: 0,
-    suggestion_count: 0,
-  },
-  {
-    id: 'adjective',
-    name: '形容词',
-    description: '性质、状态、颜色、程度等修饰性词语。',
-    examples: ['金色', '安静', '轻轻', '慢慢'],
-    shortcut: '3',
-    color: '#c45a2e',
-    count: 0,
-    usage_count: 0,
-    suggestion_count: 0,
-  },
-]
+export const fallbackTags: TagDef[] = []

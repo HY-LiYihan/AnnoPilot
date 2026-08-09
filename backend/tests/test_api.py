@@ -33,6 +33,32 @@ def make_client(tmp_path: Path) -> TestClient:
         return client
 
 
+def seed_pos_span_labels(client: TestClient) -> dict[str, dict]:
+    specs = [
+        {
+            "name": "名词",
+            "description": "人、物、地点、抽象概念等实体或对象。",
+            "examples": ["小猫", "柳树", "小河", "石桥", "叶子", "太阳", "男孩", "书包", "爪子", "水流", "桥边"],
+        },
+        {
+            "name": "动词",
+            "description": "动作、变化、状态或行为。",
+            "examples": ["发芽", "走来", "看见", "伸出", "碰", "漂走", "坐", "看着", "升起来", "经过", "笑", "说", "抬起", "回答"],
+        },
+        {
+            "name": "形容词",
+            "description": "性质、状态、颜色、程度等修饰性词语。",
+            "examples": ["金色", "安静", "轻轻", "慢慢"],
+        },
+    ]
+    labels: dict[str, dict] = {}
+    for spec in specs:
+        response = client.post("/api/projects/default/tags", json=spec)
+        assert response.status_code == 200
+        labels[spec["name"]] = response.json()["tag"]
+    return labels
+
+
 def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",
@@ -49,6 +75,16 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         imported = response.json()
         document_id = imported["document_id"]
         assert imported["sentence_count"] == 2
+        assert imported["tags"] == []
+
+        tag_response = client.post(
+            "/api/projects/default/tags",
+            json={"name": "动词", "examples": ["reduced"]},
+        )
+        assert tag_response.status_code == 200
+        tag = tag_response.json()["tag"]
+        assert tag["shortcut"] == "1"
+        assert tag["color"] == "#0b7565"
 
         document_response = client.get(f"/api/projects/default/documents/{document_id}")
         assert document_response.status_code == 200
@@ -57,7 +93,7 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
 
         annotation_response = client.post(
             f"/api/projects/default/sentences/{sentence['id']}/annotations",
-            json={"tag_id": "verb", "start_token_index": 2, "end_token_index": 2},
+            json={"tag_id": tag["id"], "start_token_index": 2, "end_token_index": 2},
         )
         assert annotation_response.status_code == 200
         created_annotation = annotation_response.json()["annotations"][0]
@@ -101,7 +137,7 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert isinstance(prodigy_lines[0]["_task_hash"], int)
         assert prodigy_lines[0]["meta"]["source"] == "annopilot"
         assert prodigy_lines[0]["meta"]["annotation_sources"] == [
-            {"annotation_id": created_annotation["id"], "label_id": "verb", "source": "human"}
+            {"annotation_id": created_annotation["id"], "label_id": tag["id"], "source": "human"}
         ]
         assert prodigy_lines[1]["answer"] == "ignore"
         assert prodigy_lines[1]["_session_id"] == f"annopilot-default-{document_id}-unannotated"
@@ -139,8 +175,8 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert tag_schema["record_type"] == "tag_schema"
         assert len(tag_schema["content_sha256"]) == 64
         assert tag_schema["retrieval"] == "character_rag_lexical_examples"
-        assert tag_schema["tags"][0]["name"] == "名词"
-        assert "小猫" in tag_schema["tags"][0]["examples"]
+        assert tag_schema["tags"][0]["name"] == "动词"
+        assert "reduced" in tag_schema["tags"][0]["examples"]
         assert "usage_count" not in tag_schema["tags"][0]
 
         manifest_response = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json")
@@ -258,6 +294,7 @@ def test_list_documents_returns_runtime_document_index(tmp_path: Path) -> None:
         data_root=tmp_path / "projects",
     )
     with TestClient(create_app(storage)) as client:
+        labels = seed_pos_span_labels(client)
         first_import = client.post(
             "/api/projects/default/import-txt",
             files={"file": ("first.txt", "第一句。第二句。", "text/plain")},
@@ -271,7 +308,7 @@ def test_list_documents_returns_runtime_document_index(tmp_path: Path) -> None:
         first_sentence = first_page["sentences"][0]
         assert client.post(
             f"/api/projects/default/sentences/{first_sentence['id']}/annotations",
-            json={"tag_id": "noun", "start_token_index": 0, "end_token_index": 1},
+            json={"tag_id": labels["名词"]["id"], "start_token_index": 0, "end_token_index": 1},
         ).status_code == 200
         assert client.post(
             f"/api/projects/default/sentences/{first_sentence['id']}/complete",
@@ -529,9 +566,7 @@ def test_list_tags_persists_project_tag_schema_without_document(tmp_path: Path) 
         initial_response = client.get("/api/projects/default/tags")
         assert initial_response.status_code == 200
         initial_tags = initial_response.json()["tags"]
-        assert [tag["name"] for tag in initial_tags] == ["名词", "动词", "形容词"]
-        assert initial_tags[0]["description"] == "人、物、地点、抽象概念等实体或对象。"
-        assert "小猫" in initial_tags[0]["examples"]
+        assert initial_tags == []
 
         create_response = client.post(
             "/api/projects/default/tags",
@@ -542,11 +577,12 @@ def test_list_tags_persists_project_tag_schema_without_document(tmp_path: Path) 
         updated_response = client.get("/api/projects/default/tags")
         assert updated_response.status_code == 200
         updated_tags = updated_response.json()["tags"]
-        assert [tag["name"] for tag in updated_tags] == ["名词", "动词", "形容词", "地点"]
-        assert updated_tags[-1]["shortcut"] == "4"
-        assert updated_tags[-1]["description"] is None
-        assert updated_tags[-1]["examples"] == ["桥边", "小河"]
-        assert updated_tags[-1]["usage_count"] == 0
+        assert [tag["name"] for tag in updated_tags] == ["地点"]
+        assert updated_tags[0]["shortcut"] == "1"
+        assert updated_tags[0]["color"] == "#0b7565"
+        assert updated_tags[0]["description"] is None
+        assert updated_tags[0]["examples"] == ["桥边", "小河"]
+        assert updated_tags[0]["usage_count"] == 0
 
 
 def test_create_and_delete_tag_removes_related_annotations(tmp_path: Path) -> None:
@@ -564,11 +600,16 @@ def test_create_and_delete_tag_removes_related_annotations(tmp_path: Path) -> No
         )
         document_id = import_response.json()["document_id"]
 
+        noun_response = client.post("/api/projects/default/tags", json={"name": "名词"})
+        assert noun_response.status_code == 200
+        noun_tag = noun_response.json()["tag"]
+        assert noun_tag["shortcut"] == "1"
+
         create_tag_response = client.post("/api/projects/default/tags", json={"name": "地点"})
         assert create_tag_response.status_code == 200
         tag = create_tag_response.json()["tag"]
         assert tag["name"] == "地点"
-        assert tag["shortcut"] == "4"
+        assert tag["shortcut"] == "2"
 
         duplicate_rename_response = client.patch(f"/api/projects/default/tags/{tag['id']}", json={"name": "名词"})
         assert duplicate_rename_response.status_code == 400
@@ -581,7 +622,7 @@ def test_create_and_delete_tag_removes_related_annotations(tmp_path: Path) -> No
         tag = rename_response.json()["tag"]
         assert tag["name"] == "地名"
         assert tag["description"] == "地理位置、方位、场所名称。"
-        assert tag["shortcut"] == "4"
+        assert tag["shortcut"] == "2"
 
         clear_description_response = client.patch(f"/api/projects/default/tags/{tag['id']}", json={"description": ""})
         assert clear_description_response.status_code == 200
@@ -607,6 +648,10 @@ def test_create_and_delete_tag_removes_related_annotations(tmp_path: Path) -> No
         assert all(tag_item["id"] != tag["id"] for tag_item in updated_document["tags"])
         assert updated_document["sentences"][0]["annotations"] == []
         assert updated_document["metrics"]["annotation_count"] == 0
+
+        final_delete_response = client.delete(f"/api/projects/default/tags/{noun_tag['id']}")
+        assert final_delete_response.status_code == 200
+        assert client.get("/api/projects/default/tags").json()["tags"] == []
 
         events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
         update_event = next(event for event in events if event["type"] == "tag.updated")
@@ -755,8 +800,8 @@ def test_import_tag_schema_merges_non_destructively(tmp_path: Path) -> None:
         assert imported["updated"] == 0
         assert imported["skipped"] == 0
         assert len(imported["content_sha256"]) == 64
-        assert [tag["name"] for tag in imported["tags"]] == ["名词", "动词", "形容词", "角色"]
-        role_tag = imported["tags"][-1]
+        assert [tag["name"] for tag in imported["tags"]] == ["角色"]
+        role_tag = imported["tags"][0]
         assert role_tag["examples"] == ["老师", "小狗"]
 
         bad_hash_response = client.post(
@@ -785,6 +830,7 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
             )
         )
     ) as client:
+        labels = seed_pos_span_labels(client)
         response = client.post(
             "/api/projects/default/import-txt",
             files={"file": ("story.txt", "清晨，小猫看见金色的叶子。小猫坐在桥边。", "text/plain")},
@@ -829,10 +875,11 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         }
         assert runs[0]["config"]["retrieval"] == "offset_gap_span_text|casefold_whitespace_normalized|lexical_exact|lexical_contains|char_ngram"
         assert runs[0]["config"]["examples_match_key_count"] == runs[0]["config"]["example_count"]
-        assert "小猫" in runs[0]["config"]["examples_match_keys_by_tag"]["noun"]
+        noun_id = labels["名词"]["id"]
+        assert "小猫" in runs[0]["config"]["examples_match_keys_by_tag"][noun_id]
         assert len(runs[0]["config"]["examples_match_keys_sha256"]) == 64
         assert len(runs[0]["config"]["negative_examples_sha256"]) == 64
-        assert "小猫" in runs[0]["config"]["examples_by_tag"]["noun"]
+        assert "小猫" in runs[0]["config"]["examples_by_tag"][noun_id]
         assert runs[0]["config"]["negative_examples_by_tag"] == {}
         assert runs[0]["config"]["negative_examples_match_key_count"] == 0
         assert runs[0]["config"]["negative_examples_match_keys_by_tag"] == {}
@@ -976,6 +1023,7 @@ def test_generate_sentence_suggestions_only_scopes_current_sentence(tmp_path: Pa
             )
         )
     ) as client:
+        seed_pos_span_labels(client)
         response = client.post(
             "/api/projects/default/import-txt",
             files={"file": ("story.txt", "小猫看见叶子。男孩走来。", "text/plain")},
@@ -1031,6 +1079,7 @@ def test_sentence_batch_accept_and_reject_suggestions(tmp_path: Path) -> None:
             )
         )
     ) as client:
+        seed_pos_span_labels(client)
         response = client.post(
             "/api/projects/default/import-txt",
             files={"file": ("story.txt", "小猫看见金色的叶子。男孩走来。", "text/plain")},
@@ -1091,6 +1140,7 @@ def test_review_queue_lists_pending_suggestion_sentences(tmp_path: Path) -> None
             )
         )
     ) as client:
+        seed_pos_span_labels(client)
         response = client.post(
             "/api/projects/default/import-txt",
             files={"file": ("story.txt", "小猫看见金色的叶子。男孩走来。", "text/plain")},
@@ -1184,6 +1234,7 @@ def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:
             )
         )
     ) as client:
+        seed_pos_span_labels(client)
         response = client.post(
             "/api/projects/default/import-txt",
             files={"file": ("story.txt", "清晨，小猫看见金色的叶子。小猫坐在桥边。", "text/plain")},
@@ -1231,6 +1282,7 @@ def test_auto_reject_document_suggestions_clears_review_queue(tmp_path: Path) ->
             )
         )
     ) as client:
+        seed_pos_span_labels(client)
         response = client.post(
             "/api/projects/default/import-txt",
             files={"file": ("story.txt", "清晨，小猫看见金色的叶子。小猫坐在桥边。", "text/plain")},
@@ -1272,6 +1324,7 @@ def test_rejected_suggestions_become_project_negative_examples(tmp_path: Path) -
             )
         )
     ) as client:
+        seed_pos_span_labels(client)
         first_import = client.post(
             "/api/projects/default/import-txt",
             files={"file": ("first.txt", "清晨，小猫看见金色的叶子。", "text/plain")},
@@ -1364,6 +1417,7 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         data_root=tmp_path / "projects",
     )
     with TestClient(create_app(storage, suggestion_reviewer=FakeSuggestionReviewer())) as client:
+        seed_pos_span_labels(client)
         response = client.post(
             "/api/projects/default/import-txt",
             files={"file": ("story.txt", "清晨，小猫看见金色的叶子。", "text/plain")},
@@ -1441,6 +1495,7 @@ def test_rebuild_project_from_events_restores_runtime_state(tmp_path: Path) -> N
         data_root=tmp_path / "projects",
     )
     with TestClient(create_app(storage, suggestion_reviewer=FakeSuggestionReviewer())) as client:
+        seed_pos_span_labels(client)
         response = client.post(
             "/api/projects/default/import-txt",
             files={"file": ("story.txt", "清晨，小猫看见金色的叶子。小猫坐在桥边。", "text/plain")},
