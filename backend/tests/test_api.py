@@ -59,6 +59,18 @@ def seed_pos_span_labels(client: TestClient) -> dict[str, dict]:
     return labels
 
 
+def _stable_manifest_payload(manifest: dict) -> dict:
+    payload = json.loads(json.dumps({key: value for key, value in manifest.items() if key not in {"generated_at", "content_sha256"}}))
+    for group_name in ("artifacts", "run_provenance_artifacts"):
+        group = payload.get(group_name)
+        if not isinstance(group, dict):
+            continue
+        for artifact in group.values():
+            if isinstance(artifact, dict) and artifact.get("content_sha256"):
+                artifact.pop("sha256", None)
+    return payload
+
+
 def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",
@@ -202,6 +214,11 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         manifest = manifest_response.json()
         assert manifest["schema_version"] == "annopilot.export_manifest.v1"
         assert manifest["record_type"] == "export_manifest"
+        assert len(manifest["content_sha256"]) == 64
+        stable_manifest_payload = _stable_manifest_payload(manifest)
+        assert manifest["content_sha256"] == hashlib.sha256(
+            json.dumps(stable_manifest_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
         assert manifest["document"]["id"] == document_id
         assert manifest["metrics"]["answer_counts"] == {"accept": 1, "reject": 0, "ignore": 0, "pending": 1}
         assert manifest["annotation_source_counts"] == {"human": 1}
@@ -220,6 +237,8 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert manifest["artifacts"]["tag_schema_json"]["schema_version"] == "annopilot.tag_schema.v1"
         assert manifest["artifacts"]["tag_schema_json"]["line_count"] == 1
         assert manifest["artifacts"]["tag_schema_json"]["content_sha256"] == tag_schema["content_sha256"]
+        second_manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert second_manifest["content_sha256"] == manifest["content_sha256"]
 
         event_path = tmp_path / "projects" / "default" / "events.jsonl"
         assert event_path.exists()
@@ -736,6 +755,7 @@ def test_import_prodigy_jsonl_updates_annotations_and_answers(tmp_path: Path) ->
         assert import_history[0]["source_record_results"][0]["source_metadata"]["_session_id"] == "review-session-1"
 
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert len(manifest["content_sha256"]) == 64
         assert manifest["annotation_imports"][0]["event_id"] == imported_event["event_id"]
         assert manifest["annotation_imports"][0]["source_sha256"] == imported["source_sha256"]
         assert manifest["annotation_imports"][0]["source_record_results"][0]["source_metadata"]["_annotator_id"] == "reviewer-a"

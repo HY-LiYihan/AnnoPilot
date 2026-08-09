@@ -1020,7 +1020,7 @@ class AnnotationStorage:
                 source = annotation.get("source", "human")
                 source_counts[source] = source_counts.get(source, 0) + 1
 
-        return {
+        manifest = {
             "schema_version": EXPORT_MANIFEST_SCHEMA_VERSION,
             "record_type": "export_manifest",
             "generated_at": self._now(),
@@ -1063,6 +1063,8 @@ class AnnotationStorage:
                 ),
             },
         }
+        manifest["content_sha256"] = self._payload_sha256(self._manifest_content_payload(manifest))
+        return manifest
 
     @staticmethod
     def _manifest_event_audit(audit_summary: dict[str, Any]) -> dict[str, Any]:
@@ -1082,6 +1084,23 @@ class AnnotationStorage:
             "last_event_ts": audit_summary["last_event_ts"],
             "rebuild_status": audit_summary["rebuild_status"],
         }
+
+    @staticmethod
+    def _manifest_content_payload(manifest: dict[str, Any]) -> dict[str, Any]:
+        payload = json.loads(
+            json.dumps(
+                {key: value for key, value in manifest.items() if key not in {"generated_at", "content_sha256"}},
+                ensure_ascii=False,
+            )
+        )
+        for group_name in ("artifacts", "run_provenance_artifacts"):
+            group = payload.get(group_name)
+            if not isinstance(group, dict):
+                continue
+            for artifact in group.values():
+                if isinstance(artifact, dict) and artifact.get("content_sha256"):
+                    artifact.pop("sha256", None)
+        return payload
 
     def export_tag_schema(self, project_id: str) -> dict[str, Any]:
         tags = self.get_tags(project_id)
