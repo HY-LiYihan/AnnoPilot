@@ -1519,6 +1519,20 @@ kbd {
   font-weight: 850;
 }
 
+.suggestion-row .match-key-copy {
+  color: #526560;
+}
+
+.suggestion-row .match-key-copy em {
+  color: #00685b;
+}
+
+.suggestion-row .match-key-copy strong {
+  color: #243c36;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+}
+
 .suggestion-row .review-copy {
   display: block;
   color: #326bd8;

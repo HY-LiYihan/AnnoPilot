@@ -194,6 +194,14 @@ function suggestionRangeLabel(suggestion: SuggestionDef, labels: UiLabels['reade
   return `${tokenRange} · ${labels.charRange} ${suggestion.start_char}-${suggestion.end_char}`
 }
 
+function suggestionMatchKeyLabel(suggestion: SuggestionDef) {
+  const matchKey = suggestion.match_key?.trim()
+  const evidenceMatchKey = suggestion.evidence_match_key?.trim()
+  if (!matchKey && !evidenceMatchKey) return ''
+  if (matchKey && evidenceMatchKey && matchKey !== evidenceMatchKey) return `${matchKey} → ${evidenceMatchKey}`
+  return matchKey || evidenceMatchKey || ''
+}
+
 function sentenceStatusLabel(sentence: SentenceDef, currentSentenceIndex: number, labels: UiLabels['reader']) {
   if (sentence.answer === 'reject') return labels.statusRejected
   if (sentence.answer === 'ignore') return labels.statusIgnored
@@ -463,6 +471,10 @@ function predicatePositionClasses(
             <small v-if="suggestion.evidence_text" class="evidence-copy">
               <em>{{ labels.evidence }}</em>
               <strong>{{ suggestion.evidence_text }}</strong>
+            </small>
+            <small v-if="suggestionMatchKeyLabel(suggestion)" class="evidence-copy match-key-copy">
+              <em>{{ labels.matchKeys }}</em>
+              <strong>{{ suggestionMatchKeyLabel(suggestion) }}</strong>
             </small>
             <small v-if="suggestion.context_before || suggestion.context_after" class="evidence-copy">
               <em>{{ labels.context }}</em>
