@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -118,6 +118,27 @@ class ImportAnnotationsResponse(BaseModel):
     completed_sentence_count: int
     source_sha256: str
     tags: list[TagResponse]
+
+
+class AnnotationImportHistoryItemResponse(BaseModel):
+    event_id: Optional[str] = None
+    document_id: str
+    filename: str
+    record_count: int
+    matched_count: int
+    skipped_count: int
+    created_tag_count: int
+    created_annotation_count: int
+    deleted_annotation_count: int
+    completed_sentence_count: int
+    source_sha256: str
+    source_record_results: list[dict[str, Any]] = Field(default_factory=list)
+    actor_id: Optional[str] = None
+    ts: Optional[str] = None
+
+
+class AnnotationImportHistoryResponse(BaseModel):
+    imports: list[AnnotationImportHistoryItemResponse]
 
 
 class DocumentMetaResponse(BaseModel):

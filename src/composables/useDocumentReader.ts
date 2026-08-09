@@ -1,6 +1,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { createAnnotation, deleteAnnotation } from '../api/annotations'
-import { fetchAuditSummary, previewRebuild } from '../api/audit'
+import { fetchAnnotationImports, fetchAuditSummary, previewRebuild } from '../api/audit'
 import {
   completeSentence,
   documentExportUrl,
@@ -185,6 +185,7 @@ export function useDocumentReader() {
       await loadSentenceWindow(documentId, currentSentenceIndex.value, true)
       await centerCurrentSentence()
       await refreshAuditSummary()
+      await refreshAnnotationImportHistory(documentId)
       await refreshRunHistory()
       await refreshReviewQueue()
       await loadDocumentList()
@@ -1058,6 +1059,16 @@ export function useDocumentReader() {
       auditSummary.value = await fetchAuditSummary(PROJECT_ID)
     } catch {
       auditSummary.value = null
+    }
+  }
+
+  async function refreshAnnotationImportHistory(documentId: string) {
+    try {
+      const payload = await fetchAnnotationImports(PROJECT_ID, documentId, 1)
+      const latestImport = payload.imports[0]
+      lastAnnotationImport.value = latestImport ? { ...latestImport, import_filename: latestImport.import_filename || latestImport.filename } : null
+    } catch {
+      lastAnnotationImport.value = null
     }
   }
 

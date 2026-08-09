@@ -1590,6 +1590,45 @@ class AnnotationStorage:
             "rebuild_status": rebuild_status,
         }
 
+    def list_annotation_imports(
+        self,
+        project_id: str,
+        document_id: Optional[str] = None,
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        safe_limit = max(1, min(limit, 50))
+        imports: list[dict[str, Any]] = []
+        for line in self.export_event_lines(project_id):
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if event.get("type") != "annotations.imported":
+                continue
+            if document_id and event.get("document_id") != document_id:
+                continue
+            if not event.get("document_id") or not event.get("filename"):
+                continue
+            imports.append(
+                {
+                    "event_id": event.get("event_id"),
+                    "document_id": event["document_id"],
+                    "filename": event["filename"],
+                    "record_count": self._event_int(event.get("record_count")),
+                    "matched_count": self._event_int(event.get("matched_count")),
+                    "skipped_count": self._event_int(event.get("skipped_count")),
+                    "created_tag_count": self._event_int(event.get("created_tag_count")),
+                    "created_annotation_count": self._event_int(event.get("created_annotation_count")),
+                    "deleted_annotation_count": self._event_int(event.get("deleted_annotation_count")),
+                    "completed_sentence_count": self._event_int(event.get("completed_sentence_count")),
+                    "source_sha256": str(event.get("source_sha256", "")),
+                    "source_record_results": event.get("source_record_results") if isinstance(event.get("source_record_results"), list) else [],
+                    "actor_id": event.get("actor_id"),
+                    "ts": event.get("ts"),
+                }
+            )
+        return {"imports": list(reversed(imports))[:safe_limit]}
+
     def list_runs(self, project_id: str, document_id: Optional[str] = None, limit: int = 10) -> list[dict[str, Any]]:
         safe_limit = max(1, min(limit, 50))
         where_clause = "runs.project_id = ?"
@@ -3461,6 +3500,13 @@ class AnnotationStorage:
     def _row_dict(row: sqlite3.Row, exclude: set[str] | None = None) -> dict[str, Any]:
         excluded = exclude or set()
         return {key: row[key] for key in row.keys() if key not in excluded}
+
+    @staticmethod
+    def _event_int(value: Any) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
 
     @staticmethod
     def _decode_txt_payload(data: bytes) -> str:

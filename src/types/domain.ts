@@ -267,8 +267,21 @@ export type ImportAnnotationsResponse = {
   tags: TagDef[]
 }
 
-export type AnnotationImportSummary = ImportAnnotationsResponse & {
+export type AnnotationImportSummary = Omit<ImportAnnotationsResponse, 'tags'> & {
   import_filename: string
+  tags?: TagDef[]
+}
+
+export type AnnotationImportHistoryItem = Omit<ImportAnnotationsResponse, 'tags'> & {
+  import_filename?: string
+  event_id: string | null
+  actor_id: string | null
+  ts: string | null
+  source_record_results: Record<string, unknown>[]
+}
+
+export type AnnotationImportHistoryPayload = {
+  imports: AnnotationImportHistoryItem[]
 }
 
 export type DragSelection = {

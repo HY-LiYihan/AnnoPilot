@@ -723,6 +723,17 @@ def test_import_prodigy_jsonl_updates_annotations_and_answers(tmp_path: Path) ->
         assert first_record_result["created_annotation_ids"] == [created_event["annotation_id"]]
         assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
+        import_history_response = client.get(f"/api/projects/default/annotation-imports?document_id={document_id}")
+        assert import_history_response.status_code == 200
+        import_history = import_history_response.json()["imports"]
+        assert len(import_history) == 1
+        assert import_history[0]["event_id"] == imported_event["event_id"]
+        assert import_history[0]["filename"] == "review.prodigy.jsonl"
+        assert import_history[0]["record_count"] == 2
+        assert import_history[0]["matched_count"] == 2
+        assert import_history[0]["source_sha256"] == imported["source_sha256"]
+        assert import_history[0]["source_record_results"][0]["source_metadata"]["_session_id"] == "review-session-1"
+
         event_path = tmp_path / "projects" / "default" / "events.jsonl"
 
     rebuilt_database = tmp_path / "rebuilt" / "annopilot.sqlite"

@@ -222,7 +222,7 @@ POST /api/projects/{project_id}/documents/{document_id}/import-annotations-jsonl
 - 匹配到的 sentence 会先清除旧 annotations，再按导入 spans 写入 `source=prodigy_import` annotations。
 - 导入结果返回 `record_count`、`matched_count`、`skipped_count`、created/deleted counts 和 `source_sha256`；event log 的 `annotations.imported.source_record_results` 会保存逐行匹配 manifest。
 
-Frontend 在右侧 metrics/export panel 暴露 `Import JSONL` 入口，可把外部 review 后的 Prodigy / AnnoPilot JSONL 导回当前 document，和 Prodigy export 形成 round-trip workflow。
+Frontend 在右侧 metrics/export panel 暴露 `Import JSONL` 入口，可把外部 review 后的 Prodigy / AnnoPilot JSONL 导回当前 document，和 Prodigy export 形成 round-trip workflow。`GET /api/projects/{project_id}/annotation-imports` 会直接从 `events.jsonl` 派生最近导入历史，因此刷新页面后仍能恢复最近一次导入摘要，而不需要额外 runtime 表。
 
 ## Export JSONL
 

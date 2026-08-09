@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..rebuild import rebuild_project_from_events
-from ..schemas import AuditSummaryResponse, RebuildPreviewResponse
+from ..schemas import AnnotationImportHistoryResponse, AuditSummaryResponse, RebuildPreviewResponse
 from ..storage import AnnotationStorage
 from .dependencies import get_storage
 
@@ -20,6 +21,16 @@ def audit_project(
     storage: AnnotationStorage = Depends(get_storage),
 ) -> dict:
     return storage.audit_project(project_id)
+
+
+@router.get("/annotation-imports", response_model=AnnotationImportHistoryResponse)
+def list_annotation_imports(
+    project_id: str,
+    document_id: Optional[str] = Query(default=None),
+    limit: int = Query(5, ge=1, le=50),
+    storage: AnnotationStorage = Depends(get_storage),
+) -> dict:
+    return storage.list_annotation_imports(project_id, document_id=document_id, limit=limit)
 
 
 @router.post("/rebuild/preview", response_model=RebuildPreviewResponse)

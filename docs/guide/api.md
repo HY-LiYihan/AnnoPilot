@@ -20,6 +20,7 @@ GET  /api/projects/{project_id}/documents/{document_id}
 GET  /api/projects/{project_id}/documents/{document_id}/summary
 GET  /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50
 GET  /api/projects/{project_id}/documents/{document_id}/review-queue?limit=20&order=position
+GET  /api/projects/{project_id}/annotation-imports?document_id={document_id}&limit=5
 POST /api/projects/{project_id}/documents/{document_id}/session/cursor
 POST /api/projects/{project_id}/sentences/{sentence_id}/complete
 ```
@@ -30,6 +31,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/complete
 - `summary` 返回 document meta、tags、metrics、全局 sentence queue 和当前 runtime session cursor，不返回完整 tokens。
 - `sentences` 返回分页 sentence window，当前 API limit 上限为 200。
 - `review-queue` 返回未完成且存在 pending suggestions 的句子列表，以及每句第一条候选，供 UI 快速跳转待审任务；`order=uncertain` 会按最低 Character RAG confidence 优先排序。
+- `annotation-imports` 从 `events.jsonl` 读取最近的 JSONL annotation import history；frontend 用它在刷新页面后恢复最近导入摘要。
 - `session/cursor` 保存默认人工会话的当前句位置，用于刷新后恢复标注阅读器状态；该状态保存在 SQLite runtime，不写入 JSONL audit log。
 - `complete` 写入 `completed` 和 Prodigy-compatible `answer`，当前支持 `accept`、`ignore`、`reject`，以及 `completed=false` reopen 回 `pending`。
 
