@@ -323,28 +323,8 @@ h2 {
   box-shadow: 0 0 0 3px rgba(0, 104, 91, 0.1);
 }
 
-.tag-schema-import {
-  position: relative;
-  min-height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  border: 1px dashed #c9d5d1;
-  border-radius: 8px;
-  color: #00685b;
-  background: #f5fbf8;
-  cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 900;
-}
-
-.tag-schema-import input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
+.tag-form .tag-definition-input {
+  grid-column: 1 / -1;
 }
 
 .tag-add-button,
@@ -435,7 +415,7 @@ h2 {
 }
 
 .tag-edit-form .tag-guideline-input,
-.tag-edit-form .tag-example-input {
+.tag-edit-form .tag-definition-input {
   grid-column: 2 / -1;
   height: 30px;
   font-size: 0.78rem;

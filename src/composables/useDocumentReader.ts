@@ -534,12 +534,12 @@ export function useDocumentReader() {
     void applyTagToSelection(tagId)
   }
 
-  async function addTag(name: string) {
+  async function addTag(name: string, description = '') {
     if (isSaving.value) return
     isSaving.value = true
     readerError.value = ''
     try {
-      const payload = await createTag(PROJECT_ID, name)
+      const payload = await createTag(PROJECT_ID, name, description)
       tags.value = [...tags.value, payload.tag]
       selectedTagId.value = payload.tag.id
       await refreshAuditSummary()

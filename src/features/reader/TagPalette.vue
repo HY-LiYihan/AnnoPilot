@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { AlertTriangle, Check, Pencil, Plus, Tag, Trash2, Upload, X } from '@lucide/vue'
+import { AlertTriangle, Check, Pencil, Plus, Tag, Trash2, X } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
 import type { SentenceQueueItem, TagDef } from '../../types/domain'
 
@@ -19,33 +19,25 @@ defineProps<{
 
 const emit = defineEmits<{
   'tag-click': [tagId: string]
-  'tag-add': [name: string]
-  'tag-rename': [tag: TagDef, name: string, description: string, examples: string[]]
-  'tag-schema-import': [file: File]
+  'tag-add': [name: string, description: string]
+  'tag-rename': [tag: TagDef, name: string, description: string]
   'tag-delete': [tag: TagDef]
   'sentence-click': [sentenceIndex: number]
 }>()
 
 const newTagName = ref('')
+const newTagDescription = ref('')
 const editingTagId = ref('')
 const editingTagName = ref('')
 const editingTagDescription = ref('')
-const editingTagExamples = ref('')
 const pendingDeleteTag = ref<TagDef | null>(null)
 
 function submitTag() {
   const name = newTagName.value.trim()
   if (!name) return
-  emit('tag-add', name)
+  emit('tag-add', name, newTagDescription.value.trim())
   newTagName.value = ''
-}
-
-function submitTagSchemaImport(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  emit('tag-schema-import', file)
-  input.value = ''
+  newTagDescription.value = ''
 }
 
 function tagUsage(tag: TagDef) {
@@ -91,44 +83,24 @@ function startEditTag(tag: TagDef) {
   editingTagId.value = tag.id
   editingTagName.value = tag.name
   editingTagDescription.value = tag.description ?? ''
-  editingTagExamples.value = tag.examples.join('，')
 }
 
 function cancelEditTag() {
   editingTagId.value = ''
   editingTagName.value = ''
   editingTagDescription.value = ''
-  editingTagExamples.value = ''
 }
 
 function submitEditTag(tag: TagDef) {
   const name = editingTagName.value.trim()
   const description = editingTagDescription.value.trim()
   const normalizedDescription = description || null
-  const examples = parseExamples(editingTagExamples.value)
-  if (!name || (name === tag.name && normalizedDescription === (tag.description ?? null) && sameExamples(examples, tag.examples))) {
+  if (!name || (name === tag.name && normalizedDescription === (tag.description ?? null))) {
     cancelEditTag()
     return
   }
-  emit('tag-rename', tag, name, description, examples)
+  emit('tag-rename', tag, name, description)
   cancelEditTag()
-}
-
-function parseExamples(value: string) {
-  const seen = new Set<string>()
-  return value
-    .split(/[，,、\s]+/)
-    .map((item) => item.trim())
-    .filter((item) => {
-      if (!item || seen.has(item)) return false
-      seen.add(item)
-      return true
-    })
-    .slice(0, 80)
-}
-
-function sameExamples(left: string[], right: string[]) {
-  return left.length === right.length && left.every((item, index) => item === right[index])
 }
 
 function cancelDeleteTag() {
@@ -157,13 +129,16 @@ function confirmDeleteTag() {
       <button type="submit" class="tag-add-button" :disabled="isSaving || !newTagName.trim()" :title="labels.addTitle">
         <Plus :size="16" aria-hidden="true" />
       </button>
+      <input
+        v-model="newTagDescription"
+        class="tag-definition-input"
+        type="text"
+        maxlength="280"
+        :placeholder="labels.definitionPlaceholder"
+        :aria-label="labels.guidelineAria"
+        :disabled="isSaving"
+      />
     </form>
-
-    <label class="tag-schema-import" :title="labels.importSchema">
-      <Upload :size="15" aria-hidden="true" />
-      <span>{{ labels.importSchema }}</span>
-      <input type="file" accept="application/json,.json" :disabled="isSaving" @change="submitTagSchemaImport" />
-    </label>
 
     <div class="tag-list" :aria-label="labels.availableAria">
       <p v-if="!tags.length" class="tag-empty-state">{{ labels.emptyState }}</p>
@@ -186,15 +161,6 @@ function confirmDeleteTag() {
             :placeholder="labels.guidelinePlaceholder"
             :disabled="isSaving"
           />
-          <input
-            v-model="editingTagExamples"
-            class="tag-example-input"
-            type="text"
-            maxlength="800"
-            :aria-label="labels.examplesAria"
-            :placeholder="labels.examplesPlaceholder"
-            :disabled="isSaving"
-          />
           <button type="submit" class="tag-edit-button" :disabled="isSaving || !editingTagName.trim()" :title="labels.saveTitle">
             <Check :size="15" aria-hidden="true" />
           </button>
@@ -208,7 +174,6 @@ function confirmDeleteTag() {
             <strong>{{ tagItem.name }}</strong>
             <small>{{ labels.annotationCount(tagUsage(tagItem)) }}</small>
             <em v-if="tagItem.description">{{ tagItem.description }}</em>
-            <em v-if="tagItem.examples.length">{{ labels.ragSeedCount(tagItem.examples.length) }}</em>
           </span>
           <kbd>{{ tagItem.shortcut }}</kbd>
         </button>
