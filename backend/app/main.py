@@ -13,6 +13,18 @@ from .api import annotations, audit, documents, exports, health, runs, settings,
 from .storage import AnnotationStorage
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _cors_origins() -> list[str]:
+    raw_value = os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+    return [origin.strip() for origin in raw_value.split(",") if origin.strip()]
+
+
 def create_app(storage: AnnotationStorage | None = None, suggestion_reviewer=None) -> FastAPI:
     storage = storage or AnnotationStorage(
         database_path=Path(os.getenv("DATABASE_PATH", "/data/runtime/annopilot.sqlite")),
@@ -27,10 +39,11 @@ def create_app(storage: AnnotationStorage | None = None, suggestion_reviewer=Non
     app = FastAPI(title="AnnoPilot API", lifespan=lifespan)
     app.state.storage = storage
     app.state.suggestion_reviewer = suggestion_reviewer
+    cors_origins = _cors_origins()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-        allow_credentials=True,
+        allow_origins=cors_origins,
+        allow_credentials="*" not in cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -45,7 +58,7 @@ def create_app(storage: AnnotationStorage | None = None, suggestion_reviewer=Non
     app.include_router(exports.router)
 
     static_dir = Path(os.getenv("STATIC_DIR", Path.cwd() / "static"))
-    if static_dir.exists():
+    if _env_bool("SERVE_STATIC", True) and static_dir.exists():
         assets_dir = static_dir / "assets"
         if assets_dir.exists():
             app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")

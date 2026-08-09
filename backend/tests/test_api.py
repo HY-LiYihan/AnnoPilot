@@ -248,6 +248,40 @@ def test_health_reports_llm_runtime_without_secret(tmp_path: Path, monkeypatch) 
     assert "sk-test-secret" not in response.text
 
 
+def test_static_fallback_can_be_disabled_for_split_deploy(tmp_path: Path, monkeypatch) -> None:
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("<div>SPA</div>", encoding="utf-8")
+    monkeypatch.setenv("STATIC_DIR", str(static_dir))
+    monkeypatch.setenv("SERVE_STATIC", "false")
+
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        response = client.get("/workspace")
+
+    assert response.status_code == 404
+
+
+def test_cors_allow_origins_can_be_configured_from_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://app.example.com, https://admin.example.com")
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+
+    with TestClient(create_app(storage)) as client:
+        response = client.options(
+            "/api/health",
+            headers={"Origin": "https://app.example.com", "Access-Control-Request-Method": "GET"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://app.example.com"
+
+
 def test_document_summary_and_sentence_paging(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",

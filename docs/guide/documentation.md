@@ -17,7 +17,7 @@ AnnoPilot 使用 **VitePress** 维护独立 documentation site。产品 Web UI �
       deployment.md
       development.md
       runtime-storage.md
-      rosetta-docker-deployment.md
+      annopilot-docker-deployment.md
     .vitepress/
       config.ts
 ```

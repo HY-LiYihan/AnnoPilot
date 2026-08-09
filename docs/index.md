@@ -38,6 +38,6 @@ AnnoPilot repo 同时维护两个面向用户的入口：
 - [API Surface](/guide/api)：当前 FastAPI endpoints、request/response 边界和 frontend client 分工。
 - [本地开发](/guide/development)：如何启动 Web UI、API、docs site、测试和 Docker build。
 - [Runtime Storage](/guide/runtime-storage)：当前 SQLite schema、JSONL events 和 export JSONL 的职责分工。
-- [Rosetta Docker 服务器部署](/guide/rosetta-docker-deployment)：Ali 服务器上的 Docker、自动更新、前后端拆分和数据持久化方案。
+- [AnnoPilot Docker 服务器部署](/guide/annopilot-docker-deployment)：Ali 服务器上的 Docker、自动更新、前后端拆分和数据持久化方案。
 - [文档维护方式](/guide/documentation)：如何新增、修改、预览和发布文档。
 - [GitHub Pages 部署](/guide/deployment)：文档站的 CI/CD 和 Pages 配置方式。

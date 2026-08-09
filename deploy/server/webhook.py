@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 
 DEPLOY_LOCK = threading.Lock()
-MAX_BODY_BYTES = int(os.getenv("ROSETTA_MAX_BODY_BYTES", "65536"))
+MAX_BODY_BYTES = int(os.getenv("ANNOPILOT_MAX_BODY_BYTES", "65536"))
 
 
 def env(name: str, default: str = "") -> str:
@@ -32,7 +32,7 @@ def tail(text: str, limit: int = 12000) -> str:
 
 
 class DeployHandler(BaseHTTPRequestHandler):
-    server_version = "RosettaDeployWebhook/1.0"
+    server_version = "AnnoPilotDeployWebhook/1.0"
 
     def do_GET(self) -> None:
         if urlparse(self.path).path == "/healthz":
@@ -41,7 +41,7 @@ class DeployHandler(BaseHTTPRequestHandler):
         self.respond(404, {"error": "not_found"}, "error")
 
     def do_POST(self) -> None:
-        if urlparse(self.path).path != "/deploy/rosetta":
+        if urlparse(self.path).path != "/deploy/annopilot":
             self.respond(404, {"error": "not_found"}, "error")
             return
 
@@ -98,24 +98,24 @@ class DeployHandler(BaseHTTPRequestHandler):
         return self.rfile.read(length)
 
     def verify_signature(self, body: bytes) -> None:
-        secret = env("ROSETTA_WEBHOOK_SECRET")
+        secret = env("ANNOPILOT_WEBHOOK_SECRET")
         if not secret:
-            raise ValueError("server missing ROSETTA_WEBHOOK_SECRET")
+            raise ValueError("server missing ANNOPILOT_WEBHOOK_SECRET")
 
-        provided = self.headers.get("X-Rosetta-Signature", "").strip()
+        provided = self.headers.get("X-AnnoPilot-Signature", "").strip()
         expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
         expected_header = f"sha256={expected}"
         if not hmac.compare_digest(provided, expected_header):
             raise ValueError("invalid signature")
 
     def verify_payload(self, payload: Dict[str, Any]) -> None:
-        allowed_repo = env("ROSETTA_ALLOWED_REPOSITORY")
+        allowed_repo = env("ANNOPILOT_ALLOWED_REPOSITORY")
         if allowed_repo:
             repository = str(payload.get("repository", ""))
             if repository.lower() != allowed_repo.lower():
                 raise ValueError("repository is not allowed")
 
-        allowed_ref = env("ROSETTA_ALLOWED_REF", "main")
+        allowed_ref = env("ANNOPILOT_ALLOWED_REF", "main")
         if allowed_ref:
             ref = str(payload.get("ref", ""))
             allowed_refs = {allowed_ref, f"refs/heads/{allowed_ref}"}
@@ -126,7 +126,7 @@ class DeployHandler(BaseHTTPRequestHandler):
         if mode not in {"image", "source"}:
             raise ValueError("mode must be image or source")
 
-        max_age = int(env("ROSETTA_MAX_PAYLOAD_AGE_SECONDS", "900"))
+        max_age = int(env("ANNOPILOT_MAX_PAYLOAD_AGE_SECONDS", "900"))
         if max_age > 0:
             issued_at = int(payload.get("issued_at", 0))
             now = int(time.time())
@@ -134,17 +134,17 @@ class DeployHandler(BaseHTTPRequestHandler):
                 raise ValueError("payload timestamp is outside the allowed window")
 
     def run_deploy(self, payload: Dict[str, Any]) -> subprocess.CompletedProcess:
-        command = shlex.split(env("ROSETTA_DEPLOY_COMMAND", "/opt/rosetta/bin/deploy.sh"))
+        command = shlex.split(env("ANNOPILOT_DEPLOY_COMMAND", "/opt/annopilot/bin/deploy.sh"))
         if not command:
-            raise ValueError("empty ROSETTA_DEPLOY_COMMAND")
+            raise ValueError("empty ANNOPILOT_DEPLOY_COMMAND")
 
         deploy_env = os.environ.copy()
-        deploy_env["ROSETTA_DEPLOY_MODE"] = str(payload.get("mode", env("ROSETTA_DEPLOY_MODE", "image")))
-        deploy_env["ROSETTA_DEPLOY_SHA"] = str(payload.get("sha", ""))
-        deploy_env["ROSETTA_DEPLOY_REF"] = str(payload.get("ref", ""))
-        deploy_env["ROSETTA_DEPLOY_REPOSITORY"] = str(payload.get("repository", ""))
+        deploy_env["ANNOPILOT_DEPLOY_MODE"] = str(payload.get("mode", env("ANNOPILOT_DEPLOY_MODE", "image")))
+        deploy_env["ANNOPILOT_DEPLOY_SHA"] = str(payload.get("sha", ""))
+        deploy_env["ANNOPILOT_DEPLOY_REF"] = str(payload.get("ref", ""))
+        deploy_env["ANNOPILOT_DEPLOY_REPOSITORY"] = str(payload.get("repository", ""))
 
-        timeout = int(env("ROSETTA_DEPLOY_TIMEOUT_SECONDS", "900"))
+        timeout = int(env("ANNOPILOT_DEPLOY_TIMEOUT_SECONDS", "900"))
         return subprocess.run(
             command,
             env=deploy_env,
@@ -172,10 +172,10 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 
 
 def main() -> None:
-    host = env("ROSETTA_WEBHOOK_HOST", "127.0.0.1")
-    port = int(env("ROSETTA_WEBHOOK_PORT", "9010"))
+    host = env("ANNOPILOT_WEBHOOK_HOST", "127.0.0.1")
+    port = int(env("ANNOPILOT_WEBHOOK_PORT", "9010"))
     server = ThreadingHTTPServer((host, port), DeployHandler)
-    print(f"Rosetta deploy webhook listening on http://{host}:{port}", flush=True)
+    print(f"AnnoPilot deploy webhook listening on http://{host}:{port}", flush=True)
     server.serve_forever()
 
 

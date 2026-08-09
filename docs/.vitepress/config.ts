@@ -30,7 +30,7 @@ export default defineConfig({
         text: '维护',
         items: [
           { text: '本地开发', link: '/guide/development' },
-          { text: 'Rosetta Docker 服务器部署', link: '/guide/rosetta-docker-deployment' },
+          { text: 'AnnoPilot Docker 服务器部署', link: '/guide/annopilot-docker-deployment' },
           { text: '文档维护方式', link: '/guide/documentation' },
           { text: 'GitHub Pages 部署', link: '/guide/deployment' },
         ],

@@ -1,18 +1,19 @@
-name: rosetta
+name: annopilot
 
 services:
-  rosetta-api:
-    image: ghcr.io/hy-liyihan/annopilot-api:${ROSETTA_IMAGE_TAG:-main}
-    container_name: rosetta-api
+  annopilot-api:
+    image: ghcr.io/hy-liyihan/annopilot-api:${ANNOPILOT_IMAGE_TAG:-main}
+    container_name: annopilot-api
     restart: unless-stopped
     environment:
       APP_ENV: production
       DATA_ROOT: /data/projects
       DATABASE_PATH: /data/runtime/annopilot.sqlite
-      STATIC_DIR: /app/static
+      SERVE_STATIC: "false"
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:8501,http://127.0.0.1:8501}
       PYTHONUNBUFFERED: "1"
     volumes:
-      - /opt/rosetta/data:/data
+      - /opt/annopilot/data:/data
     expose:
       - "8000"
     healthcheck:
@@ -21,12 +22,12 @@ services:
       timeout: 5s
       retries: 5
 
-  rosetta-web:
-    image: ghcr.io/hy-liyihan/annopilot-web:${ROSETTA_IMAGE_TAG:-main}
-    container_name: rosetta-web
+  annopilot-web:
+    image: ghcr.io/hy-liyihan/annopilot-web:${ANNOPILOT_IMAGE_TAG:-main}
+    container_name: annopilot-web
     restart: unless-stopped
     depends_on:
-      rosetta-api:
+      annopilot-api:
         condition: service_healthy
     ports:
-      - "${ROSETTA_WEB_PORT:-8501}:80"
+      - "${ANNOPILOT_WEB_PORT:-8501}:80"

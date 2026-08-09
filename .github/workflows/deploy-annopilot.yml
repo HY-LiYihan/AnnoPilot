@@ -1,4 +1,4 @@
-name: Deploy Rosetta
+name: Deploy AnnoPilot
 
 on:
   workflow_run:
@@ -12,7 +12,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: rosetta-deploy
+  group: annopilot-deploy
   cancel-in-progress: true
 
 env:
@@ -72,22 +72,22 @@ jobs:
     steps:
       - name: Trigger signed server deployment webhook
         env:
-          ROSETTA_DEPLOY_URL: ${{ secrets.ROSETTA_DEPLOY_URL }}
-          ROSETTA_WEBHOOK_SECRET: ${{ secrets.ROSETTA_WEBHOOK_SECRET }}
+          ANNOPILOT_DEPLOY_URL: ${{ secrets.ANNOPILOT_DEPLOY_URL }}
+          ANNOPILOT_WEBHOOK_SECRET: ${{ secrets.ANNOPILOT_WEBHOOK_SECRET }}
         run: |
           set -euo pipefail
-          test -n "$ROSETTA_DEPLOY_URL"
-          test -n "$ROSETTA_WEBHOOK_SECRET"
+          test -n "$ANNOPILOT_DEPLOY_URL"
+          test -n "$ANNOPILOT_WEBHOOK_SECRET"
 
           issued_at="$(date -u +%s)"
           payload="{\"repository\":\"${GITHUB_REPOSITORY}\",\"ref\":\"${DEPLOY_REF}\",\"sha\":\"${DEPLOY_SHA}\",\"mode\":\"image\",\"issued_at\":${issued_at}}"
-          signature="$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$ROSETTA_WEBHOOK_SECRET" -hex | sed 's/^.* //')"
+          signature="$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$ANNOPILOT_WEBHOOK_SECRET" -hex | sed 's/^.* //')"
 
           curl --fail --show-error --silent \
             --retry 3 \
             --retry-delay 5 \
             --max-time 900 \
-            -X POST "$ROSETTA_DEPLOY_URL" \
+            -X POST "$ANNOPILOT_DEPLOY_URL" \
             -H "Content-Type: application/json" \
-            -H "X-Rosetta-Signature: sha256=${signature}" \
+            -H "X-AnnoPilot-Signature: sha256=${signature}" \
             --data "$payload"

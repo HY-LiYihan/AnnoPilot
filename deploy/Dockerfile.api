@@ -4,7 +4,7 @@ WORKDIR /app
 
 ENV DATA_ROOT=/data/projects \
     DATABASE_PATH=/data/runtime/annopilot.sqlite \
-    STATIC_DIR=/app/static \
+    SERVE_STATIC=false \
     PYTHONUNBUFFERED=1
 
 COPY backend/requirements.txt ./backend/requirements.txt

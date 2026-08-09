@@ -186,7 +186,7 @@ mem_limit: 1g
 healthcheck: GET /api/health
 ```
 
-服务器侧 Rosetta 部署已经补齐拆分镜像和 webhook 自动更新链路：`Deploy Rosetta` workflow 在 `CI` 对 `main` push 成功后构建 `annopilot-api` / `annopilot-web` GHCR 镜像，并通过签名 webhook 触发 `/opt/rosetta/bin/deploy.sh`。当前服务器 webhook 已安装为 `rosetta-webhook.service`，OpenResty 80 端口窄路由转发到本机 `9010`，新服务先使用灰度端口 `18501`，不影响旧 `8501` 服务。详细说明见 [Rosetta Docker 服务器部署](/guide/rosetta-docker-deployment)。
+服务器侧 AnnoPilot 部署已经补齐拆分镜像和 webhook 自动更新链路：`Deploy AnnoPilot` workflow 在 `CI` 对 `main` push 成功后构建 `annopilot-api` / `annopilot-web` GHCR 镜像，并通过签名 webhook 触发 `/opt/annopilot/bin/deploy.sh`。当前服务器 webhook 已安装为 `annopilot-webhook.service`，OpenResty 80 端口窄路由转发到本机 `9010`，新服务先使用灰度端口 `18501`，不影响旧 `8501` 服务。详细说明见 [AnnoPilot Docker 服务器部署](/guide/annopilot-docker-deployment)。
 
 ### Documentation Site
 

@@ -6,7 +6,7 @@ AnnoPilot helps researchers and data builders move from a rough concept definiti
 
 ## What It Is
 
-AnnoPilot is the next home for the Rosetta annotation workflow. The project focuses on:
+AnnoPilot is the next home for the AnnoPilot annotation workflow. The project focuses on:
 
 - concept-driven annotation setup from short guidelines and small gold sets
 - prompt training and definition refinement before large batch runs
