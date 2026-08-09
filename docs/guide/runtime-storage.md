@@ -179,7 +179,7 @@ Annotation `source` 当前可能是 `human`、`accepted_suggestion` 或 `prodigy
 {"type":"annotation.deleted","annotation_id":"ann_...","sentence_id":"sent_..."}
 {"type":"sentence.completed","sentence_id":"sent_...","old_completed":false,"old_answer":"pending","completed":true,"answer":"accept"}
 {"type":"annotations.imported","document_id":"doc_...","filename":"annotations.jsonl","record_count":1000,"matched_count":980,"source_sha256":"...","source_record_results":[{"line_number":1,"record_sha256":"...","status":"matched","sentence_id":"sent_...","sentence_index":0,"answer":"accept","created_annotation_count":2}]}
-{"type":"suggestions.generated","document_id":"doc_...","sentence_id":"sent_...","run_id":"run_...","recipe":"character_rag","config":{"scope":"sentence"},"suggestions":[]}
+{"type":"suggestions.generated","document_id":"doc_...","sentence_id":"sent_...","run_id":"run_...","recipe":"character_rag","suggestion_count":3,"source_counts":{"lexical_exact":2,"char_ngram":1},"config":{"scope":"sentence"},"suggestions":[]}
 {"type":"suggestion.accepted","suggestion_id":"sug_...","sentence_id":"sent_..."}
 {"type":"suggestion.rejected","suggestion_id":"sug_...","sentence_id":"sent_..."}
 {"type":"suggestion.llm_reviewed","suggestion_id":"sug_...","model":"gpt5.5","recommendation":"accept","context_sha256":"..."}
@@ -199,7 +199,7 @@ actor_id
 
 `actor_type` 当前使用 `human`、`system`、`llm` 三类：人工导入、tag/annotation/sentence decision 记为 `annopilot-human`；Character RAG 生成建议和由建议落地的 annotation 记为 `annopilot-character-rag`；LLM review 记为对应模型名。Audit summary 会返回 `actor_type_counts` 和 `actor_id_counts`，用于快速检查一份事件日志里人工、系统建议和模型评审的来源比例。
 
-`suggestions.generated` 支持 document scope 和 sentence scope。Sentence scope 用于 UI 的当前句 suggestion action，只清理并替换该句 pending suggestions；document scope 会清理并替换整个 document 的 pending suggestions。
+`suggestions.generated` 支持 document scope 和 sentence scope。Sentence scope 用于 UI 的当前句 suggestion action，只清理并替换该句 pending suggestions；document scope 会清理并替换整个 document 的 pending suggestions。事件会保存 `source_counts`，因此即使只查看 JSONL audit trail，也能快速判断本次候选主要来自 exact、contains 还是 char n-gram。
 
 当前句批量 accept/reject 使用 sentence-scoped endpoints，在一个 SQLite transaction 中更新该句所有 pending suggestions。Accept 仍逐条生成可重放的 `annotation.created` 和 `suggestion.accepted` events；reject 逐条生成 `suggestion.rejected` events，保持 JSONL audit trail 可重放。
 

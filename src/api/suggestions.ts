@@ -7,7 +7,12 @@ export async function generateSuggestions(projectId: string, documentId: string,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ limit_per_sentence: limitPerSentence, min_confidence: minConfidence }),
   })
-  return parseJsonResponse<{ run_id: string; suggestions_created: number; suggestions: SuggestionDef[] }>(response)
+  return parseJsonResponse<{
+    run_id: string
+    suggestions_created: number
+    source_counts: Record<string, number>
+    suggestions: SuggestionDef[]
+  }>(response)
 }
 
 export async function generateSentenceSuggestions(
@@ -22,7 +27,12 @@ export async function generateSentenceSuggestions(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ limit_per_sentence: limitPerSentence, min_confidence: minConfidence }),
   })
-  return parseJsonResponse<{ run_id: string; suggestions_created: number; suggestions: SuggestionDef[] }>(response)
+  return parseJsonResponse<{
+    run_id: string
+    suggestions_created: number
+    source_counts: Record<string, number>
+    suggestions: SuggestionDef[]
+  }>(response)
 }
 
 export async function acceptSuggestion(projectId: string, suggestionId: string) {
@@ -65,6 +75,7 @@ export async function autoAnnotateSuggestions(projectId: string, documentId: str
   return parseJsonResponse<{
     run_id: string
     suggestions_created: number
+    source_counts: Record<string, number>
     accepted: number
     skipped: number
     min_confidence: number

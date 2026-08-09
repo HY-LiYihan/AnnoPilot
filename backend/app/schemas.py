@@ -336,6 +336,7 @@ class GenerateSuggestionsRequest(BaseModel):
 class GenerateSuggestionsResponse(BaseModel):
     run_id: str
     suggestions_created: int
+    source_counts: dict[str, int] = Field(default_factory=dict)
     suggestions: list[SuggestionResponse]
 
 
@@ -346,6 +347,7 @@ class AutoAcceptSuggestionsRequest(BaseModel):
 class AutoAnnotateSuggestionsResponse(BaseModel):
     run_id: str
     suggestions_created: int
+    source_counts: dict[str, int] = Field(default_factory=dict)
     accepted: int
     skipped: int
     min_confidence: float

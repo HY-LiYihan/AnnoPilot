@@ -1098,6 +1098,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         suggestions = suggestion_payload["suggestions"]
         assert len(suggestions) >= 2
         assert len(suggestions) <= 4
+        assert sum(suggestion_payload["source_counts"].values()) == len(suggestions)
+        assert set(suggestion_payload["source_counts"]).issubset({"lexical_exact", "lexical_contains", "char_ngram"})
         assert all(suggestion["run_id"] == suggestion_payload["run_id"] for suggestion in suggestions)
         assert all(suggestion["evidence_text"] for suggestion in suggestions)
         assert all(suggestion["match_key"] for suggestion in suggestions)
@@ -1153,6 +1155,7 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert runs[0]["accepted_count"] == 0
         assert runs[0]["rejected_count"] == 0
         assert runs[0]["acceptance_rate"] is None
+        assert runs[0]["source_counts"] == suggestion_payload["source_counts"]
         assert sum(runs[0]["source_counts"].values()) == len(suggestions)
         assert set(runs[0]["source_counts"]).issubset({"lexical_exact", "lexical_contains", "char_ngram"})
 
@@ -1245,6 +1248,7 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert manifest["event_audit"]["actor_type_counts"]["system"] >= 2
         assert manifest["event_audit"]["actor_id_counts"]["annopilot-character-rag"] >= 2
         assert manifest["runs"][0]["config"]["min_confidence"] == 0.98
+        assert manifest["runs"][0]["source_counts"] == suggestion_payload["source_counts"]
         assert manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["schema_version"] == "annopilot.run_provenance.v1"
         assert manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["filename"].endswith(".provenance.json")
         assert manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["content_sha256"] == provenance["content_sha256"]
@@ -1261,6 +1265,7 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert generated_event["actor_type"] == "system"
         assert generated_event["actor_id"] == "annopilot-character-rag"
         assert generated_event["suggestion_count"] == len(generated_event["suggestions"])
+        assert generated_event["source_counts"] == suggestion_payload["source_counts"]
         assert generated_event["config"]["limit_per_sentence"] == 2
         assert generated_event["config"]["min_confidence"] == 0.98
         assert generated_event["config"]["tag_schema_sha256"] == runs[0]["config"]["tag_schema_sha256"]
@@ -1559,6 +1564,7 @@ def test_auto_annotate_generates_and_accepts_high_confidence_spans(tmp_path: Pat
         payload = auto_annotate.json()
         assert payload["run_id"].startswith("run_")
         assert payload["suggestions_created"] >= 2
+        assert sum(payload["source_counts"].values()) == payload["suggestions_created"]
         assert payload["accepted"] == payload["suggestions_created"]
         assert payload["skipped"] == 0
         assert len(payload["accepted_suggestion_ids"]) == payload["accepted"]

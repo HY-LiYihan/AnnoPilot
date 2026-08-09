@@ -1720,6 +1720,14 @@ class AnnotationStorage:
             counts.setdefault(row["run_id"], {})[row["source"]] = int(row["count"])
         return counts
 
+    @staticmethod
+    def _suggestion_source_counts(suggestions: list[dict[str, Any]]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for suggestion in suggestions:
+            source = str(suggestion.get("source") or "unknown")
+            counts[source] = counts.get(source, 0) + 1
+        return dict(sorted(counts.items()))
+
     def export_run_provenance(self, project_id: str, run_id: str) -> dict[str, Any]:
         with self.connect() as conn:
             run_row = conn.execute(
@@ -2075,6 +2083,7 @@ class AnnotationStorage:
                         ),
                     )
 
+            source_counts = self._suggestion_source_counts(suggestion_records)
             conn.execute("UPDATE annotation_runs SET suggestion_count = ? WHERE id = ?", (len(suggestion_ids), run_id))
 
             self._enqueue_event(
@@ -2088,6 +2097,7 @@ class AnnotationStorage:
                     "recipe": "character_rag",
                     "input_count": len(sentence_rows),
                     "suggestion_count": len(suggestion_ids),
+                    "source_counts": source_counts,
                     "config": run_config,
                     "cleared_pending_suggestion_ids": cleared_pending_suggestion_ids,
                     "suggestions": suggestion_records,
@@ -2095,7 +2105,12 @@ class AnnotationStorage:
             )
 
         self.flush_event_outbox(project_id)
-        return {"run_id": run_id, "suggestions_created": len(suggestion_ids), "suggestions": self.get_suggestions(project_id, suggestion_ids)}
+        return {
+            "run_id": run_id,
+            "suggestions_created": len(suggestion_ids),
+            "source_counts": source_counts,
+            "suggestions": self.get_suggestions(project_id, suggestion_ids),
+        }
 
     def accept_suggestion(self, project_id: str, suggestion_id: str) -> list[dict[str, Any]]:
         suggestion = self._get_suggestion_row(project_id, suggestion_id)
@@ -2340,6 +2355,7 @@ class AnnotationStorage:
         return {
             "run_id": generated["run_id"],
             "suggestions_created": generated["suggestions_created"],
+            "source_counts": generated["source_counts"],
             **accepted,
         }
 

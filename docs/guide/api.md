@@ -73,6 +73,7 @@ POST /api/projects/{project_id}/suggestions/{suggestion_id}/llm-review
 
 - Suggestions 当前由 Character RAG 生成，支持 document scope 和 sentence scope。
 - `limit_per_sentence` 默认 6，上限 20；`min_confidence` 取值范围 0 到 1。
+- Generate / auto-annotate response 会返回 `source_counts`，按 `lexical_exact`、`lexical_contains`、`char_ngram` 汇总本次 run 的候选来源分布。
 - `auto-annotate` 会先运行 Character RAG suggestions，再按同一 `min_confidence` 自动接受高置信 span，形成一键低算力自动标注 slice。
 - Suggestion payload 保留 `evidence_text`、`match_key` 和 `evidence_match_key`，用于审计字符规则实际命中的原始证据与归一化匹配键。
 - Accept 会创建 `source=accepted_suggestion` annotation，并把 suggestion 状态改为 `accepted`。
@@ -90,7 +91,7 @@ POST /api/projects/{project_id}/rebuild/preview
 ```
 
 - Runs 当前记录 Character RAG run history、config、input count、suggestion count 和 accepted/rejected/pending counts。
-- Runs 还返回 `source_counts`，按 `lexical_exact`、`lexical_contains`、`char_ngram` 汇总每次低算力 RAG run 的候选来源分布。
+- Runs、run provenance、manifest run summary 和 `suggestions.generated` event 都返回 `source_counts`，按 `lexical_exact`、`lexical_contains`、`char_ngram` 汇总每次低算力 RAG run 的候选来源分布。
 - Run provenance JSON 记录 run config、match keys、evidence、latest LLM review 和 decision event。
 - Audit 汇总 event count、schema version、event types、actor distribution、pending outbox 和 replay issues。
 - Rebuild preview 使用临时 SQLite database 重放 `events.jsonl`，不会覆盖当前 runtime database。
