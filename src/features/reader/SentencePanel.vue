@@ -71,6 +71,7 @@ const emit = defineEmits<{
   'auto-reject-document-suggestions': []
   'review-suggestion': [suggestion: SuggestionDef]
   'review-current-suggestions': []
+  'apply-current-reviews': []
   'suggestion-limit-change': [limit: number]
   'suggestion-min-confidence-change': [minConfidence: number]
   'next-review': []
@@ -412,6 +413,10 @@ function predicatePositionClasses(
           <button class="batch-review-button" :disabled="!activeSuggestions.length || isSaving || !!reviewingSuggestionId" @click="emit('review-current-suggestions')">
             <Sparkles :size="16" aria-hidden="true" />
             {{ labels.reviewCurrent }}
+          </button>
+          <button class="batch-review-button accept" :disabled="!activeSuggestions.length || isSaving" @click="emit('apply-current-reviews')">
+            <Check :size="16" aria-hidden="true" />
+            {{ labels.applyReview }}
           </button>
           <button class="batch-review-button accept" :disabled="!documentMeta || !hasReviewQueue || isSaving" @click="emit('auto-accept-document-suggestions')">
             <Check :size="16" aria-hidden="true" />

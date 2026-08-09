@@ -53,6 +53,20 @@ export async function acceptSentenceSuggestions(projectId: string, sentenceId: s
   }>(response)
 }
 
+export async function applySentenceSuggestionReviews(projectId: string, sentenceId: string) {
+  const response = await fetch(`/api/projects/${projectId}/sentences/${sentenceId}/suggestions/apply-llm-review`, { method: 'POST' })
+  return parseJsonResponse<{
+    accepted: number
+    rejected: number
+    skipped: number
+    kept: number
+    accepted_suggestion_ids: string[]
+    rejected_suggestion_ids: string[]
+    affected_sentence_ids: string[]
+    annotations: AnnotationDef[]
+  }>(response)
+}
+
 export async function autoAcceptSuggestions(projectId: string, documentId: string, minConfidence = 0.9) {
   const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/suggestions/auto-accept`, {
     method: 'POST',

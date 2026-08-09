@@ -22,6 +22,7 @@ import { fetchRuns, runProvenanceExportUrl } from '../api/runs'
 import {
   acceptSuggestion,
   acceptSentenceSuggestions,
+  applySentenceSuggestionReviews,
   autoAnnotateSuggestions,
   autoAcceptSuggestions,
   autoRejectSuggestions,
@@ -961,6 +962,30 @@ export function useDocumentReader() {
     }
   }
 
+  async function applyCurrentSentenceSuggestionReviews() {
+    const sentence = currentSentence.value
+    if (!sentence || !activeSuggestions.value.length || isSaving.value) return
+    isSaving.value = true
+    readerError.value = ''
+    try {
+      const payload = await applySentenceSuggestionReviews(PROJECT_ID, sentence.id)
+      replaceSentenceAnnotations(sentence.id, payload.annotations)
+      await refreshDocumentSummary()
+      if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
+      await refreshAuditSummary()
+      jumpToNextReviewIfCurrentCleared()
+      if (payload.accepted === 0 && payload.rejected === 0) {
+        readerError.value = 'No LLM accept/reject recommendations to apply in this sentence.'
+      } else if (payload.skipped > 0) {
+        readerError.value = `${payload.skipped} reviewed suggestions overlapped existing annotations and were skipped.`
+      }
+    } catch (error) {
+      readerError.value = error instanceof Error ? error.message : 'Could not apply LLM review recommendations.'
+    } finally {
+      isSaving.value = false
+    }
+  }
+
   function replaceSentenceAnnotations(sentenceId: string, annotations: AnnotationDef[]) {
     sentences.value = sentences.value.map((sentence) =>
       sentence.id === sentenceId ? { ...sentence, annotations, suggestions: withoutAnnotationOverlaps(sentence.suggestions, annotations) } : sentence,
@@ -1201,6 +1226,7 @@ export function useDocumentReader() {
     autoRejectDocumentSuggestions,
     reviewSuggestedSpan,
     reviewCurrentSentenceSuggestions,
+    applyCurrentSentenceSuggestionReviews,
     annotationForToken,
     suggestionForToken,
     isTokenInDrag: selection.isTokenInDrag,

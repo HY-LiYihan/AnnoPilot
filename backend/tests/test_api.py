@@ -22,6 +22,22 @@ class FakeSuggestionReviewer:
         }
 
 
+class CyclingSuggestionReviewer:
+    def __init__(self) -> None:
+        self.index = 0
+
+    def review(self, context: dict) -> dict:
+        assert context["suggestion"]["text"]
+        recommendation = ["accept", "reject", "uncertain"][self.index % 3]
+        self.index += 1
+        return {
+            "model": "fake-gpt5.5",
+            "recommendation": recommendation,
+            "confidence": 0.88,
+            "rationale": f"循环评审结果：{recommendation}",
+        }
+
+
 def make_client(tmp_path: Path) -> TestClient:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",
@@ -1914,6 +1930,71 @@ def test_sentence_llm_review_suggestions_reviews_current_queue(tmp_path: Path) -
         assert len(review_events) == len(suggestions)
         assert {event["suggestion_id"] for event in review_events} == {suggestion["id"] for suggestion in suggestions}
         assert all(event["actor_type"] == "llm" for event in review_events)
+
+
+def test_apply_sentence_llm_review_recommendations_updates_suggestions(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage, suggestion_reviewer=CyclingSuggestionReviewer())) as client:
+        seed_pos_span_labels(client)
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("story.txt", "清晨，小猫看见金色的叶子。", "text/plain")},
+        )
+        document_id = response.json()["document_id"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=1").json()
+        sentence_id = page["sentences"][0]["id"]
+
+        suggestion_payload = client.post(
+            f"/api/projects/default/documents/{document_id}/sentences/{sentence_id}/suggestions/run",
+            json={"limit_per_sentence": 4, "min_confidence": 0.98},
+        ).json()
+        suggestions = suggestion_payload["suggestions"]
+        assert len(suggestions) >= 3
+
+        reviewed = client.post(f"/api/projects/default/sentences/{sentence_id}/suggestions/llm-review").json()
+        recommendations = {review["suggestion_id"]: review["recommendation"] for review in reviewed["reviews"]}
+        expected_accept_ids = [suggestion["id"] for suggestion in suggestions if recommendations[suggestion["id"]] == "accept"]
+        expected_reject_ids = [suggestion["id"] for suggestion in suggestions if recommendations[suggestion["id"]] == "reject"]
+        expected_kept_ids = [suggestion["id"] for suggestion in suggestions if recommendations[suggestion["id"]] == "uncertain"]
+        assert expected_accept_ids
+        assert expected_reject_ids
+        assert expected_kept_ids
+
+        apply_response = client.post(f"/api/projects/default/sentences/{sentence_id}/suggestions/apply-llm-review")
+        assert apply_response.status_code == 200
+        applied = apply_response.json()
+        assert applied["accepted"] == len(expected_accept_ids)
+        assert applied["rejected"] == len(expected_reject_ids)
+        assert applied["skipped"] == 0
+        assert applied["kept"] == len(expected_kept_ids)
+        assert applied["accepted_suggestion_ids"] == expected_accept_ids
+        assert applied["rejected_suggestion_ids"] == expected_reject_ids
+        assert applied["affected_sentence_ids"] == [sentence_id]
+        assert len(applied["annotations"]) == len(expected_accept_ids)
+
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        assert document["metrics"]["suggestion_count"] == len(expected_kept_ids)
+        assert document["metrics"]["suggestion_status_counts"] == {
+            "pending": len(expected_kept_ids),
+            "accepted": len(expected_accept_ids),
+            "rejected": len(expected_reject_ids),
+        }
+        assert document["metrics"]["suggestion_review_counts"] == {
+            "accept": len(expected_accept_ids),
+            "reject": len(expected_reject_ids),
+            "uncertain": len(expected_kept_ids),
+        }
+        pending_ids = {suggestion["id"] for sentence in document["sentences"] for suggestion in sentence["suggestions"]}
+        assert pending_ids == set(expected_kept_ids)
+
+        events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
+        assert sum(1 for event in events if event["type"] == "annotation.created") == len(expected_accept_ids)
+        assert {event["suggestion_id"] for event in events if event["type"] == "suggestion.accepted"} == set(expected_accept_ids)
+        assert {event["suggestion_id"] for event in events if event["type"] == "suggestion.rejected"} == set(expected_reject_ids)
+        assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
 
 def test_rebuild_project_from_events_restores_runtime_state(tmp_path: Path) -> None:

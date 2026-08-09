@@ -83,6 +83,7 @@ POST   /api/projects/{project_id}/sentences/{sentence_id}/suggestions/accept
 POST   /api/projects/{project_id}/sentences/{sentence_id}/suggestions/reject
 POST   /api/projects/{project_id}/suggestions/{suggestion_id}/llm-review
 POST   /api/projects/{project_id}/sentences/{sentence_id}/suggestions/llm-review
+POST   /api/projects/{project_id}/sentences/{sentence_id}/suggestions/apply-llm-review
 GET    /api/projects/{project_id}/runs
 GET    /api/projects/{project_id}/runs/{run_id}/provenance.json
 GET    /api/projects/{project_id}/audit
