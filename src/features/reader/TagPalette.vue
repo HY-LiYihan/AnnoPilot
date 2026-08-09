@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { AlertTriangle, Check, Pencil, Plus, Tag, Trash2, X } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
 import type { SentenceQueueItem, TagDef } from '../../types/domain'
 
-defineProps<{
+const SENTENCE_DOT_WINDOW_SIZE = 50
+
+const props = defineProps<{
   labels: UiLabels['tags']
   tags: TagDef[]
   selectedTagId: string
   hasPendingSelection: boolean
   queueItems: SentenceQueueItem[]
   currentSentenceIndex: number
+  progressPercent: number
   reviewedSummary: string
   reviewSummary: string
   reviewQueueSummary: string
@@ -33,6 +36,25 @@ const editingTagId = ref('')
 const editingTagName = ref('')
 const editingTagDescription = ref('')
 const pendingDeleteTag = ref<TagDef | null>(null)
+
+const visibleQueueItems = computed(() => {
+  const total = props.queueItems.length
+  if (total <= SENTENCE_DOT_WINDOW_SIZE) return props.queueItems
+
+  const currentPosition = props.queueItems.findIndex((sentence) => sentence.index === props.currentSentenceIndex)
+  const centerPosition = currentPosition >= 0 ? currentPosition : 0
+  const halfWindow = Math.floor(SENTENCE_DOT_WINDOW_SIZE / 2)
+  const maxStart = Math.max(total - SENTENCE_DOT_WINDOW_SIZE, 0)
+  const start = Math.min(Math.max(centerPosition - halfWindow, 0), maxStart)
+  return props.queueItems.slice(start, start + SENTENCE_DOT_WINDOW_SIZE)
+})
+
+const visibleQueueSummary = computed(() => {
+  if (!visibleQueueItems.value.length) return props.labels.windowEmpty
+  const first = visibleQueueItems.value[0].index + 1
+  const last = visibleQueueItems.value[visibleQueueItems.value.length - 1].index + 1
+  return props.labels.windowSummary(first, last, props.queueItems.length)
+})
 
 function submitTag() {
   const name = newTagName.value.trim()
@@ -265,11 +287,22 @@ function confirmDeleteTag() {
     <div class="queue-block" :aria-label="labels.progressAria">
       <div class="mini-heading">
         <span>{{ labels.progressTitle }}</span>
-        <em>{{ reviewedSummary }} · {{ reviewSummary }} · {{ reviewQueueSummary }}</em>
+        <em>{{ progressPercent }}%</em>
+      </div>
+      <div class="queue-progress-summary">
+        <span>{{ labels.overallProgress }}</span>
+        <strong>{{ reviewedSummary }}</strong>
+      </div>
+      <div class="progress-track queue-progress-track" aria-hidden="true">
+        <span :style="{ width: `${progressPercent}%` }"></span>
+      </div>
+      <div class="queue-window-heading">
+        <span>{{ visibleQueueSummary }}</span>
+        <em>{{ reviewSummary }} · {{ reviewQueueSummary }}</em>
       </div>
       <div class="sentence-dot-grid">
         <button
-          v-for="sentence in queueItems"
+          v-for="sentence in visibleQueueItems"
           :key="sentence.id"
           class="sentence-dot"
           :class="{

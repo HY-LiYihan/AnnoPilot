@@ -795,6 +795,41 @@ kbd {
   font-style: normal;
 }
 
+.queue-progress-summary,
+.queue-window-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #626861;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.queue-progress-summary strong {
+  color: #00685b;
+  white-space: nowrap;
+}
+
+.queue-block .queue-progress-track {
+  height: 10px;
+  margin: 9px 0 12px;
+}
+
+.queue-window-heading {
+  margin-bottom: 10px;
+}
+
+.queue-window-heading em {
+  min-width: 0;
+  overflow: hidden;
+  color: #00685b;
+  font-style: normal;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sentence-dot-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));

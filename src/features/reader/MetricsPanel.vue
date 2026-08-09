@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BarChart3, DatabaseZap, Download, Gauge, Keyboard, MousePointer2, RotateCw, Route, Sparkles, Target, Upload } from '@lucide/vue'
+import { BarChart3, DatabaseZap, Download, Keyboard, MousePointer2, RotateCw, Route, Sparkles, Target, Upload } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
 import type { AnnotationRun, AuditSummary, DocumentMeta, Metrics, RebuildPreview, ReviewQueueItem } from '../../types/domain'
 
@@ -13,8 +13,6 @@ defineProps<{
   reviewQueueDetails: ReviewQueueItem[]
   reviewQueueTotal: number
   reviewQueueOrder: 'position' | 'uncertain'
-  progressPercent: number
-  reviewedSummary: string
   isVerifyingRebuild: boolean
 }>()
 
@@ -74,12 +72,6 @@ function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
 
     <div class="metric-stack">
       <article class="metric-card">
-        <Gauge :size="22" aria-hidden="true" />
-        <span>{{ labels.progress }}</span>
-        <strong>{{ progressPercent }}%</strong>
-        <small>{{ reviewedSummary }} {{ labels.sentences }}</small>
-      </article>
-      <article class="metric-card">
         <Target :size="22" aria-hidden="true" />
         <span>{{ labels.accuracy }}</span>
         <strong>{{ metrics.accuracy === null ? '--' : `${Math.round(metrics.accuracy * 100)}%` }}</strong>
@@ -129,38 +121,6 @@ function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
         </small>
       </article>
     </div>
-
-    <section class="progress-card" :aria-label="labels.progress">
-      <div class="progress-header">
-        <span>{{ labels.document }}</span>
-        <strong>{{ documentMeta?.sentence_count ?? 0 }} {{ labels.sentences }}</strong>
-      </div>
-      <div class="progress-track" aria-hidden="true">
-        <span :style="{ width: `${progressPercent}%` }"></span>
-      </div>
-      <div class="quality-list">
-        <div>
-          <span>{{ labels.accept }}</span>
-          <strong>{{ metrics.answer_counts.accept ?? 0 }}</strong>
-        </div>
-        <div>
-          <span>{{ labels.reject }}</span>
-          <strong>{{ metrics.answer_counts.reject ?? 0 }}</strong>
-        </div>
-        <div>
-          <span>{{ labels.ignore }}</span>
-          <strong>{{ metrics.answer_counts.ignore ?? 0 }}</strong>
-        </div>
-        <div>
-          <span>{{ labels.pendingStatus }}</span>
-          <strong>{{ metrics.answer_counts.pending ?? 0 }}</strong>
-        </div>
-        <div>
-          <span>{{ labels.tokens }}</span>
-          <strong>{{ documentMeta?.token_count ?? 0 }}</strong>
-        </div>
-      </div>
-    </section>
 
     <section class="progress-card shortcut-card" :aria-label="labels.shortcuts">
       <div class="progress-header">
