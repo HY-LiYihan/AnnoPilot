@@ -808,6 +808,8 @@ kbd {
 
 .queue-progress-summary strong {
   color: #00685b;
+  font-size: 1.08rem;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -832,14 +834,14 @@ kbd {
 
 .sentence-dot-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(24px, 1fr));
-  gap: 9px;
+  grid-template-columns: repeat(auto-fill, minmax(18px, 1fr));
+  gap: 7px;
 }
 
 .sentence-dot {
   position: relative;
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   display: grid;
   place-items: center;
   border: 1px solid #cfcac0;
@@ -882,8 +884,8 @@ kbd {
 }
 
 .sentence-dot.active {
-  outline: 3px solid rgba(0, 104, 91, 0.22);
-  outline-offset: 3px;
+  outline: 2px solid rgba(0, 104, 91, 0.22);
+  outline-offset: 2px;
 }
 
 .sentence-dot-legend {
@@ -1981,7 +1983,7 @@ kbd {
 
   .sentence-dot-grid {
     grid-auto-flow: column;
-    grid-auto-columns: 24px;
+    grid-auto-columns: 18px;
     grid-template-columns: none;
     overflow-x: auto;
     padding: 4px 4px 8px;
