@@ -12,9 +12,12 @@ import type {
   SuggestionReview,
   TxtImportMode,
 } from '../../types/domain'
+import { truncateFilename } from '../../utils/display'
 
 const SWIPE_MIN_DISTANCE = 56
 const SWIPE_AXIS_RATIO = 1.4
+const DOCUMENT_TITLE_FILENAME_LIMIT = 34
+const DOCUMENT_OPTION_FILENAME_LIMIT = 28
 
 const props = defineProps<{
   labels: UiLabels['reader']
@@ -136,7 +139,17 @@ function handleDrop(event: DragEvent, mode: TxtImportMode) {
 function documentOptionText(document: DocumentListItem, labels: UiLabels['reader']) {
   const progress = Math.min(Math.max(document.progress * 100, 0), 100)
   const cursor = typeof document.current_sentence_index === 'number' ? labels.cursor(document.current_sentence_index + 1) : ''
-  return labels.documentOption(document.filename, cursor, progress, document.annotation_count, document.suggestion_count)
+  return labels.documentOption(
+    truncateFilename(document.filename, DOCUMENT_OPTION_FILENAME_LIMIT),
+    cursor,
+    progress,
+    document.annotation_count,
+    document.suggestion_count,
+  )
+}
+
+function documentTitleText(document: DocumentMeta | null, fallback: string) {
+  return document ? truncateFilename(document.filename, DOCUMENT_TITLE_FILENAME_LIMIT) : fallback
 }
 
 const swipeStart = ref<{ x: number; y: number; pointerId: number } | null>(null)
@@ -236,12 +249,12 @@ function predicatePositionClasses(
     <div v-if="documentMeta" class="editor-header">
       <div>
         <p class="section-kicker">{{ labels.kicker }}</p>
-        <h1 id="editor-title">{{ documentMeta?.filename ?? labels.emptyTitle }}</h1>
+        <h1 id="editor-title" :title="documentMeta?.filename">{{ documentTitleText(documentMeta, labels.emptyTitle) }}</h1>
       </div>
       <div class="editor-tools">
         <label v-if="documents.length" class="document-switcher">
           <select :value="documentMeta?.id ?? ''" :disabled="isUploading" @change="handleDocumentChange">
-            <option v-for="document in documents" :key="document.id" :value="document.id">
+            <option v-for="document in documents" :key="document.id" :value="document.id" :title="document.filename">
               {{ documentOptionText(document, labels) }}
             </option>
           </select>
