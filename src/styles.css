@@ -119,6 +119,35 @@ button:disabled {
   min-width: 0;
 }
 
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #d0ccc3;
+  border-radius: 999px;
+  background: #fffdf8;
+}
+
+.language-switcher button {
+  min-width: 44px;
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: #6f726e;
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.language-switcher button.active {
+  color: #ffffff;
+  background: #00685b;
+  box-shadow: 0 5px 14px rgba(0, 104, 91, 0.18);
+}
+
 .llm-status {
   max-width: 260px;
 }
@@ -1572,6 +1601,7 @@ kbd {
 
   .topbar {
     min-height: auto;
+    flex-wrap: wrap;
     border-bottom: 1px solid #c9c6bf;
     border-radius: 10px;
   }

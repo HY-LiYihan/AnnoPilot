@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { AlertTriangle, Check, Pencil, Plus, Tag, Trash2, Upload, X } from '@lucide/vue'
+import type { UiLabels } from '../../i18n'
 import type { SentenceQueueItem, TagDef } from '../../types/domain'
 
 defineProps<{
+  labels: UiLabels['tags']
   tags: TagDef[]
   selectedTagId: string
   hasPendingSelection: boolean
@@ -58,17 +60,25 @@ function hasDeleteImpact(tag: TagDef) {
   return tagUsage(tag) > 0 || tagSuggestionUsage(tag) > 0
 }
 
-function deleteImpactSummary(tag: TagDef) {
+function deleteImpactSummary(tag: TagDef, labels: UiLabels['tags']) {
   const impacts: string[] = []
   const annotationCount = tagUsage(tag)
   const suggestionCount = tagSuggestionUsage(tag)
-  if (annotationCount > 0) impacts.push(`${annotationCount} 处标注`)
-  if (suggestionCount > 0) impacts.push(`${suggestionCount} 条 AI 建议`)
+  if (annotationCount > 0) impacts.push(labels.annotationCount(annotationCount))
+  if (suggestionCount > 0) impacts.push(labels.suggestionCount(suggestionCount))
   return impacts.join('，')
 }
 
-function deleteButtonLabel(tag: TagDef) {
-  return hasDeleteImpact(tag) ? '删除标签和数据' : '删除标签'
+function deleteButtonLabel(tag: TagDef, labels: UiLabels['tags']) {
+  return hasDeleteImpact(tag) ? labels.deleteButtonWithData : labels.deleteButton
+}
+
+function sentenceStatusLabel(sentence: SentenceQueueItem, labels: UiLabels['tags']) {
+  if (sentence.answer === 'reject') return labels.rejected
+  if (sentence.answer === 'ignore') return labels.ignored
+  if (sentence.completed) return labels.completed
+  if (sentence.suggestion_count) return labels.needsReview
+  return labels.untouched
 }
 
 function requestDeleteTag(tag: TagDef) {
@@ -133,29 +143,29 @@ function confirmDeleteTag() {
 </script>
 
 <template>
-  <aside class="side-panel tag-panel" aria-labelledby="tag-panel-title">
+  <aside class="side-panel tag-panel" aria-labelledby="tag-panel-title" :aria-label="labels.aria">
     <div class="panel-heading">
       <div>
-        <p class="section-kicker">POS Tags</p>
-        <h2 id="tag-panel-title">词性标签</h2>
+        <p class="section-kicker">{{ labels.kicker }}</p>
+        <h2 id="tag-panel-title">{{ labels.title }}</h2>
       </div>
       <Tag :size="20" aria-hidden="true" />
     </div>
 
-    <form class="tag-form" aria-label="Create annotation tag" @submit.prevent="submitTag">
-      <input v-model="newTagName" type="text" maxlength="32" placeholder="新增标签" :disabled="isSaving" />
-      <button type="submit" class="tag-add-button" :disabled="isSaving || !newTagName.trim()" title="新增标签">
+    <form class="tag-form" :aria-label="labels.createAria" @submit.prevent="submitTag">
+      <input v-model="newTagName" type="text" maxlength="32" :placeholder="labels.addPlaceholder" :disabled="isSaving" />
+      <button type="submit" class="tag-add-button" :disabled="isSaving || !newTagName.trim()" :title="labels.addTitle">
         <Plus :size="16" aria-hidden="true" />
       </button>
     </form>
 
-    <label class="tag-schema-import" title="导入 tag-schema.json">
+    <label class="tag-schema-import" :title="labels.importSchema">
       <Upload :size="15" aria-hidden="true" />
-      <span>Import Tag Schema</span>
+      <span>{{ labels.importSchema }}</span>
       <input type="file" accept="application/json,.json" :disabled="isSaving" @change="submitTagSchemaImport" />
     </label>
 
-    <div class="tag-list" aria-label="Available annotation tags">
+    <div class="tag-list" :aria-label="labels.availableAria">
       <div
         v-for="tagItem in tags"
         :key="tagItem.id"
@@ -165,14 +175,14 @@ function confirmDeleteTag() {
       >
         <form v-if="editingTagId === tagItem.id" class="tag-edit-form" @submit.prevent="submitEditTag(tagItem)" @click.stop>
           <span class="tag-dot" aria-hidden="true"></span>
-          <input v-model="editingTagName" type="text" maxlength="32" aria-label="重命名标签" :disabled="isSaving" />
+          <input v-model="editingTagName" type="text" maxlength="32" :aria-label="labels.renameAria" :disabled="isSaving" />
           <input
             v-model="editingTagDescription"
             class="tag-guideline-input"
             type="text"
             maxlength="280"
-            aria-label="标签准则说明"
-            placeholder="标注准则说明"
+            :aria-label="labels.guidelineAria"
+            :placeholder="labels.guidelinePlaceholder"
             :disabled="isSaving"
           />
           <input
@@ -180,14 +190,14 @@ function confirmDeleteTag() {
             class="tag-example-input"
             type="text"
             maxlength="800"
-            aria-label="低算力 RAG 词面种子"
-            placeholder="词面种子，用逗号或空格分隔"
+            :aria-label="labels.examplesAria"
+            :placeholder="labels.examplesPlaceholder"
             :disabled="isSaving"
           />
-          <button type="submit" class="tag-edit-button" :disabled="isSaving || !editingTagName.trim()" title="保存标签名">
+          <button type="submit" class="tag-edit-button" :disabled="isSaving || !editingTagName.trim()" :title="labels.saveTitle">
             <Check :size="15" aria-hidden="true" />
           </button>
-          <button type="button" class="tag-edit-button" :disabled="isSaving" title="取消重命名" @click="cancelEditTag">
+          <button type="button" class="tag-edit-button" :disabled="isSaving" :title="labels.cancelTitle" @click="cancelEditTag">
             <X :size="15" aria-hidden="true" />
           </button>
         </form>
@@ -195,9 +205,9 @@ function confirmDeleteTag() {
           <span class="tag-dot" aria-hidden="true"></span>
           <span class="tag-copy">
             <strong>{{ tagItem.name }}</strong>
-            <small>{{ tagUsage(tagItem) }} 处标注</small>
+            <small>{{ labels.annotationCount(tagUsage(tagItem)) }}</small>
             <em v-if="tagItem.description">{{ tagItem.description }}</em>
-            <em v-if="tagItem.examples.length">{{ tagItem.examples.length }} 个 RAG 词面种子</em>
+            <em v-if="tagItem.examples.length">{{ labels.ragSeedCount(tagItem.examples.length) }}</em>
           </span>
           <kbd>{{ tagItem.shortcut }}</kbd>
         </button>
@@ -206,7 +216,7 @@ function confirmDeleteTag() {
           type="button"
           class="tag-edit-button"
           :disabled="isSaving"
-          title="重命名标签"
+          :title="labels.editTitle"
           @click.stop="startEditTag(tagItem)"
         >
           <Pencil :size="15" aria-hidden="true" />
@@ -218,10 +228,10 @@ function confirmDeleteTag() {
           :disabled="isSaving || tags.length <= 1"
           :title="
             tags.length <= 1
-              ? '至少保留一个标签'
+              ? labels.keepOneTitle
               : hasDeleteImpact(tagItem)
-                ? `删除标签，并删除 ${deleteImpactSummary(tagItem)}`
-                : '删除标签'
+                ? labels.deleteWithDataTitle(deleteImpactSummary(tagItem, labels))
+                : labels.deleteTitle
           "
           @click="requestDeleteTag(tagItem)"
         >
@@ -231,31 +241,31 @@ function confirmDeleteTag() {
     </div>
 
     <div v-if="pendingDeleteTag" class="tag-delete-confirm" role="alertdialog" aria-live="polite">
-      <button type="button" class="confirm-close" aria-label="取消删除" @click="cancelDeleteTag">
+      <button type="button" class="confirm-close" :aria-label="labels.cancelTitle" @click="cancelDeleteTag">
         <X :size="15" aria-hidden="true" />
       </button>
       <div class="confirm-icon" aria-hidden="true">
         <AlertTriangle :size="18" />
       </div>
       <div class="confirm-copy">
-        <strong>删除「{{ pendingDeleteTag.name }}」？</strong>
+        <strong>{{ labels.deleteQuestion(pendingDeleteTag.name) }}</strong>
         <p v-if="tagUsage(pendingDeleteTag) > 0">
-          这个标签已用于 {{ tagUsage(pendingDeleteTag) }} 处标注；确认删除后，所有使用「{{ pendingDeleteTag.name }}」的标注数据都会一并删除。
+          {{ labels.deleteAnnotationWarning(pendingDeleteTag.name, tagUsage(pendingDeleteTag)) }}
         </p>
-        <p v-else>这个标签还没有被用于人工标注，删除后只会从标签列表移除。</p>
-        <p v-if="tagSuggestionUsage(pendingDeleteTag) > 0">同时会删除 {{ tagSuggestionUsage(pendingDeleteTag) }} 条对应的 AI 建议。</p>
+        <p v-else>{{ labels.deleteUnused }}</p>
+        <p v-if="tagSuggestionUsage(pendingDeleteTag) > 0">{{ labels.deleteSuggestionWarning(tagSuggestionUsage(pendingDeleteTag)) }}</p>
       </div>
       <div class="confirm-actions">
-        <button type="button" class="ghost-button" :disabled="isSaving" @click="cancelDeleteTag">取消</button>
+        <button type="button" class="ghost-button" :disabled="isSaving" @click="cancelDeleteTag">{{ labels.cancel }}</button>
         <button type="button" class="danger-button" :disabled="isSaving" @click="confirmDeleteTag">
-          {{ deleteButtonLabel(pendingDeleteTag) }}
+          {{ deleteButtonLabel(pendingDeleteTag, labels) }}
         </button>
       </div>
     </div>
 
-    <div class="queue-block" aria-label="Sentence progress grid">
+    <div class="queue-block" :aria-label="labels.progressAria">
       <div class="mini-heading">
-        <span>句子进度</span>
+        <span>{{ labels.progressTitle }}</span>
         <em>{{ reviewedSummary }} · {{ reviewSummary }} · {{ reviewQueueSummary }}</em>
       </div>
       <div class="sentence-dot-grid">
@@ -271,19 +281,19 @@ function confirmDeleteTag() {
             'needs-review': !sentence.completed && sentence.suggestion_count > 0,
             untouched: !sentence.completed && !sentence.suggestion_count,
           }"
-          :aria-label="`Sentence ${sentence.index + 1}: ${sentence.answer === 'reject' ? 'rejected' : sentence.answer === 'ignore' ? 'ignored' : sentence.completed ? 'completed' : sentence.suggestion_count ? 'needs review' : 'untouched'}`"
-          :title="`#${sentence.index + 1} ${sentence.answer === 'reject' ? 'Rejected' : sentence.answer === 'ignore' ? 'Ignored' : sentence.completed ? 'Completed' : sentence.suggestion_count ? 'Needs review' : 'Untouched'}`"
+          :aria-label="labels.sentenceAria(sentence.index + 1, sentenceStatusLabel(sentence, labels))"
+          :title="labels.sentenceTitle(sentence.index + 1, sentenceStatusLabel(sentence, labels))"
           @click="emit('sentence-click', sentence.index)"
         >
           <span>{{ sentence.index + 1 }}</span>
         </button>
       </div>
-      <div class="sentence-dot-legend" aria-label="Sentence status legend">
-        <span><i class="legend-dot completed"></i>已标完</span>
-        <span><i class="legend-dot rejected"></i>已拒绝</span>
-        <span><i class="legend-dot ignored"></i>已忽略</span>
-        <span><i class="legend-dot needs-review"></i>待确认</span>
-        <span><i class="legend-dot untouched"></i>未开始</span>
+      <div class="sentence-dot-legend" :aria-label="labels.legendAria">
+        <span><i class="legend-dot completed"></i>{{ labels.completed }}</span>
+        <span><i class="legend-dot rejected"></i>{{ labels.rejected }}</span>
+        <span><i class="legend-dot ignored"></i>{{ labels.ignored }}</span>
+        <span><i class="legend-dot needs-review"></i>{{ labels.needsReview }}</span>
+        <span><i class="legend-dot untouched"></i>{{ labels.untouched }}</span>
       </div>
     </div>
   </aside>

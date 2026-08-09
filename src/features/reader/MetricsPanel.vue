@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { BarChart3, DatabaseZap, Download, Gauge, Keyboard, MousePointer2, RotateCw, Route, Sparkles, Target, Upload } from '@lucide/vue'
+import type { UiLabels } from '../../i18n'
 import type { AnnotationRun, AuditSummary, DocumentMeta, Metrics, RebuildPreview, ReviewQueueItem } from '../../types/domain'
 
 defineProps<{
+  labels: UiLabels['metrics']
   documentMeta: DocumentMeta | null
   metrics: Metrics
   auditSummary: AuditSummary | null
@@ -49,19 +51,23 @@ function submitAnnotationImport(event: Event) {
   input.value = ''
 }
 
-function queuePreviewText(item: ReviewQueueItem) {
+function accuracyLabel(value: string, labels: UiLabels['metrics']) {
+  return value === 'Waiting for review data' ? labels.waitingReviewData : value
+}
+
+function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
   const suggestion = item.first_suggestion
   const confidence = `${Math.round(item.priority_score * 100)}%`
-  return suggestion ? `${suggestion.tag_name}: ${suggestion.text} · ${confidence}` : `${item.suggestion_count} pending suggestions`
+  return suggestion ? `${suggestion.tag_name}: ${suggestion.text} · ${confidence}` : labels.queuePreviewFallback(item.suggestion_count)
 }
 </script>
 
 <template>
-  <aside class="side-panel stats-panel" aria-labelledby="stats-panel-title">
+  <aside class="side-panel stats-panel" aria-labelledby="stats-panel-title" :aria-label="labels.aria">
     <div class="panel-heading">
       <div>
-        <p class="section-kicker">Evidence</p>
-        <h2 id="stats-panel-title">Run metrics</h2>
+        <p class="section-kicker">{{ labels.kicker }}</p>
+        <h2 id="stats-panel-title">{{ labels.title }}</h2>
       </div>
       <BarChart3 :size="21" aria-hidden="true" />
     </div>
@@ -69,148 +75,148 @@ function queuePreviewText(item: ReviewQueueItem) {
     <div class="metric-stack">
       <article class="metric-card">
         <Gauge :size="22" aria-hidden="true" />
-        <span>Progress</span>
+        <span>{{ labels.progress }}</span>
         <strong>{{ progressPercent }}%</strong>
-        <small>{{ reviewedSummary }} sentences</small>
+        <small>{{ reviewedSummary }} {{ labels.sentences }}</small>
       </article>
       <article class="metric-card">
         <Target :size="22" aria-hidden="true" />
-        <span>Accuracy</span>
+        <span>{{ labels.accuracy }}</span>
         <strong>{{ metrics.accuracy === null ? '--' : `${Math.round(metrics.accuracy * 100)}%` }}</strong>
-        <small>{{ metrics.accuracy_label }}</small>
+        <small>{{ accuracyLabel(metrics.accuracy_label, labels) }}</small>
       </article>
       <article class="metric-card">
         <MousePointer2 :size="22" aria-hidden="true" />
-        <span>Annotated spans</span>
+        <span>{{ labels.annotatedSpans }}</span>
         <strong>{{ metrics.annotation_count }}</strong>
-        <small>Persisted to SQLite</small>
+        <small>{{ labels.persisted }}</small>
       </article>
       <article class="metric-card">
         <Sparkles :size="22" aria-hidden="true" />
-        <span>Suggestions</span>
+        <span>{{ labels.suggestions }}</span>
         <strong>{{ metrics.suggestion_count }}</strong>
-        <small>Character RAG queue</small>
+        <small>{{ labels.ragQueue }}</small>
       </article>
       <article class="metric-card" :class="{ warning: auditSummary?.rebuild_status === 'needs_attention' }">
         <DatabaseZap :size="22" aria-hidden="true" />
-        <span>Audit Log</span>
+        <span>{{ labels.auditLog }}</span>
         <strong>{{ auditSummary?.event_count ?? 0 }}</strong>
         <small>
-          {{ auditSummary?.rebuild_status ?? 'not checked' }} · {{ auditSummary?.pending_outbox_count ?? 0 }} pending ·
-          {{ auditSummary?.non_replayable_event_count ?? 0 }} replay gaps
+          {{ auditSummary?.rebuild_status ?? labels.notChecked }} · {{ auditSummary?.pending_outbox_count ?? 0 }} {{ labels.pending }} ·
+          {{ auditSummary?.non_replayable_event_count ?? 0 }} {{ labels.replayGaps }}
         </small>
-        <div v-if="auditSummary" class="actor-breakdown" aria-label="Audit actor distribution">
+        <div v-if="auditSummary" class="actor-breakdown" :aria-label="labels.actorDistributionAria">
           <span>H {{ actorCount(auditSummary, 'human') }}</span>
           <span>S {{ actorCount(auditSummary, 'system') }}</span>
           <span>L {{ actorCount(auditSummary, 'llm') }}</span>
         </div>
-        <div v-if="auditSummary?.replay_issues?.length" class="audit-issue-list" aria-label="Audit replay issue samples">
+        <div v-if="auditSummary?.replay_issues?.length" class="audit-issue-list" :aria-label="labels.replayIssueAria">
           <small v-for="issue in auditSummary.replay_issues.slice(0, 3)" :key="`${issue.line_number}-${issue.message}`">
-            #{{ issue.line_number }} {{ issue.event_type ?? 'event' }} · {{ issue.message }}
+            #{{ issue.line_number }} {{ issue.event_type ?? labels.event }} · {{ issue.message }}
           </small>
         </div>
       </article>
       <article class="metric-card">
         <Route :size="22" aria-hidden="true" />
-        <span>Last Run</span>
+        <span>{{ labels.lastRun }}</span>
         <strong>{{ runHistory[0]?.suggestion_count ?? 0 }}</strong>
         <small>
-          {{ runHistory[0]?.recipe ?? 'no run' }}
-          <template v-if="runHistory[0]?.config?.limit_per_sentence"> · limit {{ runHistory[0].config.limit_per_sentence }}</template>
+          {{ runHistory[0]?.recipe ?? labels.noRun }}
+          <template v-if="runHistory[0]?.config?.limit_per_sentence"> · {{ labels.limit }} {{ runHistory[0].config.limit_per_sentence }}</template>
           <template v-if="runHistory[0]">
-            · {{ runHistory[0].accepted_count }} accepted / {{ runHistory[0].rejected_count }} rejected / {{ runHistory[0].pending_count }} pending
+            · {{ runHistory[0].accepted_count }} {{ labels.accepted }} / {{ runHistory[0].rejected_count }} {{ labels.rejected }} / {{ runHistory[0].pending_count }} {{ labels.pendingStatus }}
           </template>
         </small>
       </article>
     </div>
 
-    <section class="progress-card" aria-label="Annotation progress">
+    <section class="progress-card" :aria-label="labels.progress">
       <div class="progress-header">
-        <span>Document</span>
-        <strong>{{ documentMeta?.sentence_count ?? 0 }} sentences</strong>
+        <span>{{ labels.document }}</span>
+        <strong>{{ documentMeta?.sentence_count ?? 0 }} {{ labels.sentences }}</strong>
       </div>
       <div class="progress-track" aria-hidden="true">
         <span :style="{ width: `${progressPercent}%` }"></span>
       </div>
       <div class="quality-list">
         <div>
-          <span>Accept</span>
+          <span>{{ labels.accept }}</span>
           <strong>{{ metrics.answer_counts.accept ?? 0 }}</strong>
         </div>
         <div>
-          <span>Reject</span>
+          <span>{{ labels.reject }}</span>
           <strong>{{ metrics.answer_counts.reject ?? 0 }}</strong>
         </div>
         <div>
-          <span>Ignore</span>
+          <span>{{ labels.ignore }}</span>
           <strong>{{ metrics.answer_counts.ignore ?? 0 }}</strong>
         </div>
         <div>
-          <span>Pending</span>
+          <span>{{ labels.pendingStatus }}</span>
           <strong>{{ metrics.answer_counts.pending ?? 0 }}</strong>
         </div>
         <div>
-          <span>Tokens</span>
+          <span>{{ labels.tokens }}</span>
           <strong>{{ documentMeta?.token_count ?? 0 }}</strong>
         </div>
       </div>
     </section>
 
-    <section class="progress-card shortcut-card" aria-label="Keyboard and gesture shortcuts">
+    <section class="progress-card shortcut-card" :aria-label="labels.shortcuts">
       <div class="progress-header">
-        <span>Shortcuts</span>
-        <strong><Keyboard :size="17" aria-hidden="true" /> fast mode</strong>
+        <span>{{ labels.shortcuts }}</span>
+        <strong><Keyboard :size="17" aria-hidden="true" /> {{ labels.fastMode }}</strong>
       </div>
       <div class="shortcut-grid">
-        <span><kbd>1-9</kbd><em>apply tag</em></span>
-        <span><kbd>Enter</kbd><em>complete sentence</em></span>
-        <span><kbd>Space / I</kbd><em>ignore sentence</em></span>
-        <span><kbd>J</kbd><em>reject sentence</em></span>
-        <span><kbd>E</kbd><em>reopen sentence</em></span>
-        <span><kbd>Y / N</kbd><em>accept/reject first suggestion</em></span>
-        <span><kbd>A</kbd><em>accept suggestions</em></span>
-        <span><kbd>X</kbd><em>reject suggestions</em></span>
-        <span><kbd>R</kbd><em>next review</em></span>
-        <span><kbd>⌘/Ctrl Z</kbd><em>undo span</em></span>
-        <span><kbd>↑ / ↓</kbd><em>move sentence</em></span>
-        <span><kbd>Swipe</kbd><em>mobile next/prev</em></span>
+        <span><kbd>1-9</kbd><em>{{ labels.applyTag }}</em></span>
+        <span><kbd>Enter</kbd><em>{{ labels.completeSentence }}</em></span>
+        <span><kbd>Space / I</kbd><em>{{ labels.ignoreSentence }}</em></span>
+        <span><kbd>J</kbd><em>{{ labels.rejectSentence }}</em></span>
+        <span><kbd>E</kbd><em>{{ labels.reopenSentence }}</em></span>
+        <span><kbd>Y / N</kbd><em>{{ labels.firstSuggestion }}</em></span>
+        <span><kbd>A</kbd><em>{{ labels.acceptSuggestions }}</em></span>
+        <span><kbd>X</kbd><em>{{ labels.rejectSuggestions }}</em></span>
+        <span><kbd>R</kbd><em>{{ labels.nextReview }}</em></span>
+        <span><kbd>⌘/Ctrl Z</kbd><em>{{ labels.undoSpan }}</em></span>
+        <span><kbd>↑ / ↓</kbd><em>{{ labels.moveSentence }}</em></span>
+        <span><kbd>Swipe</kbd><em>{{ labels.mobileSwipe }}</em></span>
       </div>
     </section>
 
-    <section v-if="runHistory.length" class="progress-card run-history-card" aria-label="Recent Character RAG runs">
+    <section v-if="runHistory.length" class="progress-card run-history-card" :aria-label="labels.runHistory">
       <div class="progress-header">
-        <span>Run History</span>
-        <strong>{{ runHistory.length }} recent</strong>
+        <span>{{ labels.runHistory }}</span>
+        <strong>{{ runHistory.length }} {{ labels.recent }}</strong>
       </div>
       <div class="run-history-list">
         <article v-for="run in runHistory.slice(0, 3)" :key="run.id" class="run-history-row">
           <span>
             <strong>{{ run.recipe }}</strong>
-            <small>{{ run.id.slice(0, 10) }} · limit {{ runLimit(run) }} · accept {{ runRate(run) }}</small>
+            <small>{{ run.id.slice(0, 10) }} · {{ labels.limit }} {{ runLimit(run) }} · {{ labels.acceptRate }} {{ runRate(run) }}</small>
           </span>
-          <div class="run-history-pills" aria-label="Run status counts">
+          <div class="run-history-pills" :aria-label="labels.runStatusAria">
             <em class="accepted">{{ run.accepted_count }} A</em>
             <em class="rejected">{{ run.rejected_count }} R</em>
             <em>{{ run.pending_count }} P</em>
           </div>
-          <button class="run-export-button" type="button" title="Export run provenance" @click="emit('export-run-provenance', run.id)">
+          <button class="run-export-button" type="button" :title="labels.exportRunTitle" @click="emit('export-run-provenance', run.id)">
             <Download :size="15" aria-hidden="true" />
           </button>
         </article>
       </div>
     </section>
 
-    <section v-if="reviewQueueTotal" class="progress-card review-queue-card" aria-label="Review queue">
+    <section v-if="reviewQueueTotal" class="progress-card review-queue-card" :aria-label="labels.reviewQueue">
       <div class="progress-header">
-        <span>Review Queue</span>
-        <strong>{{ reviewQueueTotal }} pending</strong>
+        <span>{{ labels.reviewQueue }}</span>
+        <strong>{{ reviewQueueTotal }} {{ labels.pending }}</strong>
       </div>
-      <div class="review-order-toggle" aria-label="Review queue ordering">
+      <div class="review-order-toggle" :aria-label="labels.reviewQueue">
         <button type="button" :class="{ active: reviewQueueOrder === 'position' }" @click="emit('review-order-change', 'position')">
-          Position
+          {{ labels.position }}
         </button>
         <button type="button" :class="{ active: reviewQueueOrder === 'uncertain' }" @click="emit('review-order-change', 'uncertain')">
-          Uncertain
+          {{ labels.uncertain }}
         </button>
       </div>
       <div class="review-queue-list">
@@ -222,77 +228,77 @@ function queuePreviewText(item: ReviewQueueItem) {
           @click="emit('review-sentence', item.index)"
         >
           <span>
-            <strong>#{{ item.index + 1 }} · {{ item.suggestion_count }} suggestions</strong>
-            <small>{{ queuePreviewText(item) }}</small>
+            <strong>#{{ item.index + 1 }} · {{ labels.suggestionsCount(item.suggestion_count) }}</strong>
+            <small>{{ queuePreviewText(item, labels) }}</small>
           </span>
-          <em>Go</em>
+          <em>{{ labels.go }}</em>
         </button>
       </div>
     </section>
 
-    <section v-if="rebuildPreview" class="progress-card rebuild-card" :class="{ warning: !rebuildPreview.ok }" aria-label="Rebuild preview">
+    <section v-if="rebuildPreview" class="progress-card rebuild-card" :class="{ warning: !rebuildPreview.ok }" :aria-label="labels.rebuildPreview">
       <div class="progress-header">
-        <span>Rebuild Preview</span>
-        <strong>{{ rebuildPreview.ok ? 'ready' : 'gaps' }}</strong>
+        <span>{{ labels.rebuildPreview }}</span>
+        <strong>{{ rebuildPreview.ok ? labels.ready : labels.gaps }}</strong>
       </div>
       <div class="quality-list">
         <div>
-          <span>Documents</span>
+          <span>{{ labels.documents }}</span>
           <strong>{{ rebuildPreview.documents }}</strong>
         </div>
         <div>
-          <span>Runs</span>
+          <span>{{ labels.runs }}</span>
           <strong>{{ rebuildPreview.runs }}</strong>
         </div>
         <div>
-          <span>Issues</span>
+          <span>{{ labels.issues }}</span>
           <strong>{{ rebuildPreview.issues.length }}</strong>
         </div>
         <div>
-          <span>Events</span>
+          <span>{{ labels.events }}</span>
           <strong>{{ rebuildPreview.event_count }}</strong>
         </div>
       </div>
-      <div v-if="rebuildPreview.issues.length" class="audit-issue-list rebuild-issue-list" aria-label="Rebuild issue samples">
+      <div v-if="rebuildPreview.issues.length" class="audit-issue-list rebuild-issue-list" :aria-label="labels.rebuildIssueAria">
         <small v-for="issue in rebuildPreview.issues.slice(0, 3)" :key="`${issue.line_number}-${issue.message}`">
-          #{{ issue.line_number }} {{ issue.event_type ?? 'event' }} · {{ issue.message }}
+          #{{ issue.line_number }} {{ issue.event_type ?? labels.event }} · {{ issue.message }}
         </small>
       </div>
     </section>
 
     <button class="export-button" :disabled="!documentMeta" @click="emit('export')">
-      Export Tasks
+      {{ labels.exportTasks }}
       <Download :size="18" aria-hidden="true" />
     </button>
 
     <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-prodigy')">
-      Export Prodigy
+      {{ labels.exportProdigy }}
       <Download :size="18" aria-hidden="true" />
     </button>
 
     <label class="export-button secondary import-jsonl-button" :class="{ disabled: !documentMeta }">
-      Import JSONL
+      {{ labels.importJsonl }}
       <Upload :size="18" aria-hidden="true" />
       <input type="file" accept=".jsonl,application/x-ndjson,application/jsonl" :disabled="!documentMeta" @change="submitAnnotationImport" />
     </label>
 
     <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-manifest')">
-      Export Manifest
+      {{ labels.exportManifest }}
       <Download :size="18" aria-hidden="true" />
     </button>
 
     <button class="export-button secondary" @click="emit('export-events')">
-      Export Events
+      {{ labels.exportEvents }}
       <Download :size="18" aria-hidden="true" />
     </button>
 
     <button class="export-button secondary" @click="emit('export-tag-schema')">
-      Export Tag Schema
+      {{ labels.exportTagSchema }}
       <Download :size="18" aria-hidden="true" />
     </button>
 
     <button class="export-button secondary" :disabled="isVerifyingRebuild" @click="emit('verify-rebuild')">
-      {{ isVerifyingRebuild ? 'Verifying...' : 'Verify Rebuild' }}
+      {{ isVerifyingRebuild ? labels.verifying : labels.verifyRebuild }}
       <RotateCw :size="18" aria-hidden="true" />
     </button>
   </aside>

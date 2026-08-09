@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { Check, Clock, FileText, Sparkles, Undo2, Upload, X } from '@lucide/vue'
+import type { UiLabels } from '../../i18n'
 import type {
   AnnotationDef,
   DocumentListItem,
@@ -15,6 +16,7 @@ const SWIPE_MIN_DISTANCE = 56
 const SWIPE_AXIS_RATIO = 1.4
 
 defineProps<{
+  labels: UiLabels['reader']
   documentMeta: DocumentMeta | null
   documents: DocumentListItem[]
   currentSentence: SentenceDef | null
@@ -89,11 +91,10 @@ function handleDocumentChange(event: Event) {
   emit('document-change', select.value)
 }
 
-function documentOptionText(document: DocumentListItem) {
+function documentOptionText(document: DocumentListItem, labels: UiLabels['reader']) {
   const progress = Math.round(document.progress * 100)
-  const suggestions = document.suggestion_count ? ` · ${document.suggestion_count} AI` : ''
-  const cursor = typeof document.current_sentence_index === 'number' ? ` · #${document.current_sentence_index + 1}` : ''
-  return `${document.filename}${cursor} · ${progress}% · ${document.annotation_count} spans${suggestions}`
+  const cursor = typeof document.current_sentence_index === 'number' ? labels.cursor(document.current_sentence_index + 1) : ''
+  return labels.documentOption(document.filename, cursor, progress, document.annotation_count, document.suggestion_count)
 }
 
 const swipeStart = ref<{ x: number; y: number; pointerId: number } | null>(null)
@@ -125,21 +126,25 @@ function clearReaderSwipe() {
   swipeStart.value = null
 }
 
-function suggestionSourceLabel(source: string) {
-  const labels: Record<string, string> = {
-    lexical_exact: 'Exact',
-    lexical_contains: 'Contains',
-    char_ngram: 'Char n-gram',
-  }
-  return labels[source] ?? source
+function suggestionSourceLabel(source: string, labels: UiLabels['reader']) {
+  return labels.sourceLabels[source as keyof typeof labels.sourceLabels] ?? source
 }
 
-function suggestionRangeLabel(suggestion: SuggestionDef) {
+function suggestionRangeLabel(suggestion: SuggestionDef, labels: UiLabels['reader']) {
   const tokenRange =
     suggestion.start_token_index === suggestion.end_token_index
-      ? `tok ${suggestion.start_token_index}`
-      : `tok ${suggestion.start_token_index}-${suggestion.end_token_index}`
-  return `${tokenRange} · char ${suggestion.start_char}-${suggestion.end_char}`
+      ? `${labels.tokenRange} ${suggestion.start_token_index}`
+      : `${labels.tokenRange} ${suggestion.start_token_index}-${suggestion.end_token_index}`
+  return `${tokenRange} · ${labels.charRange} ${suggestion.start_char}-${suggestion.end_char}`
+}
+
+function sentenceStatusLabel(sentence: SentenceDef, currentSentenceIndex: number, labels: UiLabels['reader']) {
+  if (sentence.answer === 'reject') return labels.statusRejected
+  if (sentence.answer === 'ignore') return labels.statusIgnored
+  if (sentence.completed) return labels.statusCompleted
+  if (sentence.suggestions.length) return labels.statusReview
+  if (sentence.index === currentSentenceIndex) return labels.statusActive
+  return labels.statusWaiting
 }
 </script>
 
@@ -147,47 +152,44 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
   <section class="editor-panel" aria-labelledby="editor-title">
     <div class="editor-header">
       <div>
-        <p class="section-kicker">Annotation Reader</p>
-        <h1 id="editor-title">{{ documentMeta?.filename ?? 'Import a TXT file to begin' }}</h1>
+        <p class="section-kicker">{{ labels.kicker }}</p>
+        <h1 id="editor-title">{{ documentMeta?.filename ?? labels.emptyTitle }}</h1>
       </div>
       <div class="editor-tools">
         <label v-if="documents.length" class="document-switcher">
           <FileText :size="16" aria-hidden="true" />
           <select :value="documentMeta?.id ?? ''" :disabled="isUploading" @change="handleDocumentChange">
             <option v-for="document in documents" :key="document.id" :value="document.id">
-              {{ documentOptionText(document) }}
+              {{ documentOptionText(document, labels) }}
             </option>
           </select>
         </label>
         <label class="upload-card editor-upload">
           <Upload :size="19" aria-hidden="true" />
           <span>
-            <strong>{{ isUploading ? 'Importing...' : 'Import TXT' }}</strong>
+            <strong>{{ isUploading ? labels.importing : labels.importTxt }}</strong>
             <small>UTF-8 · 10 MB</small>
           </span>
           <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="emit('import', $event)" />
         </label>
         <div class="document-pill">
           <Clock :size="16" aria-hidden="true" />
-          <span>{{ currentSentence ? `Sentence ${currentSentence.index + 1}` : 'No document' }}</span>
+          <span>{{ currentSentence ? labels.sentence(currentSentence.index + 1) : labels.noDocument }}</span>
         </div>
       </div>
     </div>
 
     <p v-if="readerError" class="reader-error">{{ readerError }}</p>
 
-    <article v-if="!documentMeta" class="empty-reader" aria-label="Empty reader state">
+    <article v-if="!documentMeta" class="empty-reader" :aria-label="labels.emptyTitle">
       <FileText :size="44" aria-hidden="true" />
-      <h2>Import a TXT file</h2>
-      <p>
-        AnnoPilot will split it into sentences, tokenize each sentence, and keep annotation progress in SQLite
-        while writing audit events to JSONL.
-      </p>
+      <h2>{{ labels.importTitle }}</h2>
+      <p>{{ labels.emptyDescription }}</p>
       <label class="upload-card empty-upload">
         <Upload :size="22" aria-hidden="true" />
         <span>
-          <strong>{{ isUploading ? 'Importing TXT...' : 'Choose TXT from Downloads' }}</strong>
-          <small>Pick your prepared test file</small>
+          <strong>{{ isUploading ? labels.importingTxt : labels.chooseDownloads }}</strong>
+          <small>{{ labels.pickTestFile }}</small>
         </span>
         <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="emit('import', $event)" />
       </label>
@@ -196,7 +198,7 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
     <article
       v-else
       class="text-reader"
-      aria-label="Scrollable text annotation reader"
+      :aria-label="labels.readerAria"
       @pointerdown="handleReaderPointerDown"
       @pointerup="handleReaderPointerUp"
       @pointercancel="clearReaderSwipe"
@@ -219,7 +221,7 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
       >
         <div class="sentence-meta">
           <span>#{{ sentence.index + 1 }}</span>
-          <strong>{{ sentence.answer === 'reject' ? 'Rejected' : sentence.answer === 'ignore' ? 'Ignored' : sentence.completed ? 'Completed' : sentence.suggestions.length ? 'Review' : sentence.index === currentSentenceIndex ? 'Active' : 'Waiting' }}</strong>
+          <strong>{{ sentenceStatusLabel(sentence, currentSentenceIndex, labels) }}</strong>
         </div>
         <p class="sentence-text">
           <template v-for="(token, tokenIndex) in sentence.tokens" :key="token.id">
@@ -244,12 +246,12 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
     <section class="candidate-card" aria-labelledby="candidate-title">
       <div class="candidate-heading">
         <div>
-          <h2 id="candidate-title">Current sentence spans</h2>
-          <span>{{ activeAnnotations.length }} selected · {{ activeSuggestions.length }} suggested</span>
+          <h2 id="candidate-title">{{ labels.spansTitle }}</h2>
+          <span>{{ labels.selectedSuggested(activeAnnotations.length, activeSuggestions.length) }}</span>
         </div>
         <div class="candidate-actions">
-          <label class="suggest-limit-control" title="每句最多生成多少条候选建议">
-            <span>Limit</span>
+          <label class="suggest-limit-control" :title="labels.limitTitle">
+            <span>{{ labels.limit }}</span>
             <input
               type="number"
               min="1"
@@ -260,8 +262,8 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
               @input="handleSuggestionLimitInput"
             />
           </label>
-          <label class="suggest-limit-control" title="候选建议的最低置信度">
-            <span>Min</span>
+          <label class="suggest-limit-control" :title="labels.minTitle">
+            <span>{{ labels.min }}</span>
             <input
               type="number"
               min="0"
@@ -275,27 +277,27 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
           </label>
           <button class="suggest-button" :disabled="!currentSentence || isSuggesting" @click="emit('generate-current-suggestions')">
             <Sparkles :size="16" aria-hidden="true" />
-            {{ isSuggesting ? 'Suggesting...' : 'Suggest current' }}
+            {{ isSuggesting ? labels.suggesting : labels.suggestCurrent }}
           </button>
           <button class="suggest-button secondary" :disabled="!documentMeta || isSuggesting" @click="emit('generate-suggestions')">
             <Sparkles :size="16" aria-hidden="true" />
-            Whole doc
+            {{ labels.wholeDoc }}
           </button>
           <button class="batch-review-button accept" :disabled="!activeSuggestions.length || isSaving" @click="emit('accept-current-suggestions')">
             <Check :size="16" aria-hidden="true" />
-            Accept all · A
+            {{ labels.acceptAll }}
           </button>
           <button class="batch-review-button accept" :disabled="!documentMeta || !hasReviewQueue || isSaving" @click="emit('auto-accept-document-suggestions')">
             <Check :size="16" aria-hidden="true" />
-            Accept ≥ Min
+            {{ labels.acceptMin }}
           </button>
           <button class="batch-review-button reject" :disabled="!activeSuggestions.length || isSaving" @click="emit('reject-current-suggestions')">
             <X :size="16" aria-hidden="true" />
-            Reject all · X
+            {{ labels.rejectAll }}
           </button>
           <button class="batch-review-button reject" :disabled="!documentMeta || !hasReviewQueue || isSaving" @click="emit('auto-reject-document-suggestions')">
             <X :size="16" aria-hidden="true" />
-            Reject pending
+            {{ labels.rejectPending }}
           </button>
           <button class="review-button compact" :disabled="!hasReviewQueue" @click="emit('next-review')">
             {{ reviewQueueSummary }} · R
@@ -305,9 +307,9 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
       <div v-if="pendingSelection && pendingSelectionText" class="pending-card">
         <span>
           <strong>{{ pendingSelectionText }}</strong>
-          <small>Press 1-9 or click a tag on the left to apply</small>
+          <small>{{ labels.pendingHint }}</small>
         </span>
-        <em>Pending</em>
+        <em>{{ labels.pending }}</em>
       </div>
       <div v-if="activeAnnotations.length" class="candidate-list">
         <button
@@ -321,13 +323,13 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
             <strong>{{ annotation.text }}</strong>
             <small>
               {{ annotation.tag_name }}
-              <em v-if="annotation.source === 'accepted_suggestion'" class="source-badge">AI accepted</em>
+              <em v-if="annotation.source === 'accepted_suggestion'" class="source-badge">{{ labels.aiAccepted }}</em>
             </small>
           </span>
-          <em>Remove</em>
+          <em>{{ labels.remove }}</em>
         </button>
       </div>
-      <div v-if="activeSuggestions.length" class="suggestion-list" aria-label="Low-compute RAG suggestions">
+      <div v-if="activeSuggestions.length" class="suggestion-list" :aria-label="labels.suggestionsAria">
         <article
           v-for="(suggestion, suggestionIndex) in activeSuggestions"
           :key="suggestion.id"
@@ -338,23 +340,23 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
           <span>
             <strong>{{ suggestion.text }}</strong>
             <small class="suggestion-meta-line">
-              <em class="suggestion-badge">{{ suggestionSourceLabel(suggestion.source) }}</em>
+              <em class="suggestion-badge">{{ suggestionSourceLabel(suggestion.source, labels) }}</em>
               <em>{{ suggestion.tag_name }}</em>
               <em>{{ Math.round(suggestion.confidence * 100) }}%</em>
-              <em>{{ suggestionRangeLabel(suggestion) }}</em>
+              <em>{{ suggestionRangeLabel(suggestion, labels) }}</em>
               <em v-if="suggestion.run_id">{{ suggestion.run_id.slice(0, 10) }}</em>
-              <em v-if="suggestionIndex === 0" class="keyboard-target-badge">Y/N target</em>
+              <em v-if="suggestionIndex === 0" class="keyboard-target-badge">{{ labels.keyboardTarget }}</em>
             </small>
             <small v-if="suggestion.evidence_text" class="evidence-copy">
-              <em>Evidence</em>
+              <em>{{ labels.evidence }}</em>
               <strong>{{ suggestion.evidence_text }}</strong>
             </small>
             <small v-if="suggestion.context_before || suggestion.context_after" class="evidence-copy">
-              <em>Context</em>
+              <em>{{ labels.context }}</em>
               <strong>{{ suggestion.context_before }}[{{ suggestion.text }}]{{ suggestion.context_after }}</strong>
             </small>
             <small v-if="suggestionReviews[suggestion.id]" class="review-copy">
-              <em>LLM review</em>
+              <em>{{ labels.llmReview }}</em>
               {{ suggestionReviews[suggestion.id].recommendation }} ·
               {{ Math.round(suggestionReviews[suggestion.id].confidence * 100) }}% ·
               {{ suggestionReviews[suggestion.id].rationale }}
@@ -364,41 +366,41 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
             <button
               type="button"
               :disabled="isSaving || reviewingSuggestionId === suggestion.id"
-              title="让 gpt5.5 评审候选"
+              :title="labels.reviewTitle"
               @click="emit('review-suggestion', suggestion)"
             >
               <Sparkles :size="15" aria-hidden="true" />
             </button>
-            <button type="button" :disabled="isSaving" title="接受建议" @click="emit('accept-suggestion', suggestion)">
+            <button type="button" :disabled="isSaving" :title="labels.acceptTitle" @click="emit('accept-suggestion', suggestion)">
               <Check :size="15" aria-hidden="true" />
             </button>
-            <button type="button" :disabled="isSaving" title="拒绝建议" @click="emit('reject-suggestion', suggestion)">
+            <button type="button" :disabled="isSaving" :title="labels.rejectTitle" @click="emit('reject-suggestion', suggestion)">
               <X :size="15" aria-hidden="true" />
             </button>
           </div>
         </article>
       </div>
       <p v-if="!activeAnnotations.length && !activeSuggestions.length" class="candidate-empty">
-        Select a word or span first, then press 1-9 or click a tag to label it. Or run low-compute suggestions.
+        {{ labels.emptyCandidate }}
       </p>
     </section>
 
-    <section class="verification-card" aria-label="Human verification actions">
+    <section class="verification-card" :aria-label="labels.verificationAria">
       <div>
-        <p class="section-kicker">Human Verification</p>
-        <h2>Complete sentence and continue</h2>
+        <p class="section-kicker">{{ labels.verificationKicker }}</p>
+        <h2>{{ labels.verificationTitle }}</h2>
       </div>
       <div class="verification-actions">
         <button class="accept-button" :disabled="!currentSentence || isSaving" @click="emit('complete')">
-          Complete · Enter
+          {{ labels.complete }}
         </button>
-        <button class="edit-button" :disabled="!currentSentence" @click="emit('previous')">Previous</button>
-        <button class="skip-button" :disabled="!currentSentence || isSaving" @click="emit('ignore')">Ignore · Space / I</button>
-        <button class="reject-sentence-button" :disabled="!currentSentence || isSaving" @click="emit('reject')">Reject · J</button>
-        <button class="edit-button" :disabled="!currentSentence || isSaving" @click="emit('reopen')">Reopen · E</button>
+        <button class="edit-button" :disabled="!currentSentence" @click="emit('previous')">{{ labels.previous }}</button>
+        <button class="skip-button" :disabled="!currentSentence || isSaving" @click="emit('ignore')">{{ labels.ignore }}</button>
+        <button class="reject-sentence-button" :disabled="!currentSentence || isSaving" @click="emit('reject')">{{ labels.rejectSentence }}</button>
+        <button class="edit-button" :disabled="!currentSentence || isSaving" @click="emit('reopen')">{{ labels.reopen }}</button>
         <button class="undo-button" :disabled="!canUndoSpanAction || isSaving" :title="undoLabel" @click="emit('undo')">
           <Undo2 :size="16" aria-hidden="true" />
-          Undo · ⌘Z
+          {{ labels.undo }}
         </button>
         <button class="review-button" :disabled="!hasReviewQueue" @click="emit('next-review')">{{ reviewQueueSummary }}</button>
       </div>

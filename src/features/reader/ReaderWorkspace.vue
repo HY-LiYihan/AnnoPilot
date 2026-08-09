@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { CheckCircle, Settings } from '@lucide/vue'
 import { fetchRuntimeHealth } from '../../api/health'
 import { useDocumentReader } from '../../composables/useDocumentReader'
+import { LANGUAGE_KEY, UI_LABELS, type Locale } from '../../i18n'
 import type { RuntimeHealth } from '../../types/domain'
 import MetricsPanel from './MetricsPanel.vue'
 import SentencePanel from './SentencePanel.vue'
@@ -10,15 +11,23 @@ import TagPalette from './TagPalette.vue'
 
 const runtimeHealth = ref<RuntimeHealth | null>(null)
 const healthUnavailable = ref(false)
+const savedLocale = window.localStorage.getItem(LANGUAGE_KEY)
+const locale = ref<Locale>(savedLocale === 'en' || savedLocale === 'zh' ? savedLocale : 'zh')
+const labels = computed(() => UI_LABELS[locale.value])
 
 const llmStatusLabel = computed(() => {
-  if (healthUnavailable.value) return 'LLM status unavailable'
-  if (!runtimeHealth.value) return 'Checking LLM'
-  if (!runtimeHealth.value.llm_configured) return 'LLM not configured'
+  if (healthUnavailable.value) return labels.value.topbar.llmUnavailable
+  if (!runtimeHealth.value) return labels.value.topbar.checkingLlm
+  if (!runtimeHealth.value.llm_configured) return labels.value.topbar.llmNotConfigured
   const model = runtimeHealth.value.llm_model ?? 'LLM'
   const host = runtimeHealth.value.llm_base_host ? ` @ ${runtimeHealth.value.llm_base_host}` : ''
   return `${model}${host}`
 })
+
+function setLocale(nextLocale: Locale) {
+  locale.value = nextLocale
+  window.localStorage.setItem(LANGUAGE_KEY, nextLocale)
+}
 
 onMounted(async () => {
   try {
@@ -109,6 +118,17 @@ const {
   exportRunProvenanceJson,
   verifyRebuildPreview,
 } = useDocumentReader()
+
+const localizedReviewSummary = computed(() => labels.value.tags.suggestionsWaiting(metrics.value.suggestion_count))
+const localizedReviewQueueSummary = computed(() => {
+  const reviewQueueItems = queueItems.value.filter((sentence) => !sentence.completed && sentence.suggestion_count > 0)
+  if (!reviewQueueItems.length) return labels.value.reader.noReviewQueue
+  const queueIndex = reviewQueueItems.findIndex((sentence) => sentence.index === currentSentenceIndex.value)
+  return queueIndex >= 0
+    ? labels.value.reader.reviewProgress(queueIndex + 1, reviewQueueItems.length)
+    : labels.value.reader.pendingReviews(reviewQueueItems.length)
+})
+const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.value.reader.undoTitle : labels.value.reader.undoTitle))
 </script>
 
 <template>
@@ -117,11 +137,11 @@ const {
       <div class="brand-cluster">
         <div>
           <span class="brand-name">AnnoPilot</span>
-          <small>Agent textual annotation platform</small>
+          <small>{{ labels.topbar.tagline }}</small>
         </div>
       </div>
 
-      <div class="runtime-statuses" aria-label="Runtime status">
+      <div class="runtime-statuses" :aria-label="labels.topbar.runtimeStatus">
         <div class="run-status">
           <CheckCircle :size="17" aria-hidden="true" />
           <span>SQLite + JSONL</span>
@@ -132,21 +152,31 @@ const {
         </div>
       </div>
 
-      <button class="icon-button" aria-label="Open settings">
+      <div class="language-switcher" :aria-label="labels.topbar.language" role="group">
+        <button type="button" :class="{ active: locale === 'zh' }" @click="setLocale('zh')">
+          {{ labels.topbar.chinese }}
+        </button>
+        <button type="button" :class="{ active: locale === 'en' }" @click="setLocale('en')">
+          {{ labels.topbar.english }}
+        </button>
+      </div>
+
+      <button class="icon-button" :aria-label="labels.topbar.settings">
         <Settings :size="19" aria-hidden="true" />
       </button>
     </nav>
 
-    <section class="workbench" aria-label="Annotation workspace">
+    <section class="workbench" :aria-label="labels.reader.aria">
       <TagPalette
+        :labels="labels.tags"
         :tags="tags"
         :selected-tag-id="selectedTagId"
         :has-pending-selection="Boolean(pendingSelection)"
         :queue-items="queueItems"
         :current-sentence-index="currentSentenceIndex"
         :reviewed-summary="reviewedSummary"
-        :review-summary="reviewSummary"
-        :review-queue-summary="reviewQueueSummary"
+        :review-summary="localizedReviewSummary"
+        :review-queue-summary="localizedReviewQueueSummary"
         :is-saving="isSaving"
         @tag-click="handleTagClick"
         @tag-add="addTag"
@@ -157,6 +187,7 @@ const {
       />
 
       <SentencePanel
+        :labels="labels.reader"
         :document-meta="documentMeta"
         :documents="documents"
         :current-sentence="currentSentence"
@@ -165,11 +196,11 @@ const {
         :active-annotations="activeAnnotations"
         :active-suggestions="activeSuggestions"
         :can-undo-span-action="canUndoSpanAction"
-        :undo-label="undoLabel"
+        :undo-label="localizedUndoLabel"
         :pending-selection="pendingSelection"
         :pending-selection-text="pendingSelectionText"
         :has-review-queue="hasReviewQueue"
-        :review-queue-summary="reviewQueueSummary"
+        :review-queue-summary="localizedReviewQueueSummary"
         :reader-error="readerError"
         :is-uploading="isUploading"
         :is-saving="isSaving"
@@ -214,6 +245,7 @@ const {
       />
 
       <MetricsPanel
+        :labels="labels.metrics"
         :document-meta="documentMeta"
         :metrics="metrics"
         :audit-summary="auditSummary"
