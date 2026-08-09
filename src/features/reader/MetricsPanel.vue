@@ -19,6 +19,7 @@ defineProps<{
 const emit = defineEmits<{
   export: []
   'export-prodigy': []
+  'export-prodigy-spans': []
   'export-manifest': []
   'export-events': []
   'export-tag-schema': []
@@ -233,6 +234,11 @@ function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
 
     <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-prodigy')">
       {{ labels.exportProdigy }}
+      <Download :size="18" aria-hidden="true" />
+    </button>
+
+    <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-prodigy-spans')">
+      {{ labels.exportProdigySpans }}
       <Download :size="18" aria-hidden="true" />
     </button>
 

@@ -169,6 +169,7 @@ const {
   tokenStyle,
   exportJsonl,
   exportProdigyJsonl,
+  exportProdigySpansJsonl,
   handleAnnotationImport,
   exportManifestJson,
   exportEventsJsonl,
@@ -357,6 +358,7 @@ const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.valu
         :is-verifying-rebuild="isVerifyingRebuild"
         @export="exportJsonl"
         @export-prodigy="exportProdigyJsonl"
+        @export-prodigy-spans="exportProdigySpansJsonl"
         @import-annotations="handleAnnotationImport"
         @review-sentence="setCurrentSentence"
         @review-order-change="setReviewQueueOrder"

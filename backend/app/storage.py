@@ -33,6 +33,7 @@ EVENT_SCHEMA_VERSION = "annopilot.event.v1"
 TASK_SCHEMA_VERSION = "annopilot.task.v1"
 EXPORT_MANIFEST_SCHEMA_VERSION = "annopilot.export_manifest.v1"
 PRODIGY_EXPORT_SCHEMA_VERSION = "prodigy.ner_manual.compat.v1"
+PRODIGY_SPANS_EXPORT_SCHEMA_VERSION = "prodigy.spans_manual.compat.v1"
 TAG_SCHEMA_VERSION = "annopilot.tag_schema.v1"
 RUN_PROVENANCE_SCHEMA_VERSION = "annopilot.run_provenance.v1"
 REPLAYABLE_EVENT_FIELDS = {
@@ -926,6 +927,12 @@ class AnnotationStorage:
         return lines
 
     def export_prodigy_document_lines(self, project_id: str, document_id: str) -> list[str]:
+        return self._export_prodigy_document_lines(project_id, document_id, view_id="ner_manual")
+
+    def export_prodigy_spans_document_lines(self, project_id: str, document_id: str) -> list[str]:
+        return self._export_prodigy_document_lines(project_id, document_id, view_id="spans_manual")
+
+    def _export_prodigy_document_lines(self, project_id: str, document_id: str, view_id: str) -> list[str]:
         document = self.get_document(project_id, document_id)
         lines = []
         document_meta = document["document"]
@@ -939,7 +946,7 @@ class AnnotationStorage:
                 ],
                 "spans": spans,
                 "answer": self._export_prodigy_answer(sentence),
-                "_view_id": "ner_manual",
+                "_view_id": view_id,
                 "_session_id": self._export_prodigy_session_id(project_id, document_id, sentence["annotations"]),
                 "_annotator_id": self._export_prodigy_annotator_id(sentence["annotations"]),
                 "_input_hash": self._stable_hash({"text": sentence["text"]}),
@@ -974,6 +981,7 @@ class AnnotationStorage:
         document = self.get_document(project_id, document_id)
         task_lines = self.export_document_lines(project_id, document_id)
         prodigy_lines = self.export_prodigy_document_lines(project_id, document_id)
+        prodigy_spans_lines = self.export_prodigy_spans_document_lines(project_id, document_id)
         event_lines = self.export_event_lines(project_id)
         audit_summary = self.audit_project(project_id)
         tag_schema_payload = self.export_tag_schema(project_id)
@@ -1017,6 +1025,11 @@ class AnnotationStorage:
                     filename=f"{document_id}.prodigy.jsonl",
                     schema_version=PRODIGY_EXPORT_SCHEMA_VERSION,
                     lines=prodigy_lines,
+                ),
+                "prodigy_spans_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.prodigy.spans.jsonl",
+                    schema_version=PRODIGY_SPANS_EXPORT_SCHEMA_VERSION,
+                    lines=prodigy_spans_lines,
                 ),
                 "events_jsonl": self._artifact_summary(
                     filename=f"{project_id}-events.jsonl",
@@ -3149,11 +3162,12 @@ class AnnotationStorage:
 
     @staticmethod
     def _export_prodigy_token(token: dict[str, Any], sentence_text: str, sentence_start_char: int) -> dict[str, Any]:
+        local_start = token["start_char"] - sentence_start_char
         local_end = token["end_char"] - sentence_start_char
         return {
             "text": token["text"],
-            "start": token["start_char"],
-            "end": token["end_char"],
+            "start": local_start,
+            "end": local_end,
             "id": token["token_index"],
             "ws": local_end < len(sentence_text) and sentence_text[local_end].isspace(),
         }

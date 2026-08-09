@@ -14,6 +14,7 @@ import {
   manifestExportUrl,
   mergeTxt,
   prodigyExportUrl,
+  prodigySpansExportUrl,
   tagSchemaExportUrl,
   updateDocumentCursor,
 } from '../api/documents'
@@ -986,6 +987,11 @@ export function useDocumentReader() {
     window.location.href = prodigyExportUrl(PROJECT_ID, documentMeta.value.id)
   }
 
+  function exportProdigySpansJsonl() {
+    if (!documentMeta.value) return
+    window.location.href = prodigySpansExportUrl(PROJECT_ID, documentMeta.value.id)
+  }
+
   async function handleAnnotationImport(file: File) {
     if (!documentMeta.value || isUploading.value) return
     isUploading.value = true
@@ -1131,6 +1137,7 @@ export function useDocumentReader() {
     tokenStyle,
     exportJsonl,
     exportProdigyJsonl,
+    exportProdigySpansJsonl,
     handleAnnotationImport,
     exportManifestJson,
     exportEventsJsonl,

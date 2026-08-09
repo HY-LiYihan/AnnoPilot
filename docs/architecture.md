@@ -140,6 +140,7 @@ annopilot.event.v1
 annopilot.task.v1
 annopilot.export_manifest.v1
 prodigy.ner_manual.compat.v1
+prodigy.spans_manual.compat.v1
 annopilot.tag_schema.v1
 annopilot.run_provenance.v1
 ```

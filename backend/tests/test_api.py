@@ -142,7 +142,15 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert prodigy_lines[1]["answer"] == "ignore"
         assert prodigy_lines[1]["_session_id"] == f"annopilot-default-{document_id}-unannotated"
         assert prodigy_lines[1]["_annotator_id"] == "annopilot-unannotated"
+        assert prodigy_lines[1]["tokens"][0]["start"] == 0
         assert prodigy_lines[1]["meta"]["completed"] is False
+
+        prodigy_spans_export_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.spans.jsonl")
+        assert prodigy_spans_export_response.status_code == 200
+        prodigy_spans_lines = [json.loads(line) for line in prodigy_spans_export_response.text.splitlines()]
+        assert prodigy_spans_lines[0]["_view_id"] == "spans_manual"
+        assert prodigy_spans_lines[0]["spans"] == prodigy_lines[0]["spans"]
+        assert prodigy_spans_lines[1]["tokens"][0]["start"] == 0
 
         event_export_response = client.get("/api/projects/default/events.jsonl")
         assert event_export_response.status_code == 200
@@ -196,6 +204,8 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert manifest["artifacts"]["tasks_jsonl"]["line_count"] == 2
         assert manifest["artifacts"]["tasks_jsonl"]["sha256"] == hashlib.sha256(export_response.text.encode("utf-8")).hexdigest()
         assert manifest["artifacts"]["prodigy_jsonl"]["sha256"] == hashlib.sha256(prodigy_export_response.text.encode("utf-8")).hexdigest()
+        assert manifest["artifacts"]["prodigy_spans_jsonl"]["schema_version"] == "prodigy.spans_manual.compat.v1"
+        assert manifest["artifacts"]["prodigy_spans_jsonl"]["sha256"] == hashlib.sha256(prodigy_spans_export_response.text.encode("utf-8")).hexdigest()
         assert manifest["artifacts"]["events_jsonl"]["sha256"] == hashlib.sha256(event_export_response.text.encode("utf-8")).hexdigest()
         assert manifest["artifacts"]["tag_schema_json"]["schema_version"] == "annopilot.tag_schema.v1"
         assert manifest["artifacts"]["tag_schema_json"]["line_count"] == 1

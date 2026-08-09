@@ -39,6 +39,20 @@ def export_prodigy_document(
     return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
 
 
+@router.get("/documents/{document_id}/export.prodigy.spans.jsonl")
+def export_prodigy_spans_document(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> StreamingResponse:
+    try:
+        lines = storage.export_prodigy_spans_document_lines(project_id, document_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.prodigy.spans.jsonl"'}
+    return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
+
+
 @router.get("/documents/{document_id}/export.manifest.json", response_model=ExportManifestResponse)
 def export_manifest(
     project_id: str,
