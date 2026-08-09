@@ -89,6 +89,14 @@ export type SentenceQueueItem = {
   suggestion_count: number
 }
 
+export type ReviewQueueItem = {
+  id: string
+  index: number
+  text: string
+  suggestion_count: number
+  first_suggestion: SuggestionDef | null
+}
+
 export type DocumentMeta = {
   id: string
   filename: string
@@ -212,6 +220,11 @@ export type SentencesPagePayload = {
   limit: number
   total: number
   has_more: boolean
+}
+
+export type ReviewQueuePayload = {
+  items: ReviewQueueItem[]
+  total: number
 }
 
 export type ImportTxtResponse = {

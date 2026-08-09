@@ -1287,6 +1287,12 @@ kbd {
   margin-top: 12px;
 }
 
+.review-queue-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .run-history-row {
   min-width: 0;
   display: flex;
@@ -1299,14 +1305,37 @@ kbd {
   background: #ffffff;
 }
 
+.review-queue-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(50, 107, 216, 0.2);
+  border-radius: 8px;
+  color: #17201d;
+  background: #f8fbff;
+  cursor: pointer;
+  text-align: left;
+}
+
 .run-history-row span {
   min-width: 0;
   display: grid;
   gap: 3px;
 }
 
+.review-queue-row span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
 .run-history-row strong,
-.run-history-row small {
+.run-history-row small,
+.review-queue-row strong,
+.review-queue-row small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1321,6 +1350,28 @@ kbd {
   color: #6f726e;
   font-size: 0.72rem;
   font-weight: 800;
+}
+
+.review-queue-row strong {
+  color: #17201d;
+  font-size: 0.83rem;
+}
+
+.review-queue-row small {
+  color: #326bd8;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.review-queue-row em {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: #326bd8;
+  background: #eef3ff;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .run-history-pills {

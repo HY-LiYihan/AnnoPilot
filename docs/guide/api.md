@@ -19,6 +19,7 @@ GET  /api/projects/{project_id}/documents?limit=50
 GET  /api/projects/{project_id}/documents/{document_id}
 GET  /api/projects/{project_id}/documents/{document_id}/summary
 GET  /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50
+GET  /api/projects/{project_id}/documents/{document_id}/review-queue?limit=20
 POST /api/projects/{project_id}/documents/{document_id}/session/cursor
 POST /api/projects/{project_id}/sentences/{sentence_id}/complete
 ```
@@ -28,6 +29,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/complete
 - `documents` 返回最近 runtime documents 的轻量索引，包含 progress、annotation count 和 pending suggestion count，供 frontend 切换已导入文档。
 - `summary` 返回 document meta、tags、metrics、全局 sentence queue 和当前 runtime session cursor，不返回完整 tokens。
 - `sentences` 返回分页 sentence window，当前 API limit 上限为 200。
+- `review-queue` 返回未完成且存在 pending suggestions 的句子列表，以及每句第一条候选，供 UI 快速跳转待审任务。
 - `session/cursor` 保存默认人工会话的当前句位置，用于刷新后恢复标注阅读器状态；该状态保存在 SQLite runtime，不写入 JSONL audit log。
 - `complete` 写入 `completed` 和 Prodigy-compatible `answer`，当前支持 `accept`、`ignore`、`reject`，以及 `completed=false` reopen 回 `pending`。
 

@@ -4,6 +4,7 @@ import type {
   DocumentSummaryPayload,
   ImportAnnotationsResponse,
   ImportTxtResponse,
+  ReviewQueuePayload,
   SentencesPagePayload,
 } from '../types/domain'
 import { parseJsonResponse, responseMessage } from './http'
@@ -53,6 +54,12 @@ export async function fetchDocumentSentences(
   const params = new URLSearchParams({ offset: String(offset), limit: String(limit) })
   const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/sentences?${params.toString()}`)
   return parseJsonResponse<SentencesPagePayload>(response)
+}
+
+export async function fetchReviewQueue(projectId: string, documentId: string, limit = 20): Promise<ReviewQueuePayload> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/review-queue?${params.toString()}`)
+  return parseJsonResponse<ReviewQueuePayload>(response)
 }
 
 export async function completeSentence(projectId: string, sentenceId: string, completed = true, answer?: 'accept' | 'reject' | 'ignore' | 'pending') {

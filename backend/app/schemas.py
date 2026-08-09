@@ -198,6 +198,19 @@ class SentenceQueueItemResponse(BaseModel):
     suggestion_count: int = 0
 
 
+class ReviewQueueItemResponse(BaseModel):
+    id: str
+    index: int
+    text: str
+    suggestion_count: int
+    first_suggestion: Optional[SuggestionResponse] = None
+
+
+class ReviewQueueResponse(BaseModel):
+    items: list[ReviewQueueItemResponse]
+    total: int
+
+
 class MetricsResponse(BaseModel):
     sentence_count: int
     completed_count: int

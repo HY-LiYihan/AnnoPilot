@@ -1082,6 +1082,52 @@ def test_sentence_batch_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
 
+def test_review_queue_lists_pending_suggestion_sentences(tmp_path: Path) -> None:
+    with TestClient(
+        create_app(
+            AnnotationStorage(
+                database_path=tmp_path / "runtime" / "annopilot.sqlite",
+                data_root=tmp_path / "projects",
+            )
+        )
+    ) as client:
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("story.txt", "小猫看见金色的叶子。男孩走来。", "text/plain")},
+        )
+        document_id = response.json()["document_id"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=2").json()
+        first_sentence_id = page["sentences"][0]["id"]
+        second_sentence_id = page["sentences"][1]["id"]
+
+        for sentence_id in (first_sentence_id, second_sentence_id):
+            suggestion_response = client.post(
+                f"/api/projects/default/documents/{document_id}/sentences/{sentence_id}/suggestions/run",
+                json={"limit_per_sentence": 4, "min_confidence": 0.98},
+            )
+            assert suggestion_response.status_code == 200
+            assert suggestion_response.json()["suggestions_created"] > 0
+
+        queue_response = client.get(f"/api/projects/default/documents/{document_id}/review-queue?limit=10")
+        assert queue_response.status_code == 200
+        queue = queue_response.json()
+        assert queue["total"] == 2
+        assert [item["id"] for item in queue["items"]] == [first_sentence_id, second_sentence_id]
+        assert queue["items"][0]["index"] == 0
+        assert queue["items"][0]["first_suggestion"]["sentence_id"] == first_sentence_id
+        assert queue["items"][0]["first_suggestion"]["status"] == "pending"
+
+        assert client.post(f"/api/projects/default/sentences/{first_sentence_id}/suggestions/accept").status_code == 200
+        assert client.post(
+            f"/api/projects/default/sentences/{second_sentence_id}/complete",
+            json={"completed": True, "answer": "ignore"},
+        ).status_code == 200
+
+        updated_queue = client.get(f"/api/projects/default/documents/{document_id}/review-queue?limit=10").json()
+        assert updated_queue["total"] == 0
+        assert updated_queue["items"] == []
+
+
 def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:
     with TestClient(
         create_app(

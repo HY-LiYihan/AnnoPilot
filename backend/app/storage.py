@@ -609,6 +609,108 @@ class AnnotationStorage:
             "has_more": offset + len(sentences) < total,
         }
 
+    def get_review_queue(self, project_id: str, document_id: str, limit: int = 20) -> dict[str, Any]:
+        safe_limit = max(1, min(int(limit), 100))
+        with self.connect() as conn:
+            document = conn.execute(
+                "SELECT id FROM documents WHERE id = ? AND project_id = ?",
+                (document_id, project_id),
+            ).fetchone()
+            if document is None:
+                raise NotFoundError("Document not found.")
+
+            total = conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM (
+                  SELECT s.id
+                  FROM sentences s
+                  JOIN annotation_suggestions sg ON sg.sentence_id = s.id
+                  WHERE s.document_id = ? AND s.completed = 0 AND sg.status = 'pending'
+                    AND NOT EXISTS (
+                      SELECT 1
+                      FROM annotations a
+                      WHERE a.sentence_id = sg.sentence_id
+                        AND a.start_token_index <= sg.end_token_index
+                        AND a.end_token_index >= sg.start_token_index
+                    )
+                  GROUP BY s.id
+                ) review_sentences
+                """,
+                (document_id,),
+            ).fetchone()["count"]
+            sentence_rows = conn.execute(
+                """
+                SELECT s.id, s.sentence_index, s.text, COUNT(DISTINCT sg.id) AS suggestion_count
+                FROM sentences s
+                JOIN annotation_suggestions sg ON sg.sentence_id = s.id
+                WHERE s.document_id = ? AND s.completed = 0 AND sg.status = 'pending'
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM annotations a
+                    WHERE a.sentence_id = sg.sentence_id
+                      AND a.start_token_index <= sg.end_token_index
+                      AND a.end_token_index >= sg.start_token_index
+                  )
+                GROUP BY s.id, s.sentence_index, s.text
+                ORDER BY s.sentence_index
+                LIMIT ?
+                """,
+                (document_id, safe_limit),
+            ).fetchall()
+            sentence_ids = [row["id"] for row in sentence_rows]
+            first_suggestion_by_sentence: dict[str, dict[str, Any]] = {}
+            if sentence_ids:
+                placeholders = ",".join("?" for _ in sentence_ids)
+                suggestion_rows = conn.execute(
+                    f"""
+                    SELECT sg.id, sg.run_id, sg.sentence_id, sg.tag_id, tags.name AS tag_name, tags.color AS tag_color,
+                           sg.start_token_index, sg.end_token_index, sg.start_char, sg.end_char, sg.text,
+                           sg.confidence, sg.source, sg.evidence_text, sg.context_before, sg.context_after, sg.status, sg.created_at,
+                           rev.model AS review_model, rev.recommendation AS review_recommendation,
+                           rev.confidence AS review_confidence, rev.rationale AS review_rationale,
+                           rev.context_sha256 AS review_context_sha256,
+                           rev.created_at AS review_created_at
+                    FROM annotation_suggestions sg
+                    JOIN sentences s ON s.id = sg.sentence_id
+                    JOIN documents d ON d.id = s.document_id
+                    JOIN tags ON tags.id = sg.tag_id AND tags.project_id = d.project_id
+                    LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
+                        SELECT latest.id
+                        FROM annotation_suggestion_reviews latest
+                        WHERE latest.suggestion_id = sg.id
+                        ORDER BY latest.created_at DESC, latest.id DESC
+                        LIMIT 1
+                    )
+                    WHERE sg.sentence_id IN ({placeholders}) AND sg.status = 'pending'
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM annotations a
+                        WHERE a.sentence_id = sg.sentence_id
+                          AND a.start_token_index <= sg.end_token_index
+                          AND a.end_token_index >= sg.start_token_index
+                      )
+                    ORDER BY s.sentence_index, sg.start_token_index, sg.confidence DESC, sg.id
+                    """,
+                    sentence_ids,
+                ).fetchall()
+                for row in suggestion_rows:
+                    first_suggestion_by_sentence.setdefault(row["sentence_id"], self._suggestion_row_dict(row))
+
+        return {
+            "items": [
+                {
+                    "id": row["id"],
+                    "index": row["sentence_index"],
+                    "text": row["text"],
+                    "suggestion_count": row["suggestion_count"],
+                    "first_suggestion": first_suggestion_by_sentence.get(row["id"]),
+                }
+                for row in sentence_rows
+            ],
+            "total": int(total or 0),
+        }
+
     def create_annotation(
         self,
         project_id: str,

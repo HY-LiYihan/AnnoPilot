@@ -224,6 +224,7 @@ Frontend 在右侧 metrics/export panel 暴露 `Import JSONL` 入口，可把外
 GET /api/projects/{project_id}/documents/{document_id}/summary
 GET /api/projects/{project_id}/documents?limit=50
 GET /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50
+GET /api/projects/{project_id}/documents/{document_id}/review-queue?limit=20
 POST /api/projects/{project_id}/documents/{document_id}/session/cursor
 POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/accept
 POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/reject
@@ -235,7 +236,7 @@ GET /api/projects/{project_id}/events.jsonl
 GET /api/projects/{project_id}/tags/schema.json
 ```
 
-Product UI 使用 `summary` 读取全局 metrics、tags 和 sentence-dot state，使用 `sentences` 读取 paged reader window。旧的 full document endpoint 仍保留，用于兼容和 export-adjacent workflows。
+Product UI 使用 `summary` 读取全局 metrics、tags 和 sentence-dot state，使用 `sentences` 读取 paged reader window，使用 `review-queue` 读取右侧待审任务列表。旧的 full document endpoint 仍保留，用于兼容和 export-adjacent workflows。
 
 Task JSONL 输出以 sentence 为粒度，每行包含：
 

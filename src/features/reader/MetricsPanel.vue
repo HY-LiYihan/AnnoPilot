@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { BarChart3, DatabaseZap, Download, Gauge, Keyboard, MousePointer2, RotateCw, Route, Sparkles, Target, Upload } from '@lucide/vue'
-import type { AnnotationRun, AuditSummary, DocumentMeta, Metrics, RebuildPreview } from '../../types/domain'
+import type { AnnotationRun, AuditSummary, DocumentMeta, Metrics, RebuildPreview, ReviewQueueItem } from '../../types/domain'
 
 defineProps<{
   documentMeta: DocumentMeta | null
@@ -8,6 +8,8 @@ defineProps<{
   auditSummary: AuditSummary | null
   rebuildPreview: RebuildPreview | null
   runHistory: AnnotationRun[]
+  reviewQueueDetails: ReviewQueueItem[]
+  reviewQueueTotal: number
   progressPercent: number
   reviewedSummary: string
   isVerifyingRebuild: boolean
@@ -21,6 +23,7 @@ const emit = defineEmits<{
   'export-tag-schema': []
   'export-run-provenance': [runId: string]
   'import-annotations': [file: File]
+  'review-sentence': [sentenceIndex: number]
   'verify-rebuild': []
 }>()
 
@@ -42,6 +45,11 @@ function submitAnnotationImport(event: Event) {
   if (!file) return
   emit('import-annotations', file)
   input.value = ''
+}
+
+function queuePreviewText(item: ReviewQueueItem) {
+  const suggestion = item.first_suggestion
+  return suggestion ? `${suggestion.tag_name}: ${suggestion.text}` : `${item.suggestion_count} pending suggestions`
 }
 </script>
 
@@ -186,6 +194,28 @@ function submitAnnotationImport(event: Event) {
             <Download :size="15" aria-hidden="true" />
           </button>
         </article>
+      </div>
+    </section>
+
+    <section v-if="reviewQueueTotal" class="progress-card review-queue-card" aria-label="Review queue">
+      <div class="progress-header">
+        <span>Review Queue</span>
+        <strong>{{ reviewQueueTotal }} pending</strong>
+      </div>
+      <div class="review-queue-list">
+        <button
+          v-for="item in reviewQueueDetails.slice(0, 5)"
+          :key="item.id"
+          class="review-queue-row"
+          type="button"
+          @click="emit('review-sentence', item.index)"
+        >
+          <span>
+            <strong>#{{ item.index + 1 }} · {{ item.suggestion_count }} suggestions</strong>
+            <small>{{ queuePreviewText(item) }}</small>
+          </span>
+          <em>Go</em>
+        </button>
       </div>
     </section>
 

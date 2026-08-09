@@ -46,6 +46,8 @@ const {
   auditSummary,
   rebuildPreview,
   runHistory,
+  reviewQueueDetails,
+  reviewQueueTotal,
   suggestionReviews,
   reviewingSuggestionId,
   currentSentence,
@@ -216,12 +218,15 @@ const {
         :audit-summary="auditSummary"
         :rebuild-preview="rebuildPreview"
         :run-history="runHistory"
+        :review-queue-details="reviewQueueDetails"
+        :review-queue-total="reviewQueueTotal"
         :progress-percent="progressPercent"
         :reviewed-summary="reviewedSummary"
         :is-verifying-rebuild="isVerifyingRebuild"
         @export="exportJsonl"
         @export-prodigy="exportProdigyJsonl"
         @import-annotations="handleAnnotationImport"
+        @review-sentence="setCurrentSentence"
         @export-manifest="exportManifestJson"
         @export-events="exportEventsJsonl"
         @export-tag-schema="exportTagSchemaJson"

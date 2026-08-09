@@ -12,6 +12,7 @@ from ..schemas import (
     DocumentResponse,
     DocumentSummaryResponse,
     ImportTxtResponse,
+    ReviewQueueResponse,
     SentencesPageResponse,
     UpdateSessionCursorRequest,
     UpdateSessionCursorResponse,
@@ -116,6 +117,19 @@ def get_document_sentences(
 ) -> dict:
     try:
         return storage.get_document_sentences(project_id, document_id, offset=offset, limit=limit)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/documents/{document_id}/review-queue", response_model=ReviewQueueResponse)
+def get_review_queue(
+    project_id: str,
+    document_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    storage: AnnotationStorage = Depends(get_storage),
+) -> dict:
+    try:
+        return storage.get_review_queue(project_id, document_id, limit=limit)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

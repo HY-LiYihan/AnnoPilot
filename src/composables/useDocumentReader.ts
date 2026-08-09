@@ -8,6 +8,7 @@ import {
   fetchDocuments,
   fetchDocumentSentences,
   fetchDocumentSummary,
+  fetchReviewQueue,
   importAnnotationsJsonl,
   importTxt,
   manifestExportUrl,
@@ -40,6 +41,7 @@ import {
   type DocumentSummaryPayload,
   type Metrics,
   type RebuildPreview,
+  type ReviewQueueItem,
   type SentenceDef,
   type SentenceQueueItem,
   type SessionState,
@@ -97,6 +99,8 @@ export function useDocumentReader() {
   const auditSummary = ref<AuditSummary | null>(null)
   const rebuildPreview = ref<RebuildPreview | null>(null)
   const runHistory = ref<AnnotationRun[]>([])
+  const reviewQueueDetails = ref<ReviewQueueItem[]>([])
+  const reviewQueueTotal = ref(0)
   const suggestionReviews = ref<Record<string, SuggestionReview>>({})
   const reviewingSuggestionId = ref('')
   const lastUndoAction = ref<UndoableSpanAction | null>(null)
@@ -176,6 +180,7 @@ export function useDocumentReader() {
       await centerCurrentSentence()
       await refreshAuditSummary()
       await refreshRunHistory()
+      await refreshReviewQueue()
       await loadDocumentList()
       if (activeSession.value?.current_sentence_index !== currentSentenceIndex.value) {
         void persistSessionCursor(currentSentenceIndex.value)
@@ -238,6 +243,23 @@ export function useDocumentReader() {
     const payload = await fetchDocumentSummary(PROJECT_ID, documentMeta.value.id)
     applyDocumentSummary(payload)
     await loadDocumentList()
+    await refreshReviewQueue()
+  }
+
+  async function refreshReviewQueue() {
+    if (!documentMeta.value) {
+      reviewQueueDetails.value = []
+      reviewQueueTotal.value = 0
+      return
+    }
+    try {
+      const payload = await fetchReviewQueue(PROJECT_ID, documentMeta.value.id)
+      reviewQueueDetails.value = payload.items
+      reviewQueueTotal.value = payload.total
+    } catch {
+      reviewQueueDetails.value = []
+      reviewQueueTotal.value = 0
+    }
   }
 
   async function loadSentenceWindow(documentId: string, targetIndex: number, force = false) {
@@ -992,6 +1014,8 @@ export function useDocumentReader() {
     auditSummary,
     rebuildPreview,
     runHistory,
+    reviewQueueDetails,
+    reviewQueueTotal,
     suggestionReviews,
     reviewingSuggestionId,
     currentSentence,
