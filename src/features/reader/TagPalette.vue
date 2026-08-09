@@ -56,6 +56,8 @@ const visibleQueueSummary = computed(() => {
   return props.labels.windowSummary(first, last, props.queueItems.length)
 })
 
+const progressPercentText = computed(() => props.progressPercent.toFixed(2))
+
 function submitTag() {
   const name = newTagName.value.trim()
   if (!name) return
@@ -287,7 +289,7 @@ function confirmDeleteTag() {
     <div class="queue-block" :aria-label="labels.progressAria">
       <div class="mini-heading">
         <span>{{ labels.progressTitle }}</span>
-        <em>{{ progressPercent }}%</em>
+        <em>{{ progressPercentText }}%</em>
       </div>
       <div class="queue-progress-summary">
         <span>{{ labels.overallProgress }}</span>

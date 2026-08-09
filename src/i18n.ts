@@ -150,7 +150,7 @@ export const UI_LABELS = {
       tokenRange: 'tok',
       charRange: 'char',
       documentOption: (filename: string, cursor: string, progress: number, spans: number, suggestions: number) =>
-        `${filename}${cursor} · ${progress}% · ${spans} spans${suggestions ? ` · ${suggestions} AI` : ''}`,
+        `${filename}${cursor} · ${progress.toFixed(2)}% · ${spans} spans${suggestions ? ` · ${suggestions} AI` : ''}`,
       cursor: (index: number) => ` · #${index}`,
     },
     metrics: {
@@ -373,7 +373,7 @@ export const UI_LABELS = {
       tokenRange: 'tok',
       charRange: 'char',
       documentOption: (filename: string, cursor: string, progress: number, spans: number, suggestions: number) =>
-        `${filename}${cursor} · ${progress}% · ${spans} spans${suggestions ? ` · ${suggestions} AI` : ''}`,
+        `${filename}${cursor} · ${progress.toFixed(2)}% · ${spans} spans${suggestions ? ` · ${suggestions} AI` : ''}`,
       cursor: (index: number) => ` · #${index}`,
     },
     metrics: {

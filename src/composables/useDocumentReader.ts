@@ -112,7 +112,7 @@ export function useDocumentReader() {
   const selection = useTokenSelection(sentences)
   const currentSentence = computed(() => sentences.value.find((sentence) => sentence.index === currentSentenceIndex.value) ?? null)
   const selectedTag = computed(() => tags.value.find((tagItem) => tagItem.id === selectedTagId.value) ?? tags.value[0] ?? null)
-  const progressPercent = computed(() => Math.round(metrics.value.progress * 100))
+  const progressPercent = computed(() => Math.min(Math.max(metrics.value.progress * 100, 0), 100))
   const reviewedSummary = computed(() => `${metrics.value.completed_count} / ${metrics.value.sentence_count || 0}`)
   const reviewSummary = computed(() => `${metrics.value.suggestion_count} 待确认`)
   const activeAnnotations = computed(() => currentSentence.value?.annotations ?? [])

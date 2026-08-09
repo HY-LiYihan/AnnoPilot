@@ -134,7 +134,7 @@ function handleDrop(event: DragEvent, mode: TxtImportMode) {
 }
 
 function documentOptionText(document: DocumentListItem, labels: UiLabels['reader']) {
-  const progress = Math.round(document.progress * 100)
+  const progress = Math.min(Math.max(document.progress * 100, 0), 100)
   const cursor = typeof document.current_sentence_index === 'number' ? labels.cursor(document.current_sentence_index + 1) : ''
   return labels.documentOption(document.filename, cursor, progress, document.annotation_count, document.suggestion_count)
 }
