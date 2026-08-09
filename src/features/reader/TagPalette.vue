@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { AlertTriangle, Check, Pencil, Plus, Tag, Trash2, X } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
 import type { SentenceQueueItem, TagDef } from '../../types/domain'
@@ -27,6 +27,8 @@ const emit = defineEmits<{
 
 const newTagName = ref('')
 const newTagDescription = ref('')
+const isCreatingTag = ref(false)
+const newTagNameInput = ref<HTMLInputElement | null>(null)
 const editingTagId = ref('')
 const editingTagName = ref('')
 const editingTagDescription = ref('')
@@ -38,6 +40,20 @@ function submitTag() {
   emit('tag-add', name, newTagDescription.value.trim())
   newTagName.value = ''
   newTagDescription.value = ''
+  isCreatingTag.value = false
+}
+
+function openCreateTag() {
+  cancelEditTag()
+  pendingDeleteTag.value = null
+  isCreatingTag.value = true
+  void nextTick(() => newTagNameInput.value?.focus())
+}
+
+function cancelCreateTag() {
+  newTagName.value = ''
+  newTagDescription.value = ''
+  isCreatingTag.value = false
 }
 
 function tagUsage(tag: TagDef) {
@@ -124,11 +140,25 @@ function confirmDeleteTag() {
       <Tag :size="20" aria-hidden="true" />
     </div>
 
-    <form class="tag-form" :aria-label="labels.createAria" @submit.prevent="submitTag">
-      <input v-model="newTagName" type="text" maxlength="32" :placeholder="labels.addPlaceholder" :disabled="isSaving" />
-      <button type="submit" class="tag-add-button" :disabled="isSaving || !newTagName.trim()" :title="labels.addTitle">
-        <Plus :size="16" aria-hidden="true" />
-      </button>
+    <button v-if="!isCreatingTag" type="button" class="new-label-button" :disabled="isSaving" :title="labels.addTitle" @click="openCreateTag">
+      <Plus :size="16" aria-hidden="true" />
+      <span>{{ labels.addTitle }}</span>
+    </button>
+
+    <form v-else class="tag-form tag-create-card" :aria-label="labels.createAria" @submit.prevent="submitTag">
+      <div class="tag-create-heading">
+        <strong>{{ labels.createTitle }}</strong>
+        <small>{{ labels.definitionOptional }}</small>
+      </div>
+      <input
+        ref="newTagNameInput"
+        v-model="newTagName"
+        type="text"
+        maxlength="32"
+        :placeholder="labels.addPlaceholder"
+        :aria-label="labels.nameRequiredAria"
+        :disabled="isSaving"
+      />
       <input
         v-model="newTagDescription"
         class="tag-definition-input"
@@ -138,6 +168,15 @@ function confirmDeleteTag() {
         :aria-label="labels.guidelineAria"
         :disabled="isSaving"
       />
+      <div class="tag-create-actions">
+        <button type="button" class="tag-edit-button" :disabled="isSaving" :title="labels.cancelTitle" @click="cancelCreateTag">
+          <X :size="15" aria-hidden="true" />
+        </button>
+        <button type="submit" class="tag-add-button" :disabled="isSaving || !newTagName.trim()" :title="labels.saveTitle">
+          <Check :size="15" aria-hidden="true" />
+        </button>
+      </div>
+      <small class="tag-create-note">{{ labels.nameRequiredHint }}</small>
     </form>
 
     <div class="tag-list" :aria-label="labels.availableAria">

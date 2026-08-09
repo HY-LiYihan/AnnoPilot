@@ -2786,7 +2786,7 @@ class AnnotationStorage:
         self._backfill_default_tag_examples(conn)
 
     def _seed_tags(self, conn: sqlite3.Connection, project_id: str) -> None:
-        self._remove_unused_legacy_seeded_tags(conn, project_id)
+        self._remove_legacy_seeded_tags(conn, project_id)
         existing_count = conn.execute("SELECT COUNT(*) AS count FROM tags WHERE project_id = ?", (project_id,)).fetchone()[
             "count"
         ]
@@ -2817,30 +2817,71 @@ class AnnotationStorage:
             ],
         )
 
-    def _remove_unused_legacy_seeded_tags(self, conn: sqlite3.Connection, project_id: str) -> None:
+    def _remove_legacy_seeded_tags(self, conn: sqlite3.Connection, project_id: str) -> None:
+        removed_legacy_tag = False
         for tag in LEGACY_SEEDED_TAGS:
+            legacy_tag = conn.execute(
+                "SELECT 1 FROM tags WHERE project_id = ? AND id = ? AND name = ?",
+                (project_id, tag["id"], tag["name"]),
+            ).fetchone()
+            if legacy_tag is None:
+                continue
+            conn.execute(
+                """
+                DELETE FROM annotations
+                WHERE tag_id = ?
+                  AND sentence_id IN (
+                    SELECT s.id
+                    FROM sentences s
+                    JOIN documents d ON d.id = s.document_id
+                    WHERE d.project_id = ?
+                  )
+                """,
+                (tag["id"], project_id),
+            )
+            conn.execute(
+                """
+                DELETE FROM annotation_suggestions
+                WHERE tag_id = ?
+                  AND sentence_id IN (
+                    SELECT s.id
+                    FROM sentences s
+                    JOIN documents d ON d.id = s.document_id
+                    WHERE d.project_id = ?
+                  )
+                """,
+                (tag["id"], project_id),
+            )
             conn.execute(
                 """
                 DELETE FROM tags
                 WHERE project_id = ?
                   AND id = ?
                   AND name = ?
-                  AND NOT EXISTS (
-                    SELECT 1
-                    FROM annotations a
-                    JOIN sentences s ON s.id = a.sentence_id
-                    JOIN documents d ON d.id = s.document_id
-                    WHERE d.project_id = tags.project_id AND a.tag_id = tags.id
-                  )
-                  AND NOT EXISTS (
-                    SELECT 1
-                    FROM annotation_suggestions sg
-                    JOIN sentences s ON s.id = sg.sentence_id
-                    JOIN documents d ON d.id = s.document_id
-                    WHERE d.project_id = tags.project_id AND sg.tag_id = tags.id
-                  )
                 """,
                 (project_id, tag["id"], tag["name"]),
+            )
+            removed_legacy_tag = True
+        if removed_legacy_tag:
+            self._compact_tag_shortcuts_and_colors(conn, project_id)
+
+    def _compact_tag_shortcuts_and_colors(self, conn: sqlite3.Connection, project_id: str) -> None:
+        rows = conn.execute(
+            """
+            SELECT id, shortcut, name
+            FROM tags
+            WHERE project_id = ?
+            ORDER BY
+              CASE WHEN shortcut GLOB '[0-9]*' THEN CAST(shortcut AS INTEGER) ELSE 10000 END,
+              name,
+              id
+            """,
+            (project_id,),
+        ).fetchall()
+        for index, row in enumerate(rows):
+            conn.execute(
+                "UPDATE tags SET shortcut = ?, color = ? WHERE project_id = ? AND id = ?",
+                (str(index + 1), TAG_COLORS[index % len(TAG_COLORS)], project_id, row["id"]),
             )
 
     def _backfill_default_tag_descriptions(self, conn: sqlite3.Connection) -> None:

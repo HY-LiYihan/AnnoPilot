@@ -585,6 +585,34 @@ def test_list_tags_persists_project_tag_schema_without_document(tmp_path: Path) 
         assert updated_tags[0]["usage_count"] == 0
 
 
+def test_legacy_seed_labels_are_removed_and_custom_shortcuts_compacted(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        with storage.connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO tags (id, project_id, name, description, examples_json, shortcut, color)
+                VALUES (?, 'default', ?, NULL, '[]', ?, ?)
+                """,
+                [
+                    ("noun", "名词", "1", "#0b7565"),
+                    ("verb", "动词", "2", "#326bd8"),
+                    ("adjective", "形容词", "3", "#c45a2e"),
+                    ("tag_manual", "verb", "4", "#7a3db8"),
+                ],
+            )
+
+        response = client.get("/api/projects/default/tags")
+        assert response.status_code == 200
+        tags = response.json()["tags"]
+        assert [tag["name"] for tag in tags] == ["verb"]
+        assert tags[0]["shortcut"] == "1"
+        assert tags[0]["color"] == "#0b7565"
+
+
 def test_create_and_delete_tag_removes_related_annotations(tmp_path: Path) -> None:
     with TestClient(
         create_app(
