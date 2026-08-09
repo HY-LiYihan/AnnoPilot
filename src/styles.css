@@ -1104,6 +1104,24 @@ kbd {
   line-height: inherit;
 }
 
+.token.span-start {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.token.span-middle {
+  border-radius: 0;
+}
+
+.token.span-end {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.token.span-single {
+  border-radius: 5px;
+}
+
 .sentence-card.active .token:hover,
 .token.selecting,
 .token.pending {
@@ -1112,8 +1130,9 @@ kbd {
 }
 
 .token.pending {
-  outline: 2px solid color-mix(in srgb, var(--token-color) 64%, #ffffff);
-  outline-offset: 2px;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--token-color) 36%, transparent),
+    inset 0 -0.18em color-mix(in srgb, var(--token-color) 42%, transparent);
 }
 
 .token.annotated {

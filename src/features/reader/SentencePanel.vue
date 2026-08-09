@@ -16,7 +16,7 @@ import type {
 const SWIPE_MIN_DISTANCE = 56
 const SWIPE_AXIS_RATIO = 1.4
 
-defineProps<{
+const props = defineProps<{
   labels: UiLabels['reader']
   documentMeta: DocumentMeta | null
   documents: DocumentListItem[]
@@ -188,6 +188,47 @@ function sentenceStatusLabel(sentence: SentenceDef, currentSentenceIndex: number
   if (sentence.index === currentSentenceIndex) return labels.statusActive
   return labels.statusWaiting
 }
+
+function tokenSpanClasses(sentence: SentenceDef, tokenIndex: number) {
+  const annotation = props.annotationForToken(sentence, tokenIndex)
+  if (annotation) return rangePositionClasses(annotation.start_token_index, annotation.end_token_index, tokenIndex)
+
+  const suggestion = props.suggestionForToken(sentence, tokenIndex)
+  if (suggestion) return rangePositionClasses(suggestion.start_token_index, suggestion.end_token_index, tokenIndex)
+
+  if (props.isTokenInDrag(sentence, tokenIndex)) return predicatePositionClasses(sentence, tokenIndex, props.isTokenInDrag)
+  if (props.isTokenPending(sentence, tokenIndex)) return predicatePositionClasses(sentence, tokenIndex, props.isTokenPending)
+
+  return {}
+}
+
+function rangePositionClasses(startTokenIndex: number, endTokenIndex: number, tokenIndex: number) {
+  const isStart = tokenIndex === startTokenIndex
+  const isEnd = tokenIndex === endTokenIndex
+  return {
+    'span-single': isStart && isEnd,
+    'span-start': isStart && !isEnd,
+    'span-middle': !isStart && !isEnd,
+    'span-end': !isStart && isEnd,
+  }
+}
+
+function predicatePositionClasses(
+  sentence: SentenceDef,
+  tokenIndex: number,
+  predicate: (sentence: SentenceDef, tokenIndex: number) => boolean,
+) {
+  const previousToken = sentence.tokens[tokenIndex - 1]
+  const nextToken = sentence.tokens[tokenIndex + 1]
+  const hasPrevious = Boolean(previousToken && predicate(sentence, previousToken.token_index))
+  const hasNext = Boolean(nextToken && predicate(sentence, nextToken.token_index))
+  return {
+    'span-single': !hasPrevious && !hasNext,
+    'span-start': !hasPrevious && hasNext,
+    'span-middle': hasPrevious && hasNext,
+    'span-end': hasPrevious && !hasNext,
+  }
+}
 </script>
 
 <template>
@@ -278,12 +319,15 @@ function sentenceStatusLabel(sentence: SentenceDef, currentSentenceIndex: number
           <template v-for="(token, tokenIndex) in sentence.tokens" :key="token.id">
             {{ tokenPrefix(sentence, tokenIndex) }}<button
               class="token"
-              :class="{
-                annotated: annotationForToken(sentence, token.token_index),
-                suggested: suggestionForToken(sentence, token.token_index),
-                selecting: isTokenInDrag(sentence, token.token_index),
-                pending: isTokenPending(sentence, token.token_index),
-              }"
+              :class="[
+                {
+                  annotated: annotationForToken(sentence, token.token_index),
+                  suggested: suggestionForToken(sentence, token.token_index),
+                  selecting: isTokenInDrag(sentence, token.token_index),
+                  pending: isTokenPending(sentence, token.token_index),
+                },
+                tokenSpanClasses(sentence, token.token_index),
+              ]"
               :style="tokenStyle(sentence, token.token_index)"
               @pointerdown="emit('token-pointer-down', sentence, token.token_index, $event)"
               @pointerenter="emit('token-pointer-enter', sentence, token.token_index)"
