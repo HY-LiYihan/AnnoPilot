@@ -925,27 +925,39 @@ kbd {
 }
 
 .editor-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
   margin-bottom: 12px;
+}
+
+.editor-header > div:first-child {
+  min-width: 0;
+}
+
+.editor-header h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editor-tools {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   gap: 10px;
-  flex: 0 0 auto;
+  min-width: 0;
+  width: 100%;
 }
 
 .document-switcher {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-width: 220px;
-  max-width: min(36vw, 420px);
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 8px 10px;
   border: 1px solid rgba(24, 31, 36, 0.14);
   border-radius: 8px;
@@ -968,6 +980,8 @@ kbd {
   font: inherit;
   font-size: 0.86rem;
   font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .document-pill {
@@ -1202,6 +1216,26 @@ kbd {
   color: #00685b;
 }
 
+.candidate-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  justify-content: stretch;
+  gap: 12px;
+}
+
+.candidate-heading > div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.candidate-heading h2 {
+  white-space: nowrap;
+}
+
 .candidate-heading span {
   color: #00685b;
   font-weight: 900;
@@ -1210,8 +1244,9 @@ kbd {
 .candidate-actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
+  min-width: 0;
 }
 
 .suggest-limit-control {
@@ -1452,15 +1487,29 @@ kbd {
 
 .verification-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.verification-card > div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.verification-card h2 {
+  white-space: nowrap;
 }
 
 .verification-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
+  min-width: 0;
 }
 
 .accept-button,
@@ -1482,8 +1531,8 @@ kbd {
 .reject-sentence-button,
 .undo-button,
 .review-button {
-  min-width: 118px;
-  padding: 0 18px;
+  min-width: min(118px, 100%);
+  padding: 0 14px;
 }
 
 .accept-button {

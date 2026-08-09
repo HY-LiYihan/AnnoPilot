@@ -506,7 +506,19 @@ export function useDocumentReader() {
     await nextTick()
     const sentence = currentSentence.value
     if (!sentence) return
-    sentenceElements.value[sentence.id]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const element = sentenceElements.value[sentence.id]
+    const reader = element?.closest('.text-reader')
+    if (!(element instanceof HTMLElement) || !(reader instanceof HTMLElement)) return
+
+    const elementRect = element.getBoundingClientRect()
+    const readerRect = reader.getBoundingClientRect()
+    const centeredTop =
+      reader.scrollTop + elementRect.top - readerRect.top - (reader.clientHeight - elementRect.height) / 2
+    const maxScrollTop = Math.max(reader.scrollHeight - reader.clientHeight, 0)
+    reader.scrollTo({
+      top: Math.min(Math.max(centeredTop, 0), maxScrollTop),
+      behavior: 'smooth',
+    })
   }
 
   function onSentenceClick(sentenceIndex: number) {
