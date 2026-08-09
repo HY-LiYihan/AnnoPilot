@@ -898,6 +898,8 @@ class AnnotationStorage:
         document = self.get_document(project_id, document_id)
         lines = []
         for sentence in document["sentences"]:
+            spans = [self._export_span(annotation, source=annotation.get("source", "human")) for annotation in sentence["annotations"]]
+            suggestions = [self._export_suggestion(suggestion) for suggestion in sentence["suggestions"]]
             line = {
                 "schema_version": TASK_SCHEMA_VERSION,
                 "record_type": "annotation_task",
@@ -912,15 +914,30 @@ class AnnotationStorage:
                     "created_at": document["document"]["created_at"],
                 },
                 "tokens": [self._export_token(token) for token in sentence["tokens"]],
-                "spans": [self._export_span(annotation, source=annotation.get("source", "human")) for annotation in sentence["annotations"]],
+                "spans": spans,
                 "annotations": sentence["annotations"],
-                "suggestions": [self._export_suggestion(suggestion) for suggestion in sentence["suggestions"]],
+                "suggestions": suggestions,
                 "answer": sentence.get("answer", "accept" if sentence["completed"] else "pending"),
                 "completed": sentence["completed"],
+                "_view_id": "spans_manual",
+                "_session_id": self._export_prodigy_session_id(project_id, document_id, sentence["annotations"]),
+                "_annotator_id": self._export_prodigy_annotator_id(sentence["annotations"]),
+                "_input_hash": self._stable_hash({"text": sentence["text"]}),
+                "_task_hash": self._stable_hash(
+                    {
+                        "document_id": document_id,
+                        "sentence_id": sentence["id"],
+                        "text": sentence["text"],
+                        "spans": spans,
+                        "suggestions": suggestions,
+                    }
+                ),
                 "meta": {
                     "storage": "sqlite_runtime_jsonl_export",
                     "span_count": len(sentence["annotations"]),
                     "suggestion_count": len(sentence["suggestions"]),
+                    "session_id": self._export_prodigy_session_id(project_id, document_id, sentence["annotations"]),
+                    "annotator_id": self._export_prodigy_annotator_id(sentence["annotations"]),
                 },
             }
             lines.append(json.dumps(line, ensure_ascii=False) + "\n")

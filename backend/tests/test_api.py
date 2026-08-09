@@ -113,9 +113,18 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert exported_lines[0]["schema_version"] == "annopilot.task.v1"
         assert exported_lines[0]["record_type"] == "annotation_task"
         assert exported_lines[0]["answer"] == "accept"
+        assert exported_lines[0]["_view_id"] == "spans_manual"
+        assert exported_lines[0]["_session_id"] == f"annopilot-default-{document_id}-human"
+        assert exported_lines[0]["_annotator_id"] == "annopilot-human"
+        assert isinstance(exported_lines[0]["_input_hash"], int)
+        assert isinstance(exported_lines[0]["_task_hash"], int)
+        assert exported_lines[0]["meta"]["session_id"] == exported_lines[0]["_session_id"]
+        assert exported_lines[0]["meta"]["annotator_id"] == exported_lines[0]["_annotator_id"]
         assert exported_lines[0]["spans"][0]["text"] == "reduced"
         assert exported_lines[0]["spans"][0]["source"] == "human"
         assert exported_lines[0]["tokens"][0]["start"] == 0
+        assert exported_lines[1]["_session_id"] == f"annopilot-default-{document_id}-unannotated"
+        assert exported_lines[1]["_annotator_id"] == "annopilot-unannotated"
 
         prodigy_export_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl")
         assert prodigy_export_response.status_code == 200

@@ -266,8 +266,15 @@ annotations
 suggestions
 answer
 completed
+_view_id
+_session_id
+_annotator_id
+_input_hash
+_task_hash
 meta
 ```
+
+这些 `_...` 字段与 Prodigy task metadata 兼容，用于稳定去重、session tracing 和 annotator/source audit；`meta.session_id` 与 `meta.annotator_id` 同步保留一份非下划线 provenance，方便非 Prodigy 消费方读取。
 
 Document summary / manifest 的 `metrics` 包含 `answer_counts`，用于直接区分 `accept`、`reject`、`ignore` 和 `pending` 句子数量。Product UI 当前用 `Enter` / `Space` / `J` / `E` 分别写入 accept、ignore、reject 和 reopen-to-pending。
 

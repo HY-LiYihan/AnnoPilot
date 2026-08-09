@@ -181,7 +181,7 @@ annopilot.run_provenance.v1
 ### Import / Export
 
 - `import-annotations-jsonl` 可导入 Prodigy / AnnoPilot style JSONL annotation records，并尽量按 `sentence_id`、`sentence_index` 或 sentence text 匹配。
-- Task JSONL 以 sentence 为粒度导出 token、span、suggestion、answer 和 meta。
+- Task JSONL 以 sentence 为粒度导出 token、span、suggestion、answer、meta 和 Prodigy-style stable hashes / session metadata。
 - Prodigy export 保持 `ner_manual` compatible fields。
 - Manifest 汇总 tasks、Prodigy、events、tag schema、run provenance、artifact hashes 和 audit summary。
 

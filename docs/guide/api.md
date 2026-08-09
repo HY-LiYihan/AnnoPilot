@@ -101,7 +101,7 @@ GET /api/projects/{project_id}/events.jsonl
 GET /api/projects/{project_id}/tags/schema.json
 ```
 
-- Task JSONL 使用 `annopilot.task.v1`，按 sentence 输出 tokens、spans、annotations、suggestions、answer 和 meta。
+- Task JSONL 使用 `annopilot.task.v1`，按 sentence 输出 tokens、spans、annotations、suggestions、answer、meta，并包含 Prodigy-style `_input_hash`、`_task_hash`、`_session_id`、`_annotator_id` 和 `_view_id`。
 - Prodigy JSONL 使用 `prodigy.ner_manual.compat.v1`，保持 `_view_id=ner_manual`、`_session_id`、`_annotator_id`、`_input_hash` 和 `_task_hash`。
 - Manifest JSON 使用 `annopilot.export_manifest.v1`，记录 artifact hashes、source run ids、run provenance summaries 和 event audit。
 - Events JSONL 是 project-level audit trail。
