@@ -236,6 +236,8 @@ export type ImportTxtResponse = {
   tags: TagDef[]
 }
 
+export type TxtImportMode = 'replace' | 'merge'
+
 export type ImportAnnotationsResponse = {
   document_id: string
   filename: string

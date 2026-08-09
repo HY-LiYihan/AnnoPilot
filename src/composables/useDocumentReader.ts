@@ -12,6 +12,7 @@ import {
   importAnnotationsJsonl,
   importTxt,
   manifestExportUrl,
+  mergeTxt,
   prodigyExportUrl,
   tagSchemaExportUrl,
   updateDocumentCursor,
@@ -48,6 +49,7 @@ import {
   type SuggestionDef,
   type SuggestionReview,
   type TagDef,
+  type TxtImportMode,
 } from '../types/domain'
 import { normalizedRange, useTokenSelection } from './useTokenSelection'
 
@@ -144,25 +146,23 @@ export function useDocumentReader() {
     window.removeEventListener('keydown', handleKeydown)
   })
 
-  async function handleImport(event: Event) {
-    const input = event.target as HTMLInputElement
-    const file = input.files?.[0]
-    if (!file) return
-
+  async function handleImport(file: File, mode: TxtImportMode = 'replace') {
     readerError.value = ''
     isUploading.value = true
     try {
-      const imported = await importTxt(PROJECT_ID, file)
+      const shouldMerge = mode === 'merge' && Boolean(documentMeta.value)
+      const imported = shouldMerge && documentMeta.value
+        ? await mergeTxt(PROJECT_ID, documentMeta.value.id, file)
+        : await importTxt(PROJECT_ID, file)
       tags.value = imported.tags
       selectedTagId.value = imported.tags[0]?.id ?? selectedTagId.value
       selection.clearSelection()
       window.localStorage.setItem(ACTIVE_DOCUMENT_KEY, imported.document_id)
-      await loadDocument(imported.document_id)
+      await loadDocument(imported.document_id, shouldMerge)
     } catch (error) {
       readerError.value = error instanceof Error ? error.message : 'Import failed.'
     } finally {
       isUploading.value = false
-      input.value = ''
     }
   }
 

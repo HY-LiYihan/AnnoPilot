@@ -19,6 +19,16 @@ export async function importTxt(projectId: string, file: File): Promise<ImportTx
   return parseJsonResponse<ImportTxtResponse>(response)
 }
 
+export async function mergeTxt(projectId: string, documentId: string, file: File): Promise<ImportTxtResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/merge-txt`, {
+    method: 'POST',
+    body: formData,
+  })
+  return parseJsonResponse<ImportTxtResponse>(response)
+}
+
 export async function importAnnotationsJsonl(projectId: string, documentId: string, file: File): Promise<ImportAnnotationsResponse> {
   const formData = new FormData()
   formData.append('file', file)

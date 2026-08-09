@@ -49,6 +49,25 @@ def list_documents(
     return storage.list_documents(project_id, limit=limit)
 
 
+@router.post("/documents/{document_id}/merge-txt", response_model=ImportTxtResponse)
+async def merge_txt(
+    project_id: str,
+    document_id: str,
+    file: Annotated[UploadFile, File()],
+    storage: AnnotationStorage = Depends(get_storage),
+) -> dict:
+    filename = file.filename or "import.txt"
+    if not filename.lower().endswith(".txt"):
+        raise HTTPException(status_code=400, detail="Only .txt files are supported.")
+    data = await file.read()
+    try:
+        return storage.merge_txt(project_id, document_id, filename, data)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/documents/{document_id}/import-annotations-jsonl", response_model=ImportAnnotationsResponse)
 async def import_annotations_jsonl(
     project_id: str,

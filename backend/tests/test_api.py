@@ -288,6 +288,74 @@ def test_document_summary_and_sentence_paging(tmp_path: Path) -> None:
         assert len(legacy_response.json()["sentences"]) == 4
 
 
+def test_merge_txt_appends_to_existing_document_and_preserves_state(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        tag = client.post("/api/projects/default/tags", json={"name": "角色"}).json()["tag"]
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("first.txt", "第一句。第二句。", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        first_sentence = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=1").json()[
+            "sentences"
+        ][0]
+        assert client.post(
+            f"/api/projects/default/sentences/{first_sentence['id']}/annotations",
+            json={"tag_id": tag["id"], "start_token_index": 0, "end_token_index": 1},
+        ).status_code == 200
+        assert client.post(
+            f"/api/projects/default/sentences/{first_sentence['id']}/complete",
+            json={"completed": True, "answer": "accept"},
+        ).status_code == 200
+
+        merge_response = client.post(
+            f"/api/projects/default/documents/{document_id}/merge-txt",
+            files={"file": ("next.txt", "第三句。\nFourth sentence.", "text/plain")},
+        )
+        assert merge_response.status_code == 200
+        merged = merge_response.json()
+        assert merged["document_id"] == document_id
+        assert merged["sentence_count"] == 4
+        assert merged["token_count"] > imported["token_count"]
+
+        summary = client.get(f"/api/projects/default/documents/{document_id}/summary").json()
+        assert summary["metrics"]["sentence_count"] == 4
+        assert summary["metrics"]["completed_count"] == 1
+        assert [item["index"] for item in summary["queue"]] == [0, 1, 2, 3]
+
+        first_after_merge = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=1").json()[
+            "sentences"
+        ][0]
+        assert first_after_merge["completed"] is True
+        assert first_after_merge["annotations"][0]["tag_name"] == "角色"
+        appended_page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=2&limit=2").json()
+        assert [sentence["text"] for sentence in appended_page["sentences"]] == ["第三句。", "Fourth sentence."]
+        assert appended_page["sentences"][0]["start_char"] == len("第一句。第二句。\n\n")
+
+        events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
+        import_snapshots = [event for event in events if event["type"] == "document.imported"]
+        assert len(import_snapshots) == 2
+        assert import_snapshots[-1]["merge_source_filename"] == "next.txt"
+        assert import_snapshots[-1]["sentence_count"] == 4
+        assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
+        event_path = tmp_path / "projects" / "default" / "events.jsonl"
+
+    rebuild_result = rebuild_project_from_events(
+        project_id="default",
+        event_path=event_path,
+        database_path=tmp_path / "rebuilt" / "annopilot.sqlite",
+        data_root=tmp_path / "rebuilt-projects",
+        force=True,
+    )
+    assert rebuild_result.ok
+    assert rebuild_result.documents == 1
+    assert rebuild_result.sentences == 4
+
+
 def test_list_documents_returns_runtime_document_index(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",

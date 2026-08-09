@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Check, Clock, FileText, Sparkles, Undo2, Upload, X } from '@lucide/vue'
+import { Check, Sparkles, Undo2, X } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
 import type {
   AnnotationDef,
@@ -10,6 +10,7 @@ import type {
   SentenceDef,
   SuggestionDef,
   SuggestionReview,
+  TxtImportMode,
 } from '../../types/domain'
 
 const SWIPE_MIN_DISTANCE = 56
@@ -47,7 +48,7 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  import: [event: Event]
+  import: [file: File, mode: TxtImportMode]
   'document-change': [documentId: string]
   'set-sentence-element': [sentenceId: string, element: unknown]
   'sentence-click': [sentenceIndex: number]
@@ -89,6 +90,47 @@ function handleSuggestionMinConfidenceInput(event: Event) {
 function handleDocumentChange(event: Event) {
   const select = event.target as HTMLSelectElement
   emit('document-change', select.value)
+}
+
+function handleFileInput(event: Event, mode: TxtImportMode) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) emit('import', file, mode)
+  input.value = ''
+}
+
+const isDraggingTxt = ref(false)
+
+function hasFileDrag(event: DragEvent) {
+  return Array.from(event.dataTransfer?.types ?? []).includes('Files')
+}
+
+function handleDragEnter(event: DragEvent) {
+  if (!hasFileDrag(event)) return
+  event.preventDefault()
+  isDraggingTxt.value = true
+}
+
+function handleDragOver(event: DragEvent) {
+  if (!hasFileDrag(event)) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  isDraggingTxt.value = true
+}
+
+function handleDragLeave(event: DragEvent) {
+  const currentTarget = event.currentTarget
+  const relatedTarget = event.relatedTarget
+  if (currentTarget instanceof Node && relatedTarget instanceof Node && currentTarget.contains(relatedTarget)) return
+  isDraggingTxt.value = false
+}
+
+function handleDrop(event: DragEvent, mode: TxtImportMode) {
+  event.preventDefault()
+  isDraggingTxt.value = false
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  const txtFile = files.find((file) => file.name.toLowerCase().endsWith('.txt') || file.type === 'text/plain')
+  if (txtFile) emit('import', txtFile, mode)
 }
 
 function documentOptionText(document: DocumentListItem, labels: UiLabels['reader']) {
@@ -149,31 +191,31 @@ function sentenceStatusLabel(sentence: SentenceDef, currentSentenceIndex: number
 </script>
 
 <template>
-  <section class="editor-panel" aria-labelledby="editor-title">
-    <div class="editor-header">
+  <section class="editor-panel" :aria-labelledby="documentMeta ? 'editor-title' : undefined" :aria-label="!documentMeta ? labels.emptyTitle : undefined">
+    <div v-if="documentMeta" class="editor-header">
       <div>
         <p class="section-kicker">{{ labels.kicker }}</p>
         <h1 id="editor-title">{{ documentMeta?.filename ?? labels.emptyTitle }}</h1>
       </div>
       <div class="editor-tools">
         <label v-if="documents.length" class="document-switcher">
-          <FileText :size="16" aria-hidden="true" />
           <select :value="documentMeta?.id ?? ''" :disabled="isUploading" @change="handleDocumentChange">
             <option v-for="document in documents" :key="document.id" :value="document.id">
               {{ documentOptionText(document, labels) }}
             </option>
           </select>
         </label>
-        <label class="upload-card editor-upload">
-          <Upload :size="19" aria-hidden="true" />
-          <span>
-            <strong>{{ isUploading ? labels.importing : labels.importTxt }}</strong>
-            <small>UTF-8 · 10 MB</small>
-          </span>
-          <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="emit('import', $event)" />
-        </label>
+        <div class="reader-import-actions" :aria-label="labels.importActionsAria">
+          <label class="import-action-button">
+            {{ isUploading ? labels.importing : labels.replaceTxt }}
+            <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="handleFileInput($event, 'replace')" />
+          </label>
+          <label class="import-action-button merge">
+            {{ isUploading ? labels.importing : labels.mergeTxt }}
+            <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="handleFileInput($event, 'merge')" />
+          </label>
+        </div>
         <div class="document-pill">
-          <Clock :size="16" aria-hidden="true" />
           <span>{{ currentSentence ? labels.sentence(currentSentence.index + 1) : labels.noDocument }}</span>
         </div>
       </div>
@@ -181,24 +223,33 @@ function sentenceStatusLabel(sentence: SentenceDef, currentSentenceIndex: number
 
     <p v-if="readerError" class="reader-error">{{ readerError }}</p>
 
-    <article v-if="!documentMeta" class="empty-reader" :aria-label="labels.emptyTitle">
-      <FileText :size="44" aria-hidden="true" />
-      <h2>{{ labels.importTitle }}</h2>
-      <p>{{ labels.emptyDescription }}</p>
-      <label class="upload-card empty-upload">
-        <Upload :size="22" aria-hidden="true" />
-        <span>
-          <strong>{{ isUploading ? labels.importingTxt : labels.chooseDownloads }}</strong>
-          <small>{{ labels.pickTestFile }}</small>
-        </span>
-        <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="emit('import', $event)" />
+    <article
+      v-if="!documentMeta"
+      class="empty-reader import-drop-zone"
+      :class="{ 'drop-active': isDraggingTxt }"
+      :aria-label="labels.emptyTitle"
+      @dragenter="handleDragEnter"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop($event, 'replace')"
+    >
+      <label class="primary-import-button">
+        {{ isUploading ? labels.importingTxt : labels.importTxt }}
+        <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="handleFileInput($event, 'replace')" />
       </label>
+      <p>{{ labels.dropTxt }}</p>
     </article>
 
     <article
       v-else
       class="text-reader"
+      :class="{ 'drop-active': isDraggingTxt }"
       :aria-label="labels.readerAria"
+      :data-drop-hint="labels.dropToMerge"
+      @dragenter="handleDragEnter"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop($event, 'merge')"
       @pointerdown="handleReaderPointerDown"
       @pointerup="handleReaderPointerUp"
       @pointercancel="clearReaderSwipe"
