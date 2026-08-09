@@ -65,6 +65,16 @@ export async function completeSentence(projectId: string, sentenceId: string, co
   return response.json() as Promise<{ completed: boolean; answer: string }>
 }
 
+export async function updateDocumentCursor(projectId: string, documentId: string, currentSentenceIndex: number) {
+  const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/session/cursor`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_sentence_index: currentSentenceIndex }),
+  })
+  if (!response.ok) throw new Error(await responseMessage(response))
+  return response.json() as Promise<{ session: { current_sentence_index: number; updated_at: string } }>
+}
+
 export function documentExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.jsonl`
 }

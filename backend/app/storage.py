@@ -26,6 +26,7 @@ MAX_JSONL_BYTES = 10 * 1024 * 1024
 SUGGESTION_CONTEXT_CHARS = 48
 HUMAN_ACTOR_ID = "annopilot-human"
 CHARACTER_RAG_ACTOR_ID = "annopilot-character-rag"
+DEFAULT_SESSION_ID = "annopilot-human"
 EVENT_SCHEMA_VERSION = "annopilot.event.v1"
 TASK_SCHEMA_VERSION = "annopilot.task.v1"
 EXPORT_MANIFEST_SCHEMA_VERSION = "annopilot.export_manifest.v1"
@@ -256,24 +257,27 @@ class AnnotationStorage:
                 """,
                 (project_id, safe_limit),
             ).fetchall()
-        documents = []
-        for row in rows:
-            sentence_count = int(row["sentence_count"] or 0)
-            completed_count = int(row["completed_count"] or 0)
-            documents.append(
-                {
-                    "id": row["id"],
-                    "project_id": row["project_id"],
-                    "filename": row["filename"],
-                    "created_at": row["created_at"],
-                    "sentence_count": sentence_count,
-                    "token_count": int(row["token_count"] or 0),
-                    "completed_count": completed_count,
-                    "progress": completed_count / sentence_count if sentence_count else 0,
-                    "annotation_count": int(row["annotation_count"] or 0),
-                    "suggestion_count": int(row["suggestion_count"] or 0),
-                }
-            )
+            documents = []
+            for row in rows:
+                sentence_count = int(row["sentence_count"] or 0)
+                completed_count = int(row["completed_count"] or 0)
+                session = self._get_session(conn, project_id, row["id"])
+                documents.append(
+                    {
+                        "id": row["id"],
+                        "project_id": row["project_id"],
+                        "filename": row["filename"],
+                        "created_at": row["created_at"],
+                        "sentence_count": sentence_count,
+                        "token_count": int(row["token_count"] or 0),
+                        "completed_count": completed_count,
+                        "progress": completed_count / sentence_count if sentence_count else 0,
+                        "annotation_count": int(row["annotation_count"] or 0),
+                        "suggestion_count": int(row["suggestion_count"] or 0),
+                        "current_sentence_index": session["current_sentence_index"],
+                        "session_updated_at": session["updated_at"],
+                    }
+                )
         return {"documents": documents}
 
     def get_document(self, project_id: str, document_id: str) -> dict[str, Any]:
@@ -289,6 +293,7 @@ class AnnotationStorage:
             "tags": summary["tags"],
             "sentences": page["sentences"],
             "metrics": summary["metrics"],
+            "session": summary["session"],
         }
 
     def get_document_summary(self, project_id: str, document_id: str) -> dict[str, Any]:
@@ -400,6 +405,7 @@ class AnnotationStorage:
                 (document_id,),
             ).fetchall()
             tags = self._get_tags(conn, project_id)
+            session = self._get_session(conn, project_id, document_id)
 
         sentence_count = int(sentence_stats["sentence_count"] or 0)
         completed_count = int(sentence_stats["completed_count"] or 0)
@@ -451,7 +457,36 @@ class AnnotationStorage:
                 }
                 for row in queue_rows
             ],
+            "session": session,
         }
+
+    def set_session_cursor(self, project_id: str, document_id: str, current_sentence_index: int) -> dict[str, Any]:
+        with self.connect() as conn:
+            document = conn.execute(
+                "SELECT id FROM documents WHERE id = ? AND project_id = ?",
+                (document_id, project_id),
+            ).fetchone()
+            if document is None:
+                raise NotFoundError("Document not found.")
+            sentence_count = conn.execute(
+                "SELECT COUNT(*) AS count FROM sentences WHERE document_id = ?",
+                (document_id,),
+            ).fetchone()["count"]
+            if current_sentence_index < 0 or current_sentence_index >= int(sentence_count or 0):
+                raise ValidationError("Session cursor is outside the document sentence range.")
+            now = self._now()
+            conn.execute(
+                """
+                INSERT INTO annotation_sessions (id, project_id, document_id, actor_id, current_sentence_index, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(project_id, document_id, id) DO UPDATE SET
+                  actor_id = excluded.actor_id,
+                  current_sentence_index = excluded.current_sentence_index,
+                  updated_at = excluded.updated_at
+                """,
+                (DEFAULT_SESSION_ID, project_id, document_id, HUMAN_ACTOR_ID, current_sentence_index, now),
+            )
+        return {"session": self._get_document_session(project_id, document_id)}
 
     def get_document_sentences(self, project_id: str, document_id: str, offset: int = 0, limit: int = 50) -> dict[str, Any]:
         offset = max(offset, 0)
@@ -2457,6 +2492,16 @@ class AnnotationStorage:
               created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS annotation_sessions (
+              id TEXT NOT NULL,
+              project_id TEXT NOT NULL,
+              document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+              actor_id TEXT NOT NULL,
+              current_sentence_index INTEGER NOT NULL,
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY (project_id, document_id, id)
+            );
+
             CREATE TABLE IF NOT EXISTS event_outbox (
               id TEXT PRIMARY KEY,
               project_id TEXT NOT NULL,
@@ -2471,6 +2516,7 @@ class AnnotationStorage:
             CREATE INDEX IF NOT EXISTS idx_suggestions_sentence ON annotation_suggestions(sentence_id, status, start_token_index);
             CREATE INDEX IF NOT EXISTS idx_annotation_runs_project ON annotation_runs(project_id, document_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_suggestion_reviews ON annotation_suggestion_reviews(suggestion_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_annotation_sessions_document ON annotation_sessions(project_id, document_id, updated_at);
             CREATE INDEX IF NOT EXISTS idx_event_outbox_pending ON event_outbox(project_id, flushed_at, created_at);
             """
         )
@@ -2568,6 +2614,34 @@ class AnnotationStorage:
             tag["count"] = row["usage_count"]
             tags.append(tag)
         return tags
+
+    def _get_document_session(self, project_id: str, document_id: str) -> dict[str, Any]:
+        with self.connect() as conn:
+            return self._get_session(conn, project_id, document_id)
+
+    @staticmethod
+    def _get_session(conn: sqlite3.Connection, project_id: str, document_id: str) -> dict[str, Any]:
+        row = conn.execute(
+            """
+            SELECT id, actor_id, current_sentence_index, updated_at
+            FROM annotation_sessions
+            WHERE project_id = ? AND document_id = ? AND id = ?
+            """,
+            (project_id, document_id, DEFAULT_SESSION_ID),
+        ).fetchone()
+        if row is None:
+            return {
+                "id": DEFAULT_SESSION_ID,
+                "actor_id": HUMAN_ACTOR_ID,
+                "current_sentence_index": None,
+                "updated_at": None,
+            }
+        return {
+            "id": row["id"],
+            "actor_id": row["actor_id"],
+            "current_sentence_index": int(row["current_sentence_index"]),
+            "updated_at": row["updated_at"],
+        }
 
     @staticmethod
     def _next_tag_shortcut(tags: list[dict[str, Any]]) -> str:

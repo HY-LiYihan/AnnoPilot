@@ -90,7 +90,8 @@ function handleDocumentChange(event: Event) {
 function documentOptionText(document: DocumentListItem) {
   const progress = Math.round(document.progress * 100)
   const suggestions = document.suggestion_count ? ` · ${document.suggestion_count} AI` : ''
-  return `${document.filename} · ${progress}% · ${document.annotation_count} spans${suggestions}`
+  const cursor = typeof document.current_sentence_index === 'number' ? ` · #${document.current_sentence_index + 1}` : ''
+  return `${document.filename}${cursor} · ${progress}% · ${document.annotation_count} spans${suggestions}`
 }
 
 const swipeStart = ref<{ x: number; y: number; pointerId: number } | null>(null)

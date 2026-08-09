@@ -121,6 +121,7 @@ annotations
 annotation_suggestions
 annotation_runs
 annotation_suggestion_reviews
+annotation_sessions
 event_outbox
 ```
 
@@ -128,6 +129,7 @@ event_outbox
 
 - mutation 先在 SQLite transaction 中写 domain rows 和 `event_outbox`。
 - transaction 成功后，pending outbox rows flush 到 `<DATA_ROOT>/<project_id>/events.jsonl`。
+- `annotation_sessions` 保存 runtime-only 标注会话状态，例如当前句游标；普通导航不进入 JSONL audit log。
 - audit API 统计 event type、actor、schema version、pending outbox 和 replay issues。
 - rebuild preview 使用临时 SQLite database 重放 `events.jsonl`，不会破坏当前 runtime database。
 

@@ -115,6 +115,8 @@ class DocumentListItemResponse(DocumentMetaResponse):
     progress: float = 0.0
     annotation_count: int = 0
     suggestion_count: int = 0
+    current_sentence_index: Optional[int] = None
+    session_updated_at: Optional[str] = None
 
 
 class DocumentListResponse(BaseModel):
@@ -207,11 +209,19 @@ class MetricsResponse(BaseModel):
     accuracy_label: str
 
 
+class SessionResponse(BaseModel):
+    id: str
+    actor_id: str
+    current_sentence_index: Optional[int] = None
+    updated_at: Optional[str] = None
+
+
 class DocumentResponse(BaseModel):
     document: DocumentMetaResponse
     tags: list[TagResponse]
     sentences: list[SentenceResponse]
     metrics: MetricsResponse
+    session: SessionResponse
 
 
 class DocumentSummaryResponse(BaseModel):
@@ -219,6 +229,7 @@ class DocumentSummaryResponse(BaseModel):
     tags: list[TagResponse]
     metrics: MetricsResponse
     queue: list[SentenceQueueItemResponse]
+    session: SessionResponse
 
 
 class SentencesPageResponse(BaseModel):
@@ -251,6 +262,14 @@ class CompleteSentenceRequest(BaseModel):
 class CompleteSentenceResponse(BaseModel):
     completed: bool
     answer: str = "pending"
+
+
+class UpdateSessionCursorRequest(BaseModel):
+    current_sentence_index: int = Field(ge=0)
+
+
+class UpdateSessionCursorResponse(BaseModel):
+    session: SessionResponse
 
 
 class GenerateSuggestionsRequest(BaseModel):

@@ -18,6 +18,7 @@ AnnoPilot 现在同时维护两个 surface：
 - 上传 `.txt` 文件到 backend。
 - 自动加载上一次 active document，document id 保存在 `localStorage`。
 - 中间 header 提供 runtime document switcher，可在最近导入的 TXT 文档之间切换，并显示 progress、span count 和待确认建议数。
+- 当前句位置会写入 SQLite runtime session cursor；刷新页面或重新打开同一 document 时，reader 会回到上次停留的句子。
 - 将文档切分为 sentences，并展示 token-level annotation UI。
 - 中间 reader 使用 sentence window 加载，避免长文档一次性把所有 tokens / annotations / suggestions 塞给前端。
 - 左侧保留全局 sentence dot grid，绿色表示已完成，紫灰色表示已忽略，黄色表示有待确认建议，灰色表示未开始。
@@ -60,6 +61,7 @@ GET    /api/projects/{project_id}/documents?limit=50
 GET    /api/projects/{project_id}/documents/{document_id}
 GET    /api/projects/{project_id}/documents/{document_id}/summary
 GET    /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50
+POST   /api/projects/{project_id}/documents/{document_id}/session/cursor
 POST   /api/projects/{project_id}/sentences/{sentence_id}/annotations
 DELETE /api/projects/{project_id}/annotations/{annotation_id}
 POST   /api/projects/{project_id}/sentences/{sentence_id}/complete
@@ -116,6 +118,7 @@ SQLite 当前保存：
 - `annotation_suggestions`
 - `annotation_runs`
 - `annotation_suggestion_reviews`
+- `annotation_sessions`
 - `event_outbox`
 
 JSONL 当前保存：

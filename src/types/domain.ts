@@ -101,6 +101,8 @@ export type DocumentListItem = DocumentMeta & {
   progress: number
   annotation_count: number
   suggestion_count: number
+  current_sentence_index?: number | null
+  session_updated_at?: string | null
 }
 
 export type Metrics = {
@@ -177,11 +179,19 @@ export type AnnotationRun = {
   created_at: string
 }
 
+export type SessionState = {
+  id: string
+  actor_id: string
+  current_sentence_index: number | null
+  updated_at: string | null
+}
+
 export type DocumentPayload = {
   document: DocumentMeta
   tags: TagDef[]
   sentences: SentenceDef[]
   metrics: Metrics
+  session: SessionState
 }
 
 export type DocumentListPayload = {
@@ -193,6 +203,7 @@ export type DocumentSummaryPayload = {
   tags: TagDef[]
   metrics: Metrics
   queue: SentenceQueueItem[]
+  session: SessionState
 }
 
 export type SentencesPagePayload = {

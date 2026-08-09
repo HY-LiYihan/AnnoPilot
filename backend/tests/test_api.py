@@ -305,6 +305,49 @@ def test_list_documents_returns_runtime_document_index(tmp_path: Path) -> None:
         assert second["suggestion_count"] == len(second_suggestions)
 
 
+def test_session_cursor_persists_reader_position(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("sample.txt", "第一句。第二句。第三句。", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+
+        initial_summary = client.get(f"/api/projects/default/documents/{document_id}/summary")
+        assert initial_summary.status_code == 200
+        assert initial_summary.json()["session"] == {
+            "id": "annopilot-human",
+            "actor_id": "annopilot-human",
+            "current_sentence_index": None,
+            "updated_at": None,
+        }
+
+        cursor_response = client.post(
+            f"/api/projects/default/documents/{document_id}/session/cursor",
+            json={"current_sentence_index": 2},
+        )
+        assert cursor_response.status_code == 200
+        assert cursor_response.json()["session"]["current_sentence_index"] == 2
+        assert cursor_response.json()["session"]["updated_at"]
+
+        summary = client.get(f"/api/projects/default/documents/{document_id}/summary").json()
+        assert summary["session"]["current_sentence_index"] == 2
+
+        document_list = client.get("/api/projects/default/documents?limit=10").json()["documents"]
+        assert document_list[0]["current_sentence_index"] == 2
+        assert document_list[0]["session_updated_at"]
+
+        out_of_range = client.post(
+            f"/api/projects/default/documents/{document_id}/session/cursor",
+            json={"current_sentence_index": 3},
+        )
+        assert out_of_range.status_code == 400
+
+
 def test_sentence_ignore_answer_exports_as_ignore(tmp_path: Path) -> None:
     with TestClient(
         create_app(

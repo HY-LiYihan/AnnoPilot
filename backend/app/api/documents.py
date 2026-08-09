@@ -13,6 +13,8 @@ from ..schemas import (
     DocumentSummaryResponse,
     ImportTxtResponse,
     SentencesPageResponse,
+    UpdateSessionCursorRequest,
+    UpdateSessionCursorResponse,
 )
 from ..storage import AnnotationStorage, NotFoundError, ValidationError
 from .dependencies import get_storage
@@ -87,6 +89,21 @@ def get_document_summary(
         return storage.get_document_summary(project_id, document_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/documents/{document_id}/session/cursor", response_model=UpdateSessionCursorResponse)
+def update_session_cursor(
+    project_id: str,
+    document_id: str,
+    payload: UpdateSessionCursorRequest,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> dict:
+    try:
+        return storage.set_session_cursor(project_id, document_id, payload.current_sentence_index)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/documents/{document_id}/sentences", response_model=SentencesPageResponse)

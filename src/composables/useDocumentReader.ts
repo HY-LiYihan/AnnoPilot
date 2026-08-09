@@ -13,6 +13,7 @@ import {
   manifestExportUrl,
   prodigyExportUrl,
   tagSchemaExportUrl,
+  updateDocumentCursor,
 } from '../api/documents'
 import { fetchRuns, runProvenanceExportUrl } from '../api/runs'
 import {
@@ -39,6 +40,7 @@ import {
   type RebuildPreview,
   type SentenceDef,
   type SentenceQueueItem,
+  type SessionState,
   type SuggestionDef,
   type SuggestionReview,
   type TagDef,
@@ -67,6 +69,7 @@ export function useDocumentReader() {
   const tags = ref<TagDef[]>(fallbackTags)
   const documents = ref<DocumentListItem[]>([])
   const documentMeta = ref<DocumentMeta | null>(null)
+  const activeSession = ref<SessionState | null>(null)
   const sentences = ref<SentenceDef[]>([])
   const sentenceQueue = ref<SentenceQueueItem[]>([])
   const loadedWindow = ref({ offset: 0, limit: 0, total: 0 })
@@ -165,16 +168,16 @@ export function useDocumentReader() {
       selection.clearSelection()
       currentSentenceIndex.value = preserveCurrent
         ? clampIndex(previousIndex)
-        : Math.max(
-            0,
-            payload.queue.find((sentence) => !sentence.completed)?.index ?? 0,
-          )
+        : initialSentenceIndex(payload)
       if (currentSentenceIndex.value < 0) currentSentenceIndex.value = 0
       await loadSentenceWindow(documentId, currentSentenceIndex.value, true)
       await centerCurrentSentence()
       await refreshAuditSummary()
       await refreshRunHistory()
       await loadDocumentList()
+      if (activeSession.value?.current_sentence_index !== currentSentenceIndex.value) {
+        void persistSessionCursor(currentSentenceIndex.value)
+      }
     } catch (error) {
       window.localStorage.removeItem(ACTIVE_DOCUMENT_KEY)
       readerError.value = error instanceof Error ? error.message : 'Could not load document.'
@@ -200,11 +203,22 @@ export function useDocumentReader() {
 
   function applyDocumentSummary(payload: DocumentSummaryPayload) {
     documentMeta.value = payload.document
+    activeSession.value = payload.session
     tags.value = payload.tags.length ? payload.tags : fallbackTags
     selectedTagId.value = tags.value.find((tagItem) => tagItem.id === selectedTagId.value)?.id ?? tags.value[0]?.id ?? ''
     metrics.value = payload.metrics
     sentenceQueue.value = payload.queue
     loadedWindow.value.total = payload.metrics.sentence_count
+  }
+
+  function initialSentenceIndex(payload: DocumentSummaryPayload) {
+    if (typeof payload.session.current_sentence_index === 'number') {
+      return clampIndex(payload.session.current_sentence_index)
+    }
+    return Math.max(
+      0,
+      payload.queue.find((sentence) => !sentence.completed)?.index ?? 0,
+    )
   }
 
   async function loadProjectTags() {
@@ -263,7 +277,32 @@ export function useDocumentReader() {
     void (async () => {
       if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value)
       await centerCurrentSentence()
+      void persistSessionCursor(currentSentenceIndex.value)
     })()
+  }
+
+  async function persistSessionCursor(index: number) {
+    if (!documentMeta.value || metrics.value.sentence_count === 0) return
+    try {
+      const payload = await updateDocumentCursor(PROJECT_ID, documentMeta.value.id, index)
+      activeSession.value = {
+        id: activeSession.value?.id ?? 'annopilot-human',
+        actor_id: activeSession.value?.actor_id ?? 'annopilot-human',
+        current_sentence_index: payload.session.current_sentence_index,
+        updated_at: payload.session.updated_at,
+      }
+      documents.value = documents.value.map((document) =>
+        document.id === documentMeta.value?.id
+          ? {
+              ...document,
+              current_sentence_index: payload.session.current_sentence_index,
+              session_updated_at: payload.session.updated_at,
+            }
+          : document,
+      )
+    } catch {
+      // Cursor persistence is best-effort runtime state; annotation mutations still surface errors elsewhere.
+    }
   }
 
   function jumpToNextReviewSentence() {
@@ -908,6 +947,7 @@ export function useDocumentReader() {
     tags,
     documents,
     documentMeta,
+    activeSession,
     sentences,
     metrics,
     selectedTagId,

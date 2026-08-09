@@ -116,6 +116,14 @@ annotation_suggestion_reviews
   rationale
   created_at
 
+annotation_sessions
+  id
+  project_id
+  document_id
+  actor_id
+  current_sentence_index
+  updated_at
+
 event_outbox
   id
   project_id
@@ -133,10 +141,13 @@ idx_annotations_sentence(sentence_id, start_token_index)
 idx_suggestions_sentence(sentence_id, status, start_token_index)
 idx_annotation_runs_project(project_id, document_id, created_at)
 idx_suggestion_reviews(suggestion_id, created_at)
+idx_annotation_sessions_document(project_id, document_id, updated_at)
 idx_event_outbox_pending(project_id, flushed_at, created_at)
 ```
 
 Mutation path 使用 SQLite outbox：domain rows 和 event payload 在同一个 transaction 中写入，随后 pending outbox rows flush 到 `events.jsonl`。这比“先提交 mutation、再单独写 JSONL”更容易保持 runtime state 和 audit trail 对齐。
+
+`annotation_sessions` 保存 Prodigy-style runtime workflow state，例如默认人工会话当前停留的 sentence index。它用于刷新后恢复 reader 位置，不写入 JSONL audit log，避免普通导航操作污染业务事件流。
 
 Annotation `source` 当前可能是 `human`、`accepted_suggestion` 或 `prodigy_import`。`source_suggestion_id` 用于追踪由 suggestion accept 创建的 annotation。
 
@@ -211,6 +222,7 @@ Frontend 在右侧 metrics/export panel 暴露 `Import JSONL` 入口，可把外
 GET /api/projects/{project_id}/documents/{document_id}/summary
 GET /api/projects/{project_id}/documents?limit=50
 GET /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50
+POST /api/projects/{project_id}/documents/{document_id}/session/cursor
 GET /api/projects/{project_id}/documents/{document_id}/export.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.prodigy.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.manifest.json
