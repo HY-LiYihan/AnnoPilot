@@ -1100,6 +1100,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert len(suggestions) <= 4
         assert sum(suggestion_payload["source_counts"].values()) == len(suggestions)
         assert set(suggestion_payload["source_counts"]).issubset({"lexical_exact", "lexical_contains", "char_ngram"})
+        assert sum(suggestion_payload["confidence_counts"].values()) == len(suggestions)
+        assert suggestion_payload["confidence_counts"] == {"high": len(suggestions)}
         assert all(suggestion["run_id"] == suggestion_payload["run_id"] for suggestion in suggestions)
         assert all(suggestion["evidence_text"] for suggestion in suggestions)
         assert all(suggestion["match_key"] for suggestion in suggestions)
@@ -1156,6 +1158,7 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert runs[0]["rejected_count"] == 0
         assert runs[0]["acceptance_rate"] is None
         assert runs[0]["source_counts"] == suggestion_payload["source_counts"]
+        assert runs[0]["confidence_counts"] == suggestion_payload["confidence_counts"]
         assert sum(runs[0]["source_counts"].values()) == len(suggestions)
         assert set(runs[0]["source_counts"]).issubset({"lexical_exact", "lexical_contains", "char_ngram"})
 
@@ -1187,6 +1190,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert provenance["run"]["config"]["tag_schema_sha256"] == runs[0]["config"]["tag_schema_sha256"]
         assert provenance["run"]["source_counts"] == runs[0]["source_counts"]
         assert provenance["source_counts"] == runs[0]["source_counts"]
+        assert provenance["run"]["confidence_counts"] == runs[0]["confidence_counts"]
+        assert provenance["confidence_counts"] == runs[0]["confidence_counts"]
         assert provenance["run"]["config"]["examples_by_tag"] == runs[0]["config"]["examples_by_tag"]
         assert provenance["run"]["config"]["examples_match_keys_by_tag"] == runs[0]["config"]["examples_match_keys_by_tag"]
         assert provenance["status_counts"]["accepted"] == 1
@@ -1249,6 +1254,7 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert manifest["event_audit"]["actor_id_counts"]["annopilot-character-rag"] >= 2
         assert manifest["runs"][0]["config"]["min_confidence"] == 0.98
         assert manifest["runs"][0]["source_counts"] == suggestion_payload["source_counts"]
+        assert manifest["runs"][0]["confidence_counts"] == suggestion_payload["confidence_counts"]
         assert manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["schema_version"] == "annopilot.run_provenance.v1"
         assert manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["filename"].endswith(".provenance.json")
         assert manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["content_sha256"] == provenance["content_sha256"]
@@ -1266,6 +1272,7 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert generated_event["actor_id"] == "annopilot-character-rag"
         assert generated_event["suggestion_count"] == len(generated_event["suggestions"])
         assert generated_event["source_counts"] == suggestion_payload["source_counts"]
+        assert generated_event["confidence_counts"] == suggestion_payload["confidence_counts"]
         assert generated_event["config"]["limit_per_sentence"] == 2
         assert generated_event["config"]["min_confidence"] == 0.98
         assert generated_event["config"]["tag_schema_sha256"] == runs[0]["config"]["tag_schema_sha256"]
@@ -1473,6 +1480,8 @@ def test_review_queue_can_prioritize_uncertain_suggestions(tmp_path: Path) -> No
         )
         assert suggestion_response.status_code == 200
         suggestions = suggestion_response.json()["suggestions"]
+        assert suggestion_response.json()["confidence_counts"]["high"] >= 1
+        assert suggestion_response.json()["confidence_counts"].get("medium", 0) >= 1
         assert any(suggestion["sentence_id"] == exact_sentence_id and suggestion["confidence"] == 0.98 for suggestion in suggestions)
         assert any(
             suggestion["sentence_id"] == uncertain_sentence_id
@@ -1565,6 +1574,7 @@ def test_auto_annotate_generates_and_accepts_high_confidence_spans(tmp_path: Pat
         assert payload["run_id"].startswith("run_")
         assert payload["suggestions_created"] >= 2
         assert sum(payload["source_counts"].values()) == payload["suggestions_created"]
+        assert sum(payload["confidence_counts"].values()) == payload["suggestions_created"]
         assert payload["accepted"] == payload["suggestions_created"]
         assert payload["skipped"] == 0
         assert len(payload["accepted_suggestion_ids"]) == payload["accepted"]

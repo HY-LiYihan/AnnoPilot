@@ -50,6 +50,21 @@ function runSourceSummary(run: AnnotationRun, labels: UiLabels['metrics']) {
     .join(' · ')
 }
 
+function runConfidenceSummary(run: AnnotationRun, labels: UiLabels['metrics']) {
+  const confidenceCounts = Object.entries(run.confidence_counts ?? {})
+    .filter(([, count]) => count > 0)
+    .sort(([leftBucket], [rightBucket]) => confidenceBucketOrder(leftBucket) - confidenceBucketOrder(rightBucket))
+  if (!confidenceCounts.length) return ''
+  const confidenceLabels = labels.confidenceLabels as Record<string, string>
+  return confidenceCounts
+    .map(([bucket, count]) => `${confidenceLabels[bucket] ?? bucket} ${count}`)
+    .join(' · ')
+}
+
+function confidenceBucketOrder(bucket: string) {
+  return { high: 0, medium: 1, low: 2 }[bucket as 'high' | 'medium' | 'low'] ?? 3
+}
+
 function actorCount(auditSummary: AuditSummary | null, actorType: string) {
   return auditSummary?.actor_type_counts?.[actorType] ?? 0
 }
@@ -136,6 +151,7 @@ function shortHash(value: string) {
             · {{ runHistory[0].accepted_count }} {{ labels.accepted }} / {{ runHistory[0].rejected_count }} {{ labels.rejected }} / {{ runHistory[0].pending_count }} {{ labels.pendingStatus }}
           </template>
           <template v-if="runHistory[0] && runSourceSummary(runHistory[0], labels)"> · {{ labels.sourceMix }} {{ runSourceSummary(runHistory[0], labels) }}</template>
+          <template v-if="runHistory[0] && runConfidenceSummary(runHistory[0], labels)"> · {{ labels.confidenceMix }} {{ runConfidenceSummary(runHistory[0], labels) }}</template>
         </small>
       </article>
     </div>
@@ -173,6 +189,7 @@ function shortHash(value: string) {
             <small>
               {{ run.id.slice(0, 10) }} · {{ labels.limit }} {{ runLimit(run) }} · {{ labels.acceptRate }} {{ runRate(run) }}
               <template v-if="runSourceSummary(run, labels)"> · {{ labels.sourceMix }} {{ runSourceSummary(run, labels) }}</template>
+              <template v-if="runConfidenceSummary(run, labels)"> · {{ labels.confidenceMix }} {{ runConfidenceSummary(run, labels) }}</template>
             </small>
           </span>
           <div class="run-history-pills" :aria-label="labels.runStatusAria">

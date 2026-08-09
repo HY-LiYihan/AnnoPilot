@@ -11,6 +11,7 @@ export async function generateSuggestions(projectId: string, documentId: string,
     run_id: string
     suggestions_created: number
     source_counts: Record<string, number>
+    confidence_counts: Record<string, number>
     suggestions: SuggestionDef[]
   }>(response)
 }
@@ -31,6 +32,7 @@ export async function generateSentenceSuggestions(
     run_id: string
     suggestions_created: number
     source_counts: Record<string, number>
+    confidence_counts: Record<string, number>
     suggestions: SuggestionDef[]
   }>(response)
 }
@@ -76,6 +78,7 @@ export async function autoAnnotateSuggestions(projectId: string, documentId: str
     run_id: string
     suggestions_created: number
     source_counts: Record<string, number>
+    confidence_counts: Record<string, number>
     accepted: number
     skipped: number
     min_confidence: number

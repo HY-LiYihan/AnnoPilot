@@ -36,6 +36,8 @@ PRODIGY_EXPORT_SCHEMA_VERSION = "prodigy.ner_manual.compat.v1"
 PRODIGY_SPANS_EXPORT_SCHEMA_VERSION = "prodigy.spans_manual.compat.v1"
 TAG_SCHEMA_VERSION = "annopilot.tag_schema.v1"
 RUN_PROVENANCE_SCHEMA_VERSION = "annopilot.run_provenance.v1"
+HIGH_CONFIDENCE_THRESHOLD = 0.9
+MEDIUM_CONFIDENCE_THRESHOLD = 0.75
 REPLAYABLE_EVENT_FIELDS = {
     "tag.created": {"tag_id", "name", "shortcut", "color"},
     "tag.renamed": {"tag_id", "name"},
@@ -1677,7 +1679,9 @@ class AnnotationStorage:
                 """,
                 tuple(params),
             ).fetchall()
-        source_counts_by_run = self._run_source_counts(project_id, [row["id"] for row in rows])
+        run_ids = [row["id"] for row in rows]
+        source_counts_by_run = self._run_source_counts(project_id, run_ids)
+        confidence_counts_by_run = self._run_confidence_counts(project_id, run_ids)
         return [
             {
                 "id": row["id"],
@@ -1693,6 +1697,7 @@ class AnnotationStorage:
                 "rejected_count": row["rejected_count"],
                 "acceptance_rate": self._acceptance_rate(row["accepted_count"], row["rejected_count"]),
                 "source_counts": source_counts_by_run.get(row["id"], {}),
+                "confidence_counts": confidence_counts_by_run.get(row["id"], {}),
                 "created_at": row["created_at"],
             }
             for row in rows
@@ -1720,6 +1725,34 @@ class AnnotationStorage:
             counts.setdefault(row["run_id"], {})[row["source"]] = int(row["count"])
         return counts
 
+    def _run_confidence_counts(self, project_id: str, run_ids: list[str]) -> dict[str, dict[str, int]]:
+        if not run_ids:
+            return {}
+        placeholders = ", ".join("?" for _ in run_ids)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT sg.run_id,
+                       CASE
+                         WHEN sg.confidence >= ? THEN 'high'
+                         WHEN sg.confidence >= ? THEN 'medium'
+                         ELSE 'low'
+                       END AS bucket,
+                       COUNT(*) AS count
+                FROM annotation_suggestions sg
+                JOIN sentences s ON s.id = sg.sentence_id
+                JOIN documents d ON d.id = s.document_id
+                WHERE d.project_id = ? AND sg.run_id IN ({placeholders})
+                GROUP BY sg.run_id, bucket
+                ORDER BY sg.run_id, bucket
+                """,
+                (HIGH_CONFIDENCE_THRESHOLD, MEDIUM_CONFIDENCE_THRESHOLD, project_id, *run_ids),
+            ).fetchall()
+        counts: dict[str, dict[str, int]] = {}
+        for row in rows:
+            counts.setdefault(row["run_id"], {})[row["bucket"]] = int(row["count"])
+        return counts
+
     @staticmethod
     def _suggestion_source_counts(suggestions: list[dict[str, Any]]) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -1727,6 +1760,22 @@ class AnnotationStorage:
             source = str(suggestion.get("source") or "unknown")
             counts[source] = counts.get(source, 0) + 1
         return dict(sorted(counts.items()))
+
+    @classmethod
+    def _suggestion_confidence_counts(cls, suggestions: list[dict[str, Any]]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for suggestion in suggestions:
+            bucket = cls._confidence_bucket(float(suggestion.get("confidence") or 0.0))
+            counts[bucket] = counts.get(bucket, 0) + 1
+        return dict(sorted(counts.items()))
+
+    @staticmethod
+    def _confidence_bucket(confidence: float) -> str:
+        if confidence >= HIGH_CONFIDENCE_THRESHOLD:
+            return "high"
+        if confidence >= MEDIUM_CONFIDENCE_THRESHOLD:
+            return "medium"
+        return "low"
 
     def export_run_provenance(self, project_id: str, run_id: str) -> dict[str, Any]:
         with self.connect() as conn:
@@ -1784,11 +1833,14 @@ class AnnotationStorage:
         status_counts = {"pending": 0, "accepted": 0, "rejected": 0}
         review_counts: dict[str, int] = {}
         source_counts: dict[str, int] = {}
+        confidence_counts: dict[str, int] = {}
         for suggestion in suggestions:
             status = suggestion["status"]
             status_counts[status] = status_counts.get(status, 0) + 1
             source = suggestion["source"]
             source_counts[source] = source_counts.get(source, 0) + 1
+            confidence_bucket = self._confidence_bucket(float(suggestion["confidence"]))
+            confidence_counts[confidence_bucket] = confidence_counts.get(confidence_bucket, 0) + 1
             latest_review = suggestion.get("latest_review")
             if latest_review:
                 recommendation = latest_review["recommendation"]
@@ -1808,6 +1860,7 @@ class AnnotationStorage:
             "rejected_count": run_row["rejected_count"],
             "acceptance_rate": self._acceptance_rate(run_row["accepted_count"], run_row["rejected_count"]),
             "source_counts": dict(sorted(source_counts.items())),
+            "confidence_counts": dict(sorted(confidence_counts.items())),
             "created_at": run_row["created_at"],
         }
         content_payload = {
@@ -1817,6 +1870,7 @@ class AnnotationStorage:
             "run": run,
             "status_counts": dict(sorted(status_counts.items())),
             "source_counts": dict(sorted(source_counts.items())),
+            "confidence_counts": dict(sorted(confidence_counts.items())),
             "review_counts": dict(sorted(review_counts.items())),
             "suggestions": suggestions,
         }
@@ -2084,6 +2138,7 @@ class AnnotationStorage:
                     )
 
             source_counts = self._suggestion_source_counts(suggestion_records)
+            confidence_counts = self._suggestion_confidence_counts(suggestion_records)
             conn.execute("UPDATE annotation_runs SET suggestion_count = ? WHERE id = ?", (len(suggestion_ids), run_id))
 
             self._enqueue_event(
@@ -2098,6 +2153,7 @@ class AnnotationStorage:
                     "input_count": len(sentence_rows),
                     "suggestion_count": len(suggestion_ids),
                     "source_counts": source_counts,
+                    "confidence_counts": confidence_counts,
                     "config": run_config,
                     "cleared_pending_suggestion_ids": cleared_pending_suggestion_ids,
                     "suggestions": suggestion_records,
@@ -2109,6 +2165,7 @@ class AnnotationStorage:
             "run_id": run_id,
             "suggestions_created": len(suggestion_ids),
             "source_counts": source_counts,
+            "confidence_counts": confidence_counts,
             "suggestions": self.get_suggestions(project_id, suggestion_ids),
         }
 
@@ -2356,6 +2413,7 @@ class AnnotationStorage:
             "run_id": generated["run_id"],
             "suggestions_created": generated["suggestions_created"],
             "source_counts": generated["source_counts"],
+            "confidence_counts": generated["confidence_counts"],
             **accepted,
         }
 

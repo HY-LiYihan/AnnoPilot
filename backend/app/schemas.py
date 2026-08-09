@@ -337,6 +337,7 @@ class GenerateSuggestionsResponse(BaseModel):
     run_id: str
     suggestions_created: int
     source_counts: dict[str, int] = Field(default_factory=dict)
+    confidence_counts: dict[str, int] = Field(default_factory=dict)
     suggestions: list[SuggestionResponse]
 
 
@@ -348,6 +349,7 @@ class AutoAnnotateSuggestionsResponse(BaseModel):
     run_id: str
     suggestions_created: int
     source_counts: dict[str, int] = Field(default_factory=dict)
+    confidence_counts: dict[str, int] = Field(default_factory=dict)
     accepted: int
     skipped: int
     min_confidence: float
@@ -397,6 +399,7 @@ class AnnotationRunResponse(BaseModel):
     rejected_count: int = 0
     acceptance_rate: Optional[float] = None
     source_counts: dict[str, int] = Field(default_factory=dict)
+    confidence_counts: dict[str, int] = Field(default_factory=dict)
     created_at: str
 
 
@@ -448,6 +451,7 @@ class RunProvenanceResponse(BaseModel):
     run: AnnotationRunResponse
     status_counts: dict[str, int]
     source_counts: dict[str, int]
+    confidence_counts: dict[str, int]
     review_counts: dict[str, int]
     suggestions: list[RunProvenanceSuggestionResponse]
 
