@@ -252,11 +252,6 @@ function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
       <Download :size="18" aria-hidden="true" />
     </button>
 
-    <button class="export-button secondary" @click="emit('export-tag-schema')">
-      {{ labels.exportTagSchema }}
-      <Download :size="18" aria-hidden="true" />
-    </button>
-
     <button class="export-button secondary" :disabled="isVerifyingRebuild" @click="emit('verify-rebuild')">
       {{ isVerifyingRebuild ? labels.verifying : labels.verifyRebuild }}
       <RotateCw :size="18" aria-hidden="true" />

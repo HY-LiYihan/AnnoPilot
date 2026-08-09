@@ -586,7 +586,7 @@ export function useDocumentReader() {
     isSaving.value = true
     readerError.value = ''
     try {
-      const schema = JSON.parse(await file.text())
+      const schema = parseTagSchemaImportPayload(await file.text())
       const payload = await importTagSchema(PROJECT_ID, schema)
       tags.value = payload.tags
       selectedTagId.value = tags.value.find((tagItem) => tagItem.id === selectedTagId.value)?.id ?? tags.value[0]?.id ?? ''
@@ -600,6 +600,48 @@ export function useDocumentReader() {
     } finally {
       isSaving.value = false
     }
+  }
+
+  function parseTagSchemaImportPayload(text: string) {
+    const trimmed = text.trim()
+    if (!trimmed) throw new Error('Tag schema file is empty.')
+
+    try {
+      return extractTagSchemaRecord(JSON.parse(trimmed))
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error
+      const records = trimmed
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line, index) => {
+          try {
+            return JSON.parse(line)
+          } catch {
+            throw new Error(`Invalid JSONL tag schema at line ${index + 1}.`)
+          }
+        })
+      return extractTagSchemaRecord(records)
+    }
+  }
+
+  function extractTagSchemaRecord(payload: unknown) {
+    if (Array.isArray(payload)) {
+      const record = payload.find((item) => isTagSchemaRecord(item))
+      if (record) return record
+      throw new Error('JSONL file must include an annopilot.tag_schema.v1 record.')
+    }
+    if (isTagSchemaRecord(payload)) return payload
+    throw new Error('Tag schema must use annopilot.tag_schema.v1 format.')
+  }
+
+  function isTagSchemaRecord(payload: unknown): payload is Record<string, unknown> {
+    return Boolean(
+      payload &&
+        typeof payload === 'object' &&
+        (payload as Record<string, unknown>).schema_version === 'annopilot.tag_schema.v1' &&
+        (payload as Record<string, unknown>).record_type === 'tag_schema',
+    )
   }
 
   async function deleteTag(tag: TagDef) {

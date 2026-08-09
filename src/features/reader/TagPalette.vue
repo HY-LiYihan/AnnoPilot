@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { AlertTriangle, Check, Pencil, Plus, Tag, Trash2, X } from '@lucide/vue'
+import { AlertTriangle, Check, Download, Pencil, Plus, Tag, Trash2, Upload, X } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
 import type { SentenceQueueItem, TagDef } from '../../types/domain'
 
@@ -25,6 +25,8 @@ const emit = defineEmits<{
   'tag-add': [name: string, description: string]
   'tag-rename': [tag: TagDef, name: string, description: string]
   'tag-delete': [tag: TagDef]
+  'tag-schema-import': [file: File]
+  'tag-schema-export': []
   'sentence-click': [sentenceIndex: number]
 }>()
 
@@ -152,6 +154,13 @@ function confirmDeleteTag() {
   emit('tag-delete', pendingDeleteTag.value)
   pendingDeleteTag.value = null
 }
+
+function handleTagSchemaInput(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) emit('tag-schema-import', file)
+  input.value = ''
+}
 </script>
 
 <template>
@@ -259,6 +268,24 @@ function confirmDeleteTag() {
           @click="requestDeleteTag(tagItem)"
         >
           <Trash2 :size="15" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+
+    <div class="tag-schema-tools" :aria-label="labels.schemaToolsAria">
+      <div class="tag-schema-copy">
+        <strong>{{ labels.schemaTitle }}</strong>
+        <small>{{ labels.schemaFormat }}</small>
+      </div>
+      <div class="tag-schema-actions">
+        <label class="tag-schema-button" :class="{ disabled: isSaving }">
+          <Upload :size="15" aria-hidden="true" />
+          <span>{{ labels.importSchema }}</span>
+          <input type="file" accept=".json,.jsonl,application/json,application/x-ndjson,application/jsonl" :disabled="isSaving" @change="handleTagSchemaInput" />
+        </label>
+        <button type="button" class="tag-schema-button" :disabled="isSaving" @click="emit('tag-schema-export')">
+          <Download :size="15" aria-hidden="true" />
+          <span>{{ labels.exportSchema }}</span>
         </button>
       </div>
     </div>

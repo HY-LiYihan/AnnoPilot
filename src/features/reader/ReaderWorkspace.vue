@@ -150,6 +150,7 @@ const {
   handleTagClick,
   addTag,
   renameTag,
+  handleTagSchemaImport,
   deleteTag,
   removeAnnotation,
   undoLastSpanAction,
@@ -280,6 +281,8 @@ const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.valu
         @tag-add="addTag"
         @tag-rename="renameTag"
         @tag-delete="deleteTag"
+        @tag-schema-import="handleTagSchemaImport"
+        @tag-schema-export="exportTagSchemaJson"
         @sentence-click="setCurrentSentence"
       />
 
