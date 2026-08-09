@@ -344,6 +344,8 @@ def test_document_summary_and_sentence_paging(tmp_path: Path) -> None:
         assert summary["metrics"]["suggestion_status_counts"] == {"pending": 0, "accepted": 0, "rejected": 0}
         assert summary["metrics"]["suggestion_source_counts"] == {}
         assert summary["metrics"]["suggestion_confidence_counts"] == {}
+        assert summary["metrics"]["suggestion_review_counts"] == {"accept": 0, "reject": 0, "uncertain": 0}
+        assert summary["metrics"]["reviewed_suggestion_count"] == 0
         assert [item["index"] for item in summary["queue"]] == [0, 1, 2, 3]
         assert all(item["completed"] is False for item in summary["queue"])
         assert all(item["suggestion_count"] == 0 for item in summary["queue"])
@@ -1174,6 +1176,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         }
         assert generated_summary["metrics"]["suggestion_source_counts"] == suggestion_payload["source_counts"]
         assert generated_summary["metrics"]["suggestion_confidence_counts"] == suggestion_payload["confidence_counts"]
+        assert generated_summary["metrics"]["suggestion_review_counts"] == {"accept": 0, "reject": 0, "uncertain": 0}
+        assert generated_summary["metrics"]["reviewed_suggestion_count"] == 0
 
         accepted = client.post(f"/api/projects/default/suggestions/{suggestions[0]['id']}/accept")
         assert accepted.status_code == 200
@@ -1245,6 +1249,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         }
         assert sum(document["metrics"]["suggestion_source_counts"].values()) == len(suggestions) - 2
         assert sum(document["metrics"]["suggestion_confidence_counts"].values()) == len(suggestions) - 2
+        assert document["metrics"]["suggestion_review_counts"] == {"accept": 0, "reject": 0, "uncertain": 0}
+        assert document["metrics"]["reviewed_suggestion_count"] == 0
         document_annotation = document["sentences"][0]["annotations"][0]
         assert document_annotation["source"] == "accepted_suggestion"
         assert document_annotation["source_suggestion_id"] == suggestions[0]["id"]
@@ -1277,6 +1283,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         }
         assert sum(manifest["metrics"]["suggestion_source_counts"].values()) == len(suggestions) - 2
         assert sum(manifest["metrics"]["suggestion_confidence_counts"].values()) == len(suggestions) - 2
+        assert manifest["metrics"]["suggestion_review_counts"] == {"accept": 0, "reject": 0, "uncertain": 0}
+        assert manifest["metrics"]["reviewed_suggestion_count"] == 0
         assert manifest["annotation_source_counts"] == {"accepted_suggestion": 1}
         assert manifest["event_audit"]["event_types"]["suggestions.generated"] == 1
         assert manifest["event_audit"]["actor_type_counts"]["system"] >= 2
@@ -1815,6 +1823,8 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert suggestion["latest_review"]["context_sha256"] == expected_context_sha256
         assert document["metrics"]["accuracy"] is None
         assert document["metrics"]["accuracy_label"] == "Waiting for reviewed accept/reject data"
+        assert document["metrics"]["suggestion_review_counts"] == {"accept": 1, "reject": 0, "uncertain": 0}
+        assert document["metrics"]["reviewed_suggestion_count"] == 1
 
         export_response = client.get(f"/api/projects/default/documents/{document_id}/export.jsonl")
         exported = [json.loads(line) for line in export_response.text.splitlines()]
@@ -1831,6 +1841,12 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         reviewed_document = client.get(f"/api/projects/default/documents/{document_id}").json()
         assert reviewed_document["metrics"]["accuracy"] == 1.0
         assert reviewed_document["metrics"]["accuracy_label"] == "LLM review agreement (1/1)"
+        assert reviewed_document["metrics"]["suggestion_review_counts"] == {"accept": 1, "reject": 0, "uncertain": 0}
+        assert reviewed_document["metrics"]["reviewed_suggestion_count"] == 1
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert manifest["metrics"]["suggestion_review_counts"] == {"accept": 1, "reject": 0, "uncertain": 0}
+        assert manifest["metrics"]["reviewed_suggestion_count"] == 1
 
         audit = client.get("/api/projects/default/audit").json()
         assert audit["event_types"]["suggestions.generated"] == 1

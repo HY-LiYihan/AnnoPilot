@@ -390,6 +390,23 @@ class AnnotationStorage:
                 """,
                 (document_id,),
             ).fetchall()
+            review_count_rows = conn.execute(
+                """
+                SELECT rev.recommendation, COUNT(*) AS count
+                FROM annotation_suggestions sg
+                JOIN sentences s ON s.id = sg.sentence_id
+                JOIN annotation_suggestion_reviews rev ON rev.id = (
+                    SELECT latest.id
+                    FROM annotation_suggestion_reviews latest
+                    WHERE latest.suggestion_id = sg.id
+                    ORDER BY latest.created_at DESC, latest.id DESC
+                    LIMIT 1
+                )
+                WHERE s.document_id = ?
+                GROUP BY rev.recommendation
+                """,
+                (document_id,),
+            ).fetchall()
             review_metric_rows = conn.execute(
                 """
                 SELECT sg.status, rev.recommendation
@@ -460,6 +477,10 @@ class AnnotationStorage:
         suggestion_status_counts = {"pending": 0, "accepted": 0, "rejected": 0}
         for row in suggestion_status_rows:
             suggestion_status_counts[row["status"]] = row["count"]
+        suggestion_review_counts = {"accept": 0, "reject": 0, "uncertain": 0}
+        for row in review_count_rows:
+            suggestion_review_counts[row["recommendation"]] = row["count"]
+        reviewed_suggestion_count = sum(suggestion_review_counts.values())
 
         return {
             "document": {
@@ -481,6 +502,8 @@ class AnnotationStorage:
                 "suggestion_status_counts": suggestion_status_counts,
                 "suggestion_source_counts": self._suggestion_source_counts(visible_suggestion_metrics),
                 "suggestion_confidence_counts": self._suggestion_confidence_counts(visible_suggestion_metrics),
+                "suggestion_review_counts": suggestion_review_counts,
+                "reviewed_suggestion_count": reviewed_suggestion_count,
                 "accuracy": review_agreements / review_total if review_total else None,
                 "accuracy_label": (
                     f"LLM review agreement ({review_agreements}/{review_total})"

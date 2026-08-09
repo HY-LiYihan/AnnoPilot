@@ -126,6 +126,8 @@ export type Metrics = {
   suggestion_status_counts: Record<string, number>
   suggestion_source_counts: Record<string, number>
   suggestion_confidence_counts: Record<string, number>
+  suggestion_review_counts: Record<string, number>
+  reviewed_suggestion_count: number
   accuracy: number | null
   accuracy_label: string
 }

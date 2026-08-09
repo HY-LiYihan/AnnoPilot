@@ -92,6 +92,8 @@ export function useDocumentReader() {
     suggestion_status_counts: { pending: 0, accepted: 0, rejected: 0 },
     suggestion_source_counts: {},
     suggestion_confidence_counts: {},
+    suggestion_review_counts: { accept: 0, reject: 0, uncertain: 0 },
+    reviewed_suggestion_count: 0,
     accuracy: null,
     accuracy_label: 'Waiting for review data',
   })

@@ -264,6 +264,8 @@ class MetricsResponse(BaseModel):
     suggestion_status_counts: dict[str, int] = Field(default_factory=dict)
     suggestion_source_counts: dict[str, int] = Field(default_factory=dict)
     suggestion_confidence_counts: dict[str, int] = Field(default_factory=dict)
+    suggestion_review_counts: dict[str, int] = Field(default_factory=dict)
+    reviewed_suggestion_count: int = 0
     accuracy: Optional[float]
     accuracy_label: str
 

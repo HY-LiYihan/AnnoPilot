@@ -66,6 +66,15 @@ function suggestionStatusSummary(counts: Record<string, number> | undefined, lab
   return `${accepted} ${labels.accepted} / ${rejected} ${labels.rejected} / ${pending} ${labels.pendingStatus}`
 }
 
+function reviewSummary(counts: Record<string, number> | undefined, labels: UiLabels['metrics']) {
+  const reviewCounts = Object.entries(counts ?? {})
+    .filter(([, count]) => count > 0)
+    .sort(([left], [right]) => reviewOrder(left) - reviewOrder(right))
+  if (!reviewCounts.length) return ''
+  const reviewLabels = labels.reviewLabels as Record<string, string>
+  return reviewCounts.map(([recommendation, count]) => `${reviewLabels[recommendation] ?? recommendation} ${count}`).join(' · ')
+}
+
 function confidenceSummary(counts: Record<string, number> | undefined, labels: UiLabels['metrics']) {
   const confidenceCounts = Object.entries(counts ?? {})
     .filter(([, count]) => count > 0)
@@ -79,6 +88,10 @@ function confidenceSummary(counts: Record<string, number> | undefined, labels: U
 
 function confidenceBucketOrder(bucket: string) {
   return { high: 0, medium: 1, low: 2 }[bucket as 'high' | 'medium' | 'low'] ?? 3
+}
+
+function reviewOrder(recommendation: string) {
+  return { accept: 0, reject: 1, uncertain: 2 }[recommendation as 'accept' | 'reject' | 'uncertain'] ?? 3
 }
 
 function actorCount(auditSummary: AuditSummary | null, actorType: string) {
@@ -123,7 +136,10 @@ function shortHash(value: string) {
         <Target :size="22" aria-hidden="true" />
         <span>{{ labels.accuracy }}</span>
         <strong>{{ metrics.accuracy === null ? '--' : `${Math.round(metrics.accuracy * 100)}%` }}</strong>
-        <small>{{ accuracyLabel(metrics.accuracy_label, labels) }}</small>
+        <small>
+          {{ accuracyLabel(metrics.accuracy_label, labels) }}
+          <template v-if="reviewSummary(metrics.suggestion_review_counts, labels)"> · {{ labels.reviewMix }} {{ reviewSummary(metrics.suggestion_review_counts, labels) }}</template>
+        </small>
       </article>
       <article class="metric-card">
         <MousePointer2 :size="22" aria-hidden="true" />
