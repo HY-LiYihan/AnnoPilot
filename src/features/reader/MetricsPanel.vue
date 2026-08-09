@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { BarChart3, DatabaseZap, Download, Keyboard, MousePointer2, RotateCw, Route, Sparkles, Target, Upload } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
-import type { AnnotationRun, AuditSummary, DocumentMeta, Metrics, RebuildPreview, ReviewQueueItem } from '../../types/domain'
+import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, Metrics, RebuildPreview, ReviewQueueItem } from '../../types/domain'
 
 defineProps<{
   labels: UiLabels['metrics']
@@ -13,6 +13,7 @@ defineProps<{
   reviewQueueDetails: ReviewQueueItem[]
   reviewQueueTotal: number
   reviewQueueOrder: 'position' | 'uncertain'
+  lastAnnotationImport: AnnotationImportSummary | null
   isVerifyingRebuild: boolean
 }>()
 
@@ -58,6 +59,10 @@ function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
   const suggestion = item.first_suggestion
   const confidence = `${Math.round(item.priority_score * 100)}%`
   return suggestion ? `${suggestion.tag_name}: ${suggestion.text} · ${confidence}` : labels.queuePreviewFallback(item.suggestion_count)
+}
+
+function shortHash(value: string) {
+  return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value
 }
 </script>
 
@@ -247,6 +252,37 @@ function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
       <Upload :size="18" aria-hidden="true" />
       <input type="file" accept=".jsonl,application/x-ndjson,application/jsonl" :disabled="!documentMeta" @change="submitAnnotationImport" />
     </label>
+
+    <section v-if="lastAnnotationImport" class="progress-card import-result-card" :aria-label="labels.importResultAria">
+      <div class="progress-header">
+        <span>{{ labels.importResult }}</span>
+        <strong>{{ labels.importMatched(lastAnnotationImport.matched_count, lastAnnotationImport.record_count) }}</strong>
+      </div>
+      <small class="import-source-line" :title="lastAnnotationImport.import_filename">
+        {{ labels.importSource }} · {{ lastAnnotationImport.import_filename }}
+      </small>
+      <div class="quality-list compact">
+        <div>
+          <span>{{ labels.importSkipped }}</span>
+          <strong>{{ lastAnnotationImport.skipped_count }}</strong>
+        </div>
+        <div>
+          <span>{{ labels.importTags }}</span>
+          <strong>{{ lastAnnotationImport.created_tag_count }}</strong>
+        </div>
+        <div>
+          <span>{{ labels.importCreatedSpans }}</span>
+          <strong>{{ lastAnnotationImport.created_annotation_count }}</strong>
+        </div>
+        <div>
+          <span>{{ labels.importDeletedSpans }}</span>
+          <strong>{{ lastAnnotationImport.deleted_annotation_count }}</strong>
+        </div>
+      </div>
+      <small class="import-source-line" :title="lastAnnotationImport.source_sha256">
+        {{ labels.sourceHash }} · {{ shortHash(lastAnnotationImport.source_sha256) }}
+      </small>
+    </section>
 
     <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-manifest')">
       {{ labels.exportManifest }}

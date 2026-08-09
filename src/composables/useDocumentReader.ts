@@ -36,6 +36,7 @@ import {
   ACTIVE_DOCUMENT_KEY,
   PROJECT_ID,
   fallbackTags,
+  type AnnotationImportSummary,
   type AuditSummary,
   type AnnotationRun,
   type AnnotationDef,
@@ -108,6 +109,7 @@ export function useDocumentReader() {
   const reviewQueueOrder = ref<'position' | 'uncertain'>('position')
   const suggestionReviews = ref<Record<string, SuggestionReview>>({})
   const reviewingSuggestionId = ref('')
+  const lastAnnotationImport = ref<AnnotationImportSummary | null>(null)
   const lastUndoAction = ref<UndoableSpanAction | null>(null)
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
 
@@ -150,6 +152,7 @@ export function useDocumentReader() {
 
   async function handleImport(file: File, mode: TxtImportMode = 'replace') {
     readerError.value = ''
+    lastAnnotationImport.value = null
     isUploading.value = true
     try {
       const shouldMerge = mode === 'merge' && Boolean(documentMeta.value)
@@ -206,6 +209,7 @@ export function useDocumentReader() {
   async function switchDocument(documentId: string) {
     if (!documentId || documentId === documentMeta.value?.id) return
     readerError.value = ''
+    lastAnnotationImport.value = null
     lastUndoAction.value = null
     selection.clearSelection()
     await loadDocument(documentId)
@@ -1019,10 +1023,11 @@ export function useDocumentReader() {
     isUploading.value = true
     readerError.value = ''
     try {
-      await importAnnotationsJsonl(PROJECT_ID, documentMeta.value.id, file)
+      const imported = await importAnnotationsJsonl(PROJECT_ID, documentMeta.value.id, file)
       await loadDocument(documentMeta.value.id, true)
       await refreshAuditSummary()
       await refreshRunHistory()
+      lastAnnotationImport.value = { ...imported, import_filename: file.name }
     } catch (error) {
       readerError.value = error instanceof Error ? error.message : 'Could not import annotation JSONL.'
     } finally {
@@ -1108,6 +1113,7 @@ export function useDocumentReader() {
     reviewQueueOrder,
     suggestionReviews,
     reviewingSuggestionId,
+    lastAnnotationImport,
     currentSentence,
     progressPercent,
     reviewedSummary,

@@ -1919,11 +1919,42 @@ kbd {
   border-top: 1px solid #ece8df;
 }
 
+.quality-list.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.quality-list.compact div {
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px;
+  border: 1px solid #ece8df;
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
 .quality-list strong {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   color: #151918;
+}
+
+.import-result-card {
+  margin-top: 8px;
+  background: #f6fbf8;
+}
+
+.import-source-line {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  color: #5f6561;
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .shortcut-grid {

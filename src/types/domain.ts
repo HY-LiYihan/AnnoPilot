@@ -267,6 +267,10 @@ export type ImportAnnotationsResponse = {
   tags: TagDef[]
 }
 
+export type AnnotationImportSummary = ImportAnnotationsResponse & {
+  import_filename: string
+}
+
 export type DragSelection = {
   sentenceId: string
   start: number

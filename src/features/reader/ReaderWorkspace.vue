@@ -118,6 +118,7 @@ const {
   reviewQueueOrder,
   suggestionReviews,
   reviewingSuggestionId,
+  lastAnnotationImport,
   currentSentence,
   progressPercent,
   reviewedSummary,
@@ -357,6 +358,7 @@ const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.valu
         :review-queue-details="reviewQueueDetails"
         :review-queue-total="reviewQueueTotal"
         :review-queue-order="reviewQueueOrder"
+        :last-annotation-import="lastAnnotationImport"
         :is-verifying-rebuild="isVerifyingRebuild"
         @export="exportJsonl"
         @export-prodigy="exportProdigyJsonl"
