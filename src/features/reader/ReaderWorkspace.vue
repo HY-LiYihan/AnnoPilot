@@ -115,10 +115,9 @@ const {
   <main class="app-shell">
     <nav class="topbar" aria-label="Primary">
       <div class="brand-cluster">
-        <div class="brand-mark" aria-hidden="true">A</div>
         <div>
           <span class="brand-name">AnnoPilot</span>
-          <small>Persistent TXT annotation reader</small>
+          <small>Agent textual annotation platform</small>
         </div>
       </div>
 
