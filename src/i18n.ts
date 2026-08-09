@@ -160,7 +160,7 @@ export const UI_LABELS = {
     },
     metrics: {
       aria: '统计面板',
-      kicker: '证据',
+      kicker: '运行状态',
       title: '运行指标',
       progress: '进度',
       sentences: '句子',
@@ -388,7 +388,7 @@ export const UI_LABELS = {
     },
     metrics: {
       aria: 'Metrics panel',
-      kicker: 'Evidence',
+      kicker: 'Runtime Status',
       title: 'Run metrics',
       progress: 'Progress',
       sentences: 'sentences',
