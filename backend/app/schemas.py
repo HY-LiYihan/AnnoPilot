@@ -543,6 +543,12 @@ class ReviewSuggestionResponse(BaseModel):
     created_at: Optional[str] = None
 
 
+class ReviewSentenceSuggestionsResponse(BaseModel):
+    reviewed: int
+    reviewed_suggestion_ids: list[str]
+    reviews: list[ReviewSuggestionResponse]
+
+
 class RebuildIssueResponse(BaseModel):
     line_number: int
     event_id: Optional[str]

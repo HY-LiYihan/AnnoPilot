@@ -29,6 +29,7 @@ import {
   generateSuggestions,
   rejectSuggestion,
   rejectSentenceSuggestions,
+  reviewSentenceSuggestions,
   reviewSuggestion,
 } from '../api/suggestions'
 import { createTag, deleteTag as deleteProjectTag, fetchTags, importTagSchema, renameTag as renameProjectTag } from '../api/tags'
@@ -935,6 +936,31 @@ export function useDocumentReader() {
     }
   }
 
+  async function reviewCurrentSentenceSuggestions() {
+    const sentence = currentSentence.value
+    if (!sentence || !activeSuggestions.value.length || isSaving.value || reviewingSuggestionId.value) return
+    isSaving.value = true
+    reviewingSuggestionId.value = `sentence:${sentence.id}`
+    readerError.value = ''
+    try {
+      const payload = await reviewSentenceSuggestions(PROJECT_ID, sentence.id)
+      const nextReviews = { ...suggestionReviews.value }
+      for (const review of payload.reviews) nextReviews[review.suggestion_id] = review
+      suggestionReviews.value = nextReviews
+      await refreshDocumentSummary()
+      if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
+      await refreshAuditSummary()
+      if (payload.reviewed === 0) {
+        readerError.value = 'No pending suggestions to review in this sentence.'
+      }
+    } catch (error) {
+      readerError.value = error instanceof Error ? error.message : 'Could not review current suggestions with LLM.'
+    } finally {
+      isSaving.value = false
+      reviewingSuggestionId.value = ''
+    }
+  }
+
   function replaceSentenceAnnotations(sentenceId: string, annotations: AnnotationDef[]) {
     sentences.value = sentences.value.map((sentence) =>
       sentence.id === sentenceId ? { ...sentence, annotations, suggestions: withoutAnnotationOverlaps(sentence.suggestions, annotations) } : sentence,
@@ -1174,6 +1200,7 @@ export function useDocumentReader() {
     rejectCurrentSentenceSuggestions,
     autoRejectDocumentSuggestions,
     reviewSuggestedSpan,
+    reviewCurrentSentenceSuggestions,
     annotationForToken,
     suggestionForToken,
     isTokenInDrag: selection.isTokenInDrag,

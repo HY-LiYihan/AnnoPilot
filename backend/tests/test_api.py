@@ -1865,6 +1865,57 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert review_event["context_sha256"] == expected_context_sha256
 
 
+def test_sentence_llm_review_suggestions_reviews_current_queue(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage, suggestion_reviewer=FakeSuggestionReviewer())) as client:
+        seed_pos_span_labels(client)
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("story.txt", "清晨，小猫看见金色的叶子。男孩走来。", "text/plain")},
+        )
+        document_id = response.json()["document_id"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=2").json()
+        first_sentence_id = page["sentences"][0]["id"]
+
+        suggestion_response = client.post(
+            f"/api/projects/default/documents/{document_id}/sentences/{first_sentence_id}/suggestions/run",
+            json={"limit_per_sentence": 3, "min_confidence": 0.98},
+        )
+        suggestions = suggestion_response.json()["suggestions"]
+        assert len(suggestions) >= 1
+
+        review_response = client.post(f"/api/projects/default/sentences/{first_sentence_id}/suggestions/llm-review")
+        assert review_response.status_code == 200
+        reviewed = review_response.json()
+        assert reviewed["reviewed"] == len(suggestions)
+        assert reviewed["reviewed_suggestion_ids"] == [suggestion["id"] for suggestion in suggestions]
+        assert all(review["recommendation"] == "accept" for review in reviewed["reviews"])
+        assert all(review["context_sha256"] for review in reviewed["reviews"])
+
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        reviewed_suggestions = [suggestion for sentence in document["sentences"] for suggestion in sentence["suggestions"] if suggestion["latest_review"]]
+        assert len(reviewed_suggestions) == len(suggestions)
+        assert document["metrics"]["suggestion_review_counts"] == {
+            "accept": len(suggestions),
+            "reject": 0,
+            "uncertain": 0,
+        }
+        assert document["metrics"]["reviewed_suggestion_count"] == len(suggestions)
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert manifest["metrics"]["suggestion_review_counts"]["accept"] == len(suggestions)
+        assert manifest["metrics"]["reviewed_suggestion_count"] == len(suggestions)
+
+        events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
+        review_events = [event for event in events if event["type"] == "suggestion.llm_reviewed"]
+        assert len(review_events) == len(suggestions)
+        assert {event["suggestion_id"] for event in review_events} == {suggestion["id"] for suggestion in suggestions}
+        assert all(event["actor_type"] == "llm" for event in review_events)
+
+
 def test_rebuild_project_from_events_restores_runtime_state(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",

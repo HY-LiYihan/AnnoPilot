@@ -163,6 +163,7 @@ const {
   rejectCurrentSentenceSuggestions,
   autoRejectDocumentSuggestions,
   reviewSuggestedSpan,
+  reviewCurrentSentenceSuggestions,
   annotationForToken,
   suggestionForToken,
   isTokenInDrag,
@@ -337,6 +338,7 @@ const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.valu
         @reject-current-suggestions="rejectCurrentSentenceSuggestions"
         @auto-reject-document-suggestions="autoRejectDocumentSuggestions"
         @review-suggestion="reviewSuggestedSpan"
+        @review-current-suggestions="reviewCurrentSentenceSuggestions"
         @suggestion-limit-change="setSuggestionLimit"
         @suggestion-min-confidence-change="setSuggestionMinConfidence"
         @next-review="jumpToNextReviewSentence"

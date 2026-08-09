@@ -114,3 +114,12 @@ export async function reviewSuggestion(projectId: string, suggestionId: string) 
   const response = await fetch(`/api/projects/${projectId}/suggestions/${suggestionId}/llm-review`, { method: 'POST' })
   return parseJsonResponse<SuggestionReview>(response)
 }
+
+export async function reviewSentenceSuggestions(projectId: string, sentenceId: string) {
+  const response = await fetch(`/api/projects/${projectId}/sentences/${sentenceId}/suggestions/llm-review`, { method: 'POST' })
+  return parseJsonResponse<{
+    reviewed: number
+    reviewed_suggestion_ids: string[]
+    reviews: SuggestionReview[]
+  }>(response)
+}

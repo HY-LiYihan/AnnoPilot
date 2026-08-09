@@ -16,6 +16,7 @@ from ..schemas import (
     GenerateSuggestionsResponse,
     RejectSentenceSuggestionsResponse,
     RejectSuggestionResponse,
+    ReviewSentenceSuggestionsResponse,
     ReviewSuggestionResponse,
 )
 from ..storage import AnnotationStorage, NotFoundError, ValidationError
@@ -174,6 +175,35 @@ def review_suggestion(
         context = storage.get_suggestion_review_context(project_id, suggestion_id)
         review = reviewer.review(context)
         return storage.record_suggestion_review(project_id, suggestion_id, review, context_sha256=storage._payload_sha256(context))
+    except LlmError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/sentences/{sentence_id}/suggestions/llm-review", response_model=ReviewSentenceSuggestionsResponse)
+def review_sentence_suggestions(
+    project_id: str,
+    sentence_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+    reviewer=Depends(get_suggestion_reviewer),
+) -> dict:
+    try:
+        suggestion_ids = storage.list_sentence_review_suggestion_ids(project_id, sentence_id)
+        reviews = []
+        for suggestion_id in suggestion_ids:
+            context = storage.get_suggestion_review_context(project_id, suggestion_id)
+            review = reviewer.review(context)
+            reviews.append(
+                storage.record_suggestion_review(project_id, suggestion_id, review, context_sha256=storage._payload_sha256(context))
+            )
+        return {
+            "reviewed": len(reviews),
+            "reviewed_suggestion_ids": [review["suggestion_id"] for review in reviews],
+            "reviews": reviews,
+        }
     except LlmError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValidationError as exc:
