@@ -39,6 +39,17 @@ function runLimit(run: AnnotationRun) {
   return typeof run.config.limit_per_sentence === 'number' ? run.config.limit_per_sentence : '--'
 }
 
+function runSourceSummary(run: AnnotationRun, labels: UiLabels['metrics']) {
+  const sourceCounts = Object.entries(run.source_counts ?? {})
+    .filter(([, count]) => count > 0)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+  if (!sourceCounts.length) return ''
+  const sourceLabels = labels.sourceLabels as Record<string, string>
+  return sourceCounts
+    .map(([source, count]) => `${sourceLabels[source] ?? source} ${count}`)
+    .join(' · ')
+}
+
 function actorCount(auditSummary: AuditSummary | null, actorType: string) {
   return auditSummary?.actor_type_counts?.[actorType] ?? 0
 }
@@ -124,6 +135,7 @@ function shortHash(value: string) {
           <template v-if="runHistory[0]">
             · {{ runHistory[0].accepted_count }} {{ labels.accepted }} / {{ runHistory[0].rejected_count }} {{ labels.rejected }} / {{ runHistory[0].pending_count }} {{ labels.pendingStatus }}
           </template>
+          <template v-if="runHistory[0] && runSourceSummary(runHistory[0], labels)"> · {{ labels.sourceMix }} {{ runSourceSummary(runHistory[0], labels) }}</template>
         </small>
       </article>
     </div>
@@ -158,7 +170,10 @@ function shortHash(value: string) {
         <article v-for="run in runHistory.slice(0, 3)" :key="run.id" class="run-history-row">
           <span>
             <strong>{{ run.recipe }}</strong>
-            <small>{{ run.id.slice(0, 10) }} · {{ labels.limit }} {{ runLimit(run) }} · {{ labels.acceptRate }} {{ runRate(run) }}</small>
+            <small>
+              {{ run.id.slice(0, 10) }} · {{ labels.limit }} {{ runLimit(run) }} · {{ labels.acceptRate }} {{ runRate(run) }}
+              <template v-if="runSourceSummary(run, labels)"> · {{ labels.sourceMix }} {{ runSourceSummary(run, labels) }}</template>
+            </small>
           </span>
           <div class="run-history-pills" :aria-label="labels.runStatusAria">
             <em class="accepted">{{ run.accepted_count }} A</em>

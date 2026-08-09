@@ -1153,6 +1153,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert runs[0]["accepted_count"] == 0
         assert runs[0]["rejected_count"] == 0
         assert runs[0]["acceptance_rate"] is None
+        assert sum(runs[0]["source_counts"].values()) == len(suggestions)
+        assert set(runs[0]["source_counts"]).issubset({"lexical_exact", "lexical_contains", "char_ngram"})
 
         accepted = client.post(f"/api/projects/default/suggestions/{suggestions[0]['id']}/accept")
         assert accepted.status_code == 200
@@ -1180,6 +1182,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert provenance["project_id"] == "default"
         assert provenance["run"]["id"] == suggestion_payload["run_id"]
         assert provenance["run"]["config"]["tag_schema_sha256"] == runs[0]["config"]["tag_schema_sha256"]
+        assert provenance["run"]["source_counts"] == runs[0]["source_counts"]
+        assert provenance["source_counts"] == runs[0]["source_counts"]
         assert provenance["run"]["config"]["examples_by_tag"] == runs[0]["config"]["examples_by_tag"]
         assert provenance["run"]["config"]["examples_match_keys_by_tag"] == runs[0]["config"]["examples_match_keys_by_tag"]
         assert provenance["status_counts"]["accepted"] == 1

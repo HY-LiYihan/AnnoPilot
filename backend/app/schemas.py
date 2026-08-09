@@ -394,6 +394,7 @@ class AnnotationRunResponse(BaseModel):
     accepted_count: int = 0
     rejected_count: int = 0
     acceptance_rate: Optional[float] = None
+    source_counts: dict[str, int] = Field(default_factory=dict)
     created_at: str
 
 
@@ -444,6 +445,7 @@ class RunProvenanceResponse(BaseModel):
     project_id: str
     run: AnnotationRunResponse
     status_counts: dict[str, int]
+    source_counts: dict[str, int]
     review_counts: dict[str, int]
     suggestions: list[RunProvenanceSuggestionResponse]
 

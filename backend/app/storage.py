@@ -1677,6 +1677,7 @@ class AnnotationStorage:
                 """,
                 tuple(params),
             ).fetchall()
+        source_counts_by_run = self._run_source_counts(project_id, [row["id"] for row in rows])
         return [
             {
                 "id": row["id"],
@@ -1691,10 +1692,33 @@ class AnnotationStorage:
                 "accepted_count": row["accepted_count"],
                 "rejected_count": row["rejected_count"],
                 "acceptance_rate": self._acceptance_rate(row["accepted_count"], row["rejected_count"]),
+                "source_counts": source_counts_by_run.get(row["id"], {}),
                 "created_at": row["created_at"],
             }
             for row in rows
         ]
+
+    def _run_source_counts(self, project_id: str, run_ids: list[str]) -> dict[str, dict[str, int]]:
+        if not run_ids:
+            return {}
+        placeholders = ", ".join("?" for _ in run_ids)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT sg.run_id, sg.source, COUNT(*) AS count
+                FROM annotation_suggestions sg
+                JOIN sentences s ON s.id = sg.sentence_id
+                JOIN documents d ON d.id = s.document_id
+                WHERE d.project_id = ? AND sg.run_id IN ({placeholders})
+                GROUP BY sg.run_id, sg.source
+                ORDER BY sg.run_id, sg.source
+                """,
+                (project_id, *run_ids),
+            ).fetchall()
+        counts: dict[str, dict[str, int]] = {}
+        for row in rows:
+            counts.setdefault(row["run_id"], {})[row["source"]] = int(row["count"])
+        return counts
 
     def export_run_provenance(self, project_id: str, run_id: str) -> dict[str, Any]:
         with self.connect() as conn:
@@ -1751,9 +1775,12 @@ class AnnotationStorage:
         ]
         status_counts = {"pending": 0, "accepted": 0, "rejected": 0}
         review_counts: dict[str, int] = {}
+        source_counts: dict[str, int] = {}
         for suggestion in suggestions:
             status = suggestion["status"]
             status_counts[status] = status_counts.get(status, 0) + 1
+            source = suggestion["source"]
+            source_counts[source] = source_counts.get(source, 0) + 1
             latest_review = suggestion.get("latest_review")
             if latest_review:
                 recommendation = latest_review["recommendation"]
@@ -1772,6 +1799,7 @@ class AnnotationStorage:
             "accepted_count": run_row["accepted_count"],
             "rejected_count": run_row["rejected_count"],
             "acceptance_rate": self._acceptance_rate(run_row["accepted_count"], run_row["rejected_count"]),
+            "source_counts": dict(sorted(source_counts.items())),
             "created_at": run_row["created_at"],
         }
         content_payload = {
@@ -1780,6 +1808,7 @@ class AnnotationStorage:
             "project_id": project_id,
             "run": run,
             "status_counts": dict(sorted(status_counts.items())),
+            "source_counts": dict(sorted(source_counts.items())),
             "review_counts": dict(sorted(review_counts.items())),
             "suggestions": suggestions,
         }

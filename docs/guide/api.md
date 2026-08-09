@@ -90,6 +90,7 @@ POST /api/projects/{project_id}/rebuild/preview
 ```
 
 - Runs 当前记录 Character RAG run history、config、input count、suggestion count 和 accepted/rejected/pending counts。
+- Runs 还返回 `source_counts`，按 `lexical_exact`、`lexical_contains`、`char_ngram` 汇总每次低算力 RAG run 的候选来源分布。
 - Run provenance JSON 记录 run config、match keys、evidence、latest LLM review 和 decision event。
 - Audit 汇总 event count、schema version、event types、actor distribution、pending outbox 和 replay issues。
 - Rebuild preview 使用临时 SQLite database 重放 `events.jsonl`，不会覆盖当前 runtime database。

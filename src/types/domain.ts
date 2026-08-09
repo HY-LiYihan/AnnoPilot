@@ -202,6 +202,7 @@ export type AnnotationRun = {
   accepted_count: number
   rejected_count: number
   acceptance_rate: number | null
+  source_counts: Record<string, number>
   created_at: string
 }
 
