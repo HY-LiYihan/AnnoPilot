@@ -176,7 +176,7 @@ Annotation `source` 当前可能是 `human`、`accepted_suggestion` 或 `prodigy
 {"type":"annotation.created","annotation_id":"ann_...","sentence_id":"sent_...","tag_id":"verb","start_token_index":2,"end_token_index":2,"text":"reduced","source":"human"}
 {"type":"annotation.deleted","annotation_id":"ann_...","sentence_id":"sent_..."}
 {"type":"sentence.completed","sentence_id":"sent_...","old_completed":false,"old_answer":"pending","completed":true,"answer":"accept"}
-{"type":"annotations.imported","document_id":"doc_...","filename":"annotations.jsonl","record_count":1000,"matched_count":980,"source_sha256":"..."}
+{"type":"annotations.imported","document_id":"doc_...","filename":"annotations.jsonl","record_count":1000,"matched_count":980,"source_sha256":"...","source_record_results":[{"line_number":1,"record_sha256":"...","status":"matched","sentence_id":"sent_...","sentence_index":0,"answer":"accept","created_annotation_count":2}]}
 {"type":"suggestions.generated","document_id":"doc_...","sentence_id":"sent_...","run_id":"run_...","recipe":"character_rag","config":{"scope":"sentence"},"suggestions":[]}
 {"type":"suggestion.accepted","suggestion_id":"sug_...","sentence_id":"sent_..."}
 {"type":"suggestion.rejected","suggestion_id":"sug_...","sentence_id":"sent_..."}
@@ -203,7 +203,7 @@ actor_id
 
 `suggestion.llm_reviewed` 保存 `context_sha256`，即发送给 OpenAI-compatible reviewer 的完整结构化 context 的 SHA-256 hash。后续 audit 可以区分“同一个 suggestion + model”与“同一个 suggestion 在变化后的 sentence/tag/annotation context 下重新 review”。
 
-`annotations.imported` 是 batch summary event。JSONL annotation import 产生的可重放状态变化，由同一 import transaction 中逐条写出的 `tag.created`、`annotation.deleted`、`annotation.created` 和 `sentence.completed` events 表达。
+`annotations.imported` 是 batch summary event。JSONL annotation import 产生的可重放状态变化，由同一 import transaction 中逐条写出的 `tag.created`、`annotation.deleted`、`annotation.created` 和 `sentence.completed` events 表达。该 summary event 还包含 `source_record_results`，按源 JSONL 行号记录每条外部记录的 `record_sha256`、匹配状态、目标 sentence、answer、创建/删除 annotation 数量，以及可用的 Prodigy-style `_view_id` / `_session_id` / `_annotator_id` / hash metadata，方便不保存原始导入全文也能定位审计来源。
 
 ## Import JSONL
 
@@ -220,7 +220,7 @@ POST /api/projects/{project_id}/documents/{document_id}/import-annotations-jsonl
 - Span 可使用 Prodigy 的 `token_start` / `token_end`，也可使用 character offsets。
 - 如果导入 label 不存在，会自动创建 tag，description 标记为 `Imported from Prodigy/AnnoPilot JSONL.`。
 - 匹配到的 sentence 会先清除旧 annotations，再按导入 spans 写入 `source=prodigy_import` annotations。
-- 导入结果返回 `record_count`、`matched_count`、`skipped_count`、created/deleted counts 和 `source_sha256`。
+- 导入结果返回 `record_count`、`matched_count`、`skipped_count`、created/deleted counts 和 `source_sha256`；event log 的 `annotations.imported.source_record_results` 会保存逐行匹配 manifest。
 
 Frontend 在右侧 metrics/export panel 暴露 `Import JSONL` 入口，可把外部 review 后的 Prodigy / AnnoPilot JSONL 导回当前 document，和 Prodigy export 形成 round-trip workflow。
 

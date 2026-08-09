@@ -1222,6 +1222,7 @@ class AnnotationStorage:
         created_annotation_count = 0
         deleted_annotation_count = 0
         completed_sentence_count = 0
+        source_record_results: list[dict[str, Any]] = []
         now = self._now()
 
         with self.connect() as conn:
@@ -1319,14 +1320,34 @@ class AnnotationStorage:
                 return tag
 
             for line_number, record in records:
+                record_result: dict[str, Any] = {
+                    "line_number": line_number,
+                    "record_sha256": self._payload_sha256(record),
+                }
+                source_metadata = self._import_record_source_metadata(record)
+                if source_metadata:
+                    record_result["source_metadata"] = source_metadata
+
                 sentence = self._match_import_sentence(record, sentence_by_id, sentence_by_index, sentences_by_text)
                 if sentence is None:
                     skipped_count += 1
+                    record_result.update({"status": "skipped", "reason": "no_sentence_match"})
+                    source_record_results.append(record_result)
                     continue
+
+                record_result.update(
+                    {
+                        "status": "matched",
+                        "sentence_id": sentence["id"],
+                        "sentence_index": sentence["sentence_index"],
+                    }
+                )
 
                 spans = record.get("spans") or []
                 if not isinstance(spans, list):
                     skipped_count += 1
+                    record_result.update({"status": "skipped", "reason": "invalid_spans", "raw_span_count": None})
+                    source_record_results.append(record_result)
                     continue
                 answer = self._normalize_import_answer(record.get("answer"), has_spans=bool(spans))
                 tokens = tokens_by_sentence.get(sentence["id"], [])
@@ -1335,14 +1356,25 @@ class AnnotationStorage:
                         self._build_import_annotation_spec(span, sentence, tokens, document["text"])
                         for span in spans
                     ] if answer == "accept" else []
-                except ValidationError:
+                except ValidationError as exc:
                     skipped_count += 1
+                    record_result.update(
+                        {
+                            "status": "skipped",
+                            "reason": "invalid_span",
+                            "message": str(exc),
+                            "answer": answer,
+                            "raw_span_count": len(spans),
+                        }
+                    )
+                    source_record_results.append(record_result)
                     continue
 
                 existing_annotations = conn.execute(
                     "SELECT id, sentence_id FROM annotations WHERE sentence_id = ? ORDER BY start_token_index, created_at",
                     (sentence["id"],),
                 ).fetchall()
+                deleted_for_record_count = len(existing_annotations)
                 for annotation in existing_annotations:
                     conn.execute("DELETE FROM annotations WHERE id = ?", (annotation["id"],))
                     self._enqueue_event(
@@ -1352,10 +1384,12 @@ class AnnotationStorage:
                     )
                     deleted_annotation_count += 1
 
+                created_for_record_ids: list[str] = []
                 if answer == "accept":
                     for spec in annotation_specs:
                         tag = ensure_import_tag(spec["label"])
                         annotation_id = self._new_id("ann")
+                        created_for_record_ids.append(annotation_id)
                         conn.execute(
                             """
                             INSERT INTO annotations (
@@ -1416,6 +1450,17 @@ class AnnotationStorage:
                 if completed:
                     completed_sentence_count += 1
                 matched_count += 1
+                record_result.update(
+                    {
+                        "answer": answer,
+                        "completed": completed,
+                        "raw_span_count": len(spans),
+                        "created_annotation_count": len(created_for_record_ids),
+                        "created_annotation_ids": created_for_record_ids,
+                        "deleted_annotation_count": deleted_for_record_count,
+                    }
+                )
+                source_record_results.append(record_result)
 
             self._enqueue_event(
                 conn,
@@ -1432,6 +1477,7 @@ class AnnotationStorage:
                     "deleted_annotation_count": deleted_annotation_count,
                     "completed_sentence_count": completed_sentence_count,
                     "source_sha256": source_sha256,
+                    "source_record_results": source_record_results,
                 },
             )
 
@@ -2982,6 +3028,20 @@ class AnnotationStorage:
         if normalized not in {"accept", "reject", "ignore", "pending"}:
             raise ValidationError("Imported answer must be accept, reject, ignore, or pending.")
         return normalized
+
+    @staticmethod
+    def _import_record_source_metadata(record: dict[str, Any]) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        for field in ("_view_id", "_session_id", "_annotator_id", "_input_hash", "_task_hash"):
+            value = record.get(field)
+            if value is not None:
+                metadata[field] = value
+        meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
+        for field in ("session_id", "annotator_id", "source", "source_id"):
+            value = meta.get(field)
+            if value is not None:
+                metadata[f"meta.{field}"] = value
+        return metadata
 
     @classmethod
     def _build_import_annotation_spec(

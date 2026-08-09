@@ -152,7 +152,7 @@ suggestion.rejected
 suggestion.llm_reviewed
 ```
 
-`annotations.imported` 是导入批次 summary event；实际可重放状态仍由导入过程中产生的 `tag.created`、`annotation.deleted`、`annotation.created` 和 `sentence.completed` events 表达。LLM review event 会包含 `context_sha256`，用于 hash 当次模型调用的完整结构化 review context；即使后续 tags、sentence annotations 或上下文变化，也能审计当时的 Aixhan / OpenAI-compatible review decision。
+`annotations.imported` 是导入批次 summary event；实际可重放状态仍由导入过程中产生的 `tag.created`、`annotation.deleted`、`annotation.created` 和 `sentence.completed` events 表达。该 summary event 还保存逐行 `source_record_results` manifest，用于追踪外部 Prodigy / AnnoPilot JSONL 每条记录的匹配结果、record hash 和源 session metadata。LLM review event 会包含 `context_sha256`，用于 hash 当次模型调用的完整结构化 review context；即使后续 tags、sentence annotations 或上下文变化，也能审计当时的 Aixhan / OpenAI-compatible review decision。
 
 ### Docker Deployment
 

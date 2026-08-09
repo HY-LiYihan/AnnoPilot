@@ -638,7 +638,17 @@ def test_import_prodigy_jsonl_updates_annotations_and_answers(tmp_path: Path) ->
                 "text": first_sentence["text"],
                 "spans": [{"token_start": 3, "token_end": 4, "label": "角色"}],
                 "answer": "accept",
-                "meta": {"sentence_id": first_sentence["id"], "sentence_index": first_sentence["index"]},
+                "_view_id": "spans_manual",
+                "_session_id": "review-session-1",
+                "_annotator_id": "reviewer-a",
+                "_input_hash": 101,
+                "_task_hash": 202,
+                "meta": {
+                    "sentence_id": first_sentence["id"],
+                    "sentence_index": first_sentence["index"],
+                    "session_id": "review-session-1",
+                    "annotator_id": "reviewer-a",
+                },
             },
             {
                 "text": second_sentence["text"],
@@ -685,8 +695,32 @@ def test_import_prodigy_jsonl_updates_annotations_and_answers(tmp_path: Path) ->
         assert imported_event["record_count"] == 2
         assert imported_event["created_annotation_count"] == 1
         assert imported_event["source_sha256"] == imported["source_sha256"]
+        assert len(imported_event["source_record_results"]) == 2
+        first_record_result = imported_event["source_record_results"][0]
+        assert first_record_result["line_number"] == 1
+        assert first_record_result["record_sha256"]
+        assert first_record_result["status"] == "matched"
+        assert first_record_result["sentence_id"] == first_sentence["id"]
+        assert first_record_result["sentence_index"] == first_sentence["index"]
+        assert first_record_result["answer"] == "accept"
+        assert first_record_result["completed"] is True
+        assert first_record_result["raw_span_count"] == 1
+        assert first_record_result["created_annotation_count"] == 1
+        assert first_record_result["deleted_annotation_count"] == 0
+        assert first_record_result["source_metadata"] == {
+            "_view_id": "spans_manual",
+            "_session_id": "review-session-1",
+            "_annotator_id": "reviewer-a",
+            "_input_hash": 101,
+            "_task_hash": 202,
+            "meta.session_id": "review-session-1",
+            "meta.annotator_id": "reviewer-a",
+        }
+        assert imported_event["source_record_results"][1]["answer"] == "reject"
+        assert imported_event["source_record_results"][1]["created_annotation_count"] == 0
         created_event = next(event for event in events if event["type"] == "annotation.created")
         assert created_event["source"] == "prodigy_import"
+        assert first_record_result["created_annotation_ids"] == [created_event["annotation_id"]]
         assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
         event_path = tmp_path / "projects" / "default" / "events.jsonl"
