@@ -27,7 +27,7 @@ AnnoPilot 现在同时维护两个 surface：
 - 右侧 metrics panel 集中展示快捷键和移动端手势，便于进入高频标注模式。
 - 支持新增 / 重命名 / 编辑准则说明 / 维护低算力 RAG 词面种子 / 删除 tag；删除已使用 tag 前会提示对应 annotations 和 pending suggestions 会被一并删除。
 - Project-level tag schema 可在无 active document 时独立加载，刷新后不会丢失已新增 tags。
-- 支持 sentence completion，并保留 Prodigy-compatible `answer`：`Enter` 写入 `accept`，`Space` / `I` 写入 `ignore`，JSONL round-trip 可导回 `reject`；UI 中展示 progress、reviewed count、annotation count 和 answer 分布。
+- 支持 sentence completion，并保留 Prodigy-compatible `answer`：`Enter` 写入 `accept`，`Space` / `I` 写入 `ignore`，`J` 写入 `reject`，`E` 可 reopen 回 `pending`；UI 中展示 progress、reviewed count、annotation count 和 answer 分布。
 - 支持移动端横向滑动切换上一句/下一句；token 上的拖选标注不会触发滑动切句。
 - 支持只为当前句生成 Character RAG suggestions，也支持全文 suggestions run、批量接受 / 拒绝和 LLM review。
 - Suggestion row 会展示匹配方法、标签、置信度、token/char range、evidence text 和原文上下文窗口，方便人工 review 时判断是否接受。

@@ -1138,6 +1138,7 @@ kbd {
 .accept-button,
 .edit-button,
 .skip-button,
+.reject-sentence-button,
 .undo-button,
 .review-button,
 .export-button {
@@ -1150,6 +1151,7 @@ kbd {
 .accept-button,
 .edit-button,
 .skip-button,
+.reject-sentence-button,
 .undo-button,
 .review-button {
   min-width: 118px;
@@ -1172,6 +1174,12 @@ kbd {
   border: 1px solid #b98600;
   color: #946900;
   background: #ffffff;
+}
+
+.reject-sentence-button {
+  border: 1px solid #9b3b3b;
+  color: #9b3b3b;
+  background: #fff4f2;
 }
 
 .undo-button {
@@ -1575,6 +1583,7 @@ kbd {
   .accept-button,
   .edit-button,
   .skip-button,
+  .reject-sentence-button,
   .undo-button,
   .review-button {
     width: 100%;

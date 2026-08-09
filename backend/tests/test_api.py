@@ -409,6 +409,24 @@ def test_sentence_ignore_answer_exports_as_ignore(tmp_path: Path) -> None:
         updated_summary = client.get(f"/api/projects/default/documents/{document_id}/summary").json()
         assert updated_summary["metrics"]["answer_counts"] == {"accept": 1, "reject": 0, "ignore": 0, "pending": 1}
 
+        reject_response = client.post(
+            f"/api/projects/default/sentences/{second_sentence['id']}/complete",
+            json={"completed": True, "answer": "reject"},
+        )
+        assert reject_response.status_code == 200
+        assert reject_response.json() == {"completed": True, "answer": "reject"}
+        rejected_summary = client.get(f"/api/projects/default/documents/{document_id}/summary").json()
+        assert rejected_summary["metrics"]["answer_counts"] == {"accept": 0, "reject": 1, "ignore": 0, "pending": 1}
+
+        reopen_response = client.post(
+            f"/api/projects/default/sentences/{second_sentence['id']}/complete",
+            json={"completed": False, "answer": "pending"},
+        )
+        assert reopen_response.status_code == 200
+        assert reopen_response.json() == {"completed": False, "answer": "pending"}
+        reopened_summary = client.get(f"/api/projects/default/documents/{document_id}/summary").json()
+        assert reopened_summary["metrics"]["answer_counts"] == {"accept": 0, "reject": 0, "ignore": 0, "pending": 2}
+
 
 def test_import_prodigy_jsonl_updates_annotations_and_answers(tmp_path: Path) -> None:
     storage = AnnotationStorage(

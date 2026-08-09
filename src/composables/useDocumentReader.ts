@@ -340,6 +340,27 @@ export function useDocumentReader() {
     }
   }
 
+  async function reopenCurrentSentence() {
+    const sentence = currentSentence.value
+    if (!sentence || isSaving.value) return
+    isSaving.value = true
+    readerError.value = ''
+    try {
+      await completeSentence(PROJECT_ID, sentence.id, false, 'pending')
+      sentence.completed = false
+      sentence.answer = 'pending'
+      sentenceQueue.value = sentenceQueue.value.map((item) =>
+        item.id === sentence.id ? { ...item, completed: false, answer: 'pending' } : item,
+      )
+      await refreshDocumentSummary()
+      await refreshAuditSummary()
+    } catch (error) {
+      readerError.value = error instanceof Error ? error.message : 'Could not reopen sentence.'
+    } finally {
+      isSaving.value = false
+    }
+  }
+
   async function generateDocumentSuggestions() {
     if (!documentMeta.value || isSuggesting.value) return
     isSuggesting.value = true
@@ -403,6 +424,14 @@ export function useDocumentReader() {
     if (event.key.toLowerCase() === 'i') {
       event.preventDefault()
       void completeCurrentSentence('ignore')
+    }
+    if (event.key.toLowerCase() === 'j') {
+      event.preventDefault()
+      void completeCurrentSentence('reject')
+    }
+    if (event.key.toLowerCase() === 'e') {
+      event.preventDefault()
+      void reopenCurrentSentence()
     }
     if ((event.code === 'Space' || event.key === ' ') && !target?.matches('button, a')) {
       event.preventDefault()
@@ -983,6 +1012,7 @@ export function useDocumentReader() {
     setCurrentSentence,
     jumpToNextReviewSentence,
     completeCurrentSentence,
+    reopenCurrentSentence,
     generateDocumentSuggestions,
     generateCurrentSentenceSuggestions,
     setSuggestionLimit,

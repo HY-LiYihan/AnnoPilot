@@ -66,6 +66,7 @@ const {
   setCurrentSentence,
   jumpToNextReviewSentence,
   completeCurrentSentence,
+  reopenCurrentSentence,
   generateDocumentSuggestions,
   generateCurrentSentenceSuggestions,
   setSuggestionLimit,
@@ -203,6 +204,8 @@ const {
         @next-review="jumpToNextReviewSentence"
         @complete="completeCurrentSentence"
         @ignore="completeCurrentSentence('ignore')"
+        @reject="completeCurrentSentence('reject')"
+        @reopen="reopenCurrentSentence"
         @previous="setCurrentSentence(currentSentenceIndex - 1)"
         @next="setCurrentSentence(currentSentenceIndex + 1)"
       />

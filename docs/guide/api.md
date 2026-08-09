@@ -29,7 +29,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/complete
 - `summary` 返回 document meta、tags、metrics、全局 sentence queue 和当前 runtime session cursor，不返回完整 tokens。
 - `sentences` 返回分页 sentence window，当前 API limit 上限为 200。
 - `session/cursor` 保存默认人工会话的当前句位置，用于刷新后恢复标注阅读器状态；该状态保存在 SQLite runtime，不写入 JSONL audit log。
-- `complete` 写入 `completed` 和 Prodigy-compatible `answer`，当前支持 `accept`、`ignore`、`reject`、`pending`。
+- `complete` 写入 `completed` 和 Prodigy-compatible `answer`，当前支持 `accept`、`ignore`、`reject`，以及 `completed=false` reopen 回 `pending`。
 
 ## Tags
 

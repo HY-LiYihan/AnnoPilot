@@ -154,6 +154,8 @@ function submitAnnotationImport(event: Event) {
         <span><kbd>1-9</kbd><em>apply tag</em></span>
         <span><kbd>Enter</kbd><em>complete sentence</em></span>
         <span><kbd>Space / I</kbd><em>ignore sentence</em></span>
+        <span><kbd>J</kbd><em>reject sentence</em></span>
+        <span><kbd>E</kbd><em>reopen sentence</em></span>
         <span><kbd>Y / N</kbd><em>accept/reject first suggestion</em></span>
         <span><kbd>A</kbd><em>accept suggestions</em></span>
         <span><kbd>X</kbd><em>reject suggestions</em></span>

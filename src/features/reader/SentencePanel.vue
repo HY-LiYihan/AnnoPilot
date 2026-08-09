@@ -68,6 +68,8 @@ const emit = defineEmits<{
   'next-review': []
   complete: []
   ignore: []
+  reject: []
+  reopen: []
   previous: []
   next: []
 }>()
@@ -392,6 +394,8 @@ function suggestionRangeLabel(suggestion: SuggestionDef) {
         </button>
         <button class="edit-button" :disabled="!currentSentence" @click="emit('previous')">Previous</button>
         <button class="skip-button" :disabled="!currentSentence || isSaving" @click="emit('ignore')">Ignore · Space / I</button>
+        <button class="reject-sentence-button" :disabled="!currentSentence || isSaving" @click="emit('reject')">Reject · J</button>
+        <button class="edit-button" :disabled="!currentSentence || isSaving" @click="emit('reopen')">Reopen · E</button>
         <button class="undo-button" :disabled="!canUndoSpanAction || isSaving" :title="undoLabel" @click="emit('undo')">
           <Undo2 :size="16" aria-hidden="true" />
           Undo · ⌘Z
