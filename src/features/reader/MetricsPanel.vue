@@ -58,6 +58,14 @@ function runConfidenceSummary(run: AnnotationRun, labels: UiLabels['metrics']) {
   return confidenceSummary(run.confidence_counts, labels)
 }
 
+function suggestionStatusSummary(counts: Record<string, number> | undefined, labels: UiLabels['metrics']) {
+  const pending = counts?.pending ?? 0
+  const accepted = counts?.accepted ?? 0
+  const rejected = counts?.rejected ?? 0
+  if (!pending && !accepted && !rejected) return ''
+  return `${accepted} ${labels.accepted} / ${rejected} ${labels.rejected} / ${pending} ${labels.pendingStatus}`
+}
+
 function confidenceSummary(counts: Record<string, number> | undefined, labels: UiLabels['metrics']) {
   const confidenceCounts = Object.entries(counts ?? {})
     .filter(([, count]) => count > 0)
@@ -129,6 +137,7 @@ function shortHash(value: string) {
         <strong>{{ metrics.suggestion_count }}</strong>
         <small>
           {{ labels.ragQueue }}
+          <template v-if="suggestionStatusSummary(metrics.suggestion_status_counts, labels)"> · {{ suggestionStatusSummary(metrics.suggestion_status_counts, labels) }}</template>
           <template v-if="sourceSummary(metrics.suggestion_source_counts, labels)"> · {{ labels.sourceMix }} {{ sourceSummary(metrics.suggestion_source_counts, labels) }}</template>
           <template v-if="confidenceSummary(metrics.suggestion_confidence_counts, labels)"> · {{ labels.confidenceMix }} {{ confidenceSummary(metrics.suggestion_confidence_counts, labels) }}</template>
         </small>

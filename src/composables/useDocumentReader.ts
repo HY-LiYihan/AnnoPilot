@@ -89,6 +89,7 @@ export function useDocumentReader() {
     progress: 0,
     annotation_count: 0,
     suggestion_count: 0,
+    suggestion_status_counts: { pending: 0, accepted: 0, rejected: 0 },
     suggestion_source_counts: {},
     suggestion_confidence_counts: {},
     accuracy: null,

@@ -123,6 +123,7 @@ export type Metrics = {
   progress: number
   annotation_count: number
   suggestion_count: number
+  suggestion_status_counts: Record<string, number>
   suggestion_source_counts: Record<string, number>
   suggestion_confidence_counts: Record<string, number>
   accuracy: number | null

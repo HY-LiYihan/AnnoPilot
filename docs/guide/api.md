@@ -28,7 +28,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/complete
 - `import-txt` 接收 UTF-8 `.txt`，当前大小上限为 10 MB。
 - `import-annotations-jsonl` 接收 Prodigy / AnnoPilot style `.jsonl` annotation records；frontend 在右侧 metrics/export panel 暴露 `Import JSONL` 入口。
 - `documents` 返回最近 runtime documents 的轻量索引，包含 progress、annotation count 和 pending suggestion count，供 frontend 切换已导入文档。
-- `summary` 返回 document meta、tags、metrics、全局 sentence queue 和当前 runtime session cursor，不返回完整 tokens；metrics 会包含 pending suggestion 的 `suggestion_source_counts` / `suggestion_confidence_counts`，用于快速判断当前待审队列质量。
+- `summary` 返回 document meta、tags、metrics、全局 sentence queue 和当前 runtime session cursor，不返回完整 tokens；metrics 会包含 suggestion 的 `suggestion_status_counts`，以及 pending suggestion 的 `suggestion_source_counts` / `suggestion_confidence_counts`，用于快速判断当前待审队列质量和已处理建议分布。
 - `sentences` 返回分页 sentence window，当前 API limit 上限为 200。
 - `review-queue` 返回未完成且存在 pending suggestions 的句子列表，以及每句第一条候选，供 UI 快速跳转待审任务；`order=uncertain` 会按最低 Character RAG confidence 优先排序。
 - `annotation-imports` 从 `events.jsonl` 读取最近的 JSONL annotation import history；frontend 用它在刷新页面后恢复最近导入摘要。

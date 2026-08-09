@@ -380,6 +380,16 @@ class AnnotationStorage:
                 """,
                 (document_id,),
             ).fetchall()
+            suggestion_status_rows = conn.execute(
+                """
+                SELECT sg.status, COUNT(*) AS count
+                FROM annotation_suggestions sg
+                JOIN sentences s ON s.id = sg.sentence_id
+                WHERE s.document_id = ?
+                GROUP BY sg.status
+                """,
+                (document_id,),
+            ).fetchall()
             review_metric_rows = conn.execute(
                 """
                 SELECT sg.status, rev.recommendation
@@ -447,6 +457,9 @@ class AnnotationStorage:
         for tag in tags:
             tag["count"] = tag_counts.get(tag["id"], 0)
         visible_suggestion_metrics = [self._row_dict(row) for row in suggestion_metric_rows]
+        suggestion_status_counts = {"pending": 0, "accepted": 0, "rejected": 0}
+        for row in suggestion_status_rows:
+            suggestion_status_counts[row["status"]] = row["count"]
 
         return {
             "document": {
@@ -465,6 +478,7 @@ class AnnotationStorage:
                 "progress": completed_count / sentence_count if sentence_count else 0,
                 "annotation_count": annotation_count,
                 "suggestion_count": suggestion_count,
+                "suggestion_status_counts": suggestion_status_counts,
                 "suggestion_source_counts": self._suggestion_source_counts(visible_suggestion_metrics),
                 "suggestion_confidence_counts": self._suggestion_confidence_counts(visible_suggestion_metrics),
                 "accuracy": review_agreements / review_total if review_total else None,
