@@ -2,15 +2,20 @@
 import { computed, onMounted, ref } from 'vue'
 import { CheckCircle, Settings } from '@lucide/vue'
 import { fetchRuntimeHealth } from '../../api/health'
+import { fetchLlmSettings, updateLlmSettings } from '../../api/settings'
 import { useDocumentReader } from '../../composables/useDocumentReader'
 import { LANGUAGE_KEY, UI_LABELS, type Locale } from '../../i18n'
-import type { RuntimeHealth } from '../../types/domain'
+import type { LlmModelOption, LlmSettingsState, RuntimeHealth } from '../../types/domain'
 import MetricsPanel from './MetricsPanel.vue'
 import SentencePanel from './SentencePanel.vue'
 import TagPalette from './TagPalette.vue'
 
 const runtimeHealth = ref<RuntimeHealth | null>(null)
+const llmSettings = ref<LlmSettingsState | null>(null)
 const healthUnavailable = ref(false)
+const isSettingsOpen = ref(false)
+const isSavingLlmSettings = ref(false)
+const settingsError = ref('')
 const savedLocale = window.localStorage.getItem(LANGUAGE_KEY)
 const locale = ref<Locale>(savedLocale === 'en' || savedLocale === 'zh' ? savedLocale : 'zh')
 const labels = computed(() => UI_LABELS[locale.value])
@@ -24,17 +29,70 @@ const llmStatusLabel = computed(() => {
   return `${model}${host}`
 })
 
+const selectedModelOption = computed(() => {
+  const selectedId = llmSettings.value?.selected_model_option_id
+  return llmSettings.value?.model_options.find((option) => option.id === selectedId) ?? null
+})
+
+const modelButtonLabel = computed(() => selectedModelOption.value?.model ?? llmSettings.value?.model ?? runtimeHealth.value?.llm_model ?? 'LLM')
+
+const settingsHint = computed(() => {
+  if (llmSettings.value?.configured && llmSettings.value.base_host) return labels.value.topbar.modelConfigured(llmSettings.value.base_host)
+  return labels.value.topbar.modelNotConfigured
+})
+
 function setLocale(nextLocale: Locale) {
   locale.value = nextLocale
   window.localStorage.setItem(LANGUAGE_KEY, nextLocale)
 }
 
-onMounted(async () => {
+async function refreshRuntimeStatus() {
   try {
     runtimeHealth.value = await fetchRuntimeHealth()
+    healthUnavailable.value = false
   } catch {
     healthUnavailable.value = true
   }
+
+  try {
+    llmSettings.value = await fetchLlmSettings()
+    settingsError.value = ''
+  } catch (error) {
+    settingsError.value = error instanceof Error ? error.message : labels.value.topbar.llmUnavailable
+  }
+}
+
+function qualityLabel(tier: string) {
+  const quality = labels.value.topbar.quality as Record<string, string>
+  return quality[tier] ?? tier
+}
+
+function qualityHint(tier: string) {
+  const hint = labels.value.topbar.qualityHint as Record<string, string>
+  return hint[tier] ?? ''
+}
+
+function modelOptionLabel(option: LlmModelOption) {
+  return `${option.family} · ${qualityLabel(option.tier)}`
+}
+
+async function selectLlmOption(optionId: string) {
+  if (isSavingLlmSettings.value || optionId === llmSettings.value?.selected_model_option_id) return
+  isSavingLlmSettings.value = true
+  settingsError.value = ''
+  try {
+    llmSettings.value = await updateLlmSettings(optionId)
+    runtimeHealth.value = await fetchRuntimeHealth()
+    healthUnavailable.value = false
+  } catch (error) {
+    settingsError.value = error instanceof Error ? error.message : labels.value.topbar.modelSaveFailed
+  } finally {
+    isSavingLlmSettings.value = false
+  }
+}
+
+onMounted(async () => {
+  await refreshRuntimeStatus()
 })
 
 const {
@@ -160,9 +218,49 @@ const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.valu
         </button>
       </div>
 
-      <button class="icon-button" :aria-label="labels.topbar.settings">
-        <Settings :size="19" aria-hidden="true" />
-      </button>
+      <div class="settings-menu">
+        <button
+          class="settings-button"
+          type="button"
+          :aria-label="labels.topbar.settings"
+          :aria-expanded="isSettingsOpen"
+          @click="isSettingsOpen = !isSettingsOpen"
+        >
+          <Settings :size="18" aria-hidden="true" />
+          <span>{{ labels.topbar.modelSettings }}</span>
+          <strong>{{ modelButtonLabel }}</strong>
+        </button>
+        <section v-if="isSettingsOpen" class="settings-popover" :aria-label="labels.topbar.modelSettingsTitle">
+          <div class="settings-popover-heading">
+            <p class="section-kicker">LLM</p>
+            <h2>{{ labels.topbar.modelSettingsTitle }}</h2>
+          </div>
+          <p class="settings-description">{{ labels.topbar.modelSettingsDescription }}</p>
+          <div class="settings-current-model">
+            <span>{{ labels.topbar.currentModel }}</span>
+            <strong>{{ modelButtonLabel }}</strong>
+          </div>
+          <div class="model-option-grid">
+            <button
+              v-for="option in llmSettings?.model_options ?? []"
+              :key="option.id"
+              type="button"
+              class="model-option-button"
+              :class="{ active: option.id === llmSettings?.selected_model_option_id }"
+              :disabled="isSavingLlmSettings"
+              @click="selectLlmOption(option.id)"
+            >
+              <span>
+                <strong>{{ modelOptionLabel(option) }}</strong>
+                <small>{{ qualityHint(option.tier) }}</small>
+              </span>
+              <em>{{ option.model }}</em>
+            </button>
+          </div>
+          <p v-if="settingsError" class="settings-error">{{ settingsError }}</p>
+          <p class="settings-note">{{ isSavingLlmSettings ? labels.topbar.modelSaving : settingsHint }}</p>
+        </section>
+      </div>
     </nav>
 
     <section class="workbench" :aria-label="labels.reader.aria">

@@ -2395,6 +2395,26 @@ class AnnotationStorage:
             self._seed_tags(conn, project_id)
             return self._get_tags(conn, project_id)
 
+    def get_runtime_setting(self, key: str) -> str | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT value FROM runtime_settings WHERE key = ?", (key,)).fetchone()
+            return row["value"] if row else None
+
+    def set_runtime_setting(self, key: str, value: str) -> dict[str, Any]:
+        now = self._now()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO runtime_settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                  value = excluded.value,
+                  updated_at = excluded.updated_at
+                """,
+                (key, value, now),
+            )
+        return {"key": key, "value": value, "updated_at": now}
+
     def create_tag(
         self,
         project_id: str,
@@ -2662,6 +2682,12 @@ class AnnotationStorage:
               shortcut TEXT NOT NULL,
               color TEXT NOT NULL,
               PRIMARY KEY (project_id, id)
+            );
+
+            CREATE TABLE IF NOT EXISTS runtime_settings (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL,
+              updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS documents (

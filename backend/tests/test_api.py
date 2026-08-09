@@ -288,6 +288,37 @@ def test_document_summary_and_sentence_paging(tmp_path: Path) -> None:
         assert len(legacy_response.json()["sentences"]) == 4
 
 
+def test_llm_settings_runtime_model_selection_updates_health(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LLM_BASE_URL", "https://llm.example.test/v1")
+    monkeypatch.setenv("LLM_API_KEY", "test-secret")
+    monkeypatch.setenv("LLM_MODEL", "gpt5.5")
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        settings_response = client.get("/api/settings/llm")
+        assert settings_response.status_code == 200
+        settings_payload = settings_response.json()
+        assert settings_payload["configured"] is True
+        assert settings_payload["model"] == "gpt5.5"
+        assert settings_payload["selected_model_option_id"] == "gpt5.5-medium"
+        assert {option["id"] for option in settings_payload["model_options"]} >= {"gpt5.5-low", "gpt5.6-high"}
+
+        update_response = client.post("/api/settings/llm", json={"model_option_id": "gpt5.6-high"})
+        assert update_response.status_code == 200
+        updated_payload = update_response.json()
+        assert updated_payload["model"] == "gpt5.6-high"
+        assert updated_payload["selected_model_option_id"] == "gpt5.6-high"
+        assert client.get("/api/health").json()["llm_model"] == "gpt5.6-high"
+        with storage.connect() as conn:
+            stored = conn.execute("SELECT value FROM runtime_settings WHERE key = 'llm_model_option_id'").fetchone()
+        assert stored["value"] == "gpt5.6-high"
+
+        bad_response = client.post("/api/settings/llm", json={"model_option_id": "unknown-model"})
+        assert bad_response.status_code == 400
+
+
 def test_merge_txt_appends_to_existing_document_and_preserves_state(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",

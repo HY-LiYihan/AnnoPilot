@@ -12,6 +12,25 @@ class HealthResponse(BaseModel):
     llm_base_host: Optional[str] = None
 
 
+class LlmModelOptionResponse(BaseModel):
+    id: str
+    family: str
+    tier: str
+    model: str
+
+
+class LlmSettingsResponse(BaseModel):
+    configured: bool
+    model: Optional[str] = None
+    base_host: Optional[str] = None
+    selected_model_option_id: Optional[str] = None
+    model_options: list[LlmModelOptionResponse]
+
+
+class UpdateLlmSettingsRequest(BaseModel):
+    model_option_id: str = Field(min_length=1, max_length=80)
+
+
 class TagResponse(BaseModel):
     id: str
     name: str

@@ -172,6 +172,21 @@ export type RuntimeHealth = {
   llm_base_host: string | null
 }
 
+export type LlmModelOption = {
+  id: string
+  family: string
+  tier: string
+  model: string
+}
+
+export type LlmSettingsState = {
+  configured: boolean
+  model: string | null
+  base_host: string | null
+  selected_model_option_id: string | null
+  model_options: LlmModelOption[]
+}
+
 export type AnnotationRun = {
   id: string
   project_id: string
