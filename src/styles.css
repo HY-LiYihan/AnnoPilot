@@ -2027,6 +2027,21 @@ kbd {
   background: #ffffff;
 }
 
+.stats-quick-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 12px 0 14px;
+}
+
+.stats-quick-actions .export-button,
+.export-button.compact {
+  min-height: 38px;
+  margin-top: 0;
+  padding: 9px 10px;
+  font-size: 0.82rem;
+}
+
 .export-button.danger {
   margin-top: 14px;
   border-color: #b42318;

@@ -133,6 +133,23 @@ function shortHash(value: string) {
       <BarChart3 :size="21" aria-hidden="true" />
     </div>
 
+    <div class="stats-quick-actions" :aria-label="labels.aria">
+      <button class="export-button secondary compact" :disabled="!documentMeta" @click="emit('export-prodigy')">
+        {{ labels.exportProdigy }}
+        <Download :size="17" aria-hidden="true" />
+      </button>
+
+      <button class="export-button secondary compact" :disabled="!documentMeta" @click="emit('export-prodigy-spans')">
+        {{ labels.exportProdigySpans }}
+        <Download :size="17" aria-hidden="true" />
+      </button>
+
+      <button class="export-button danger compact reset-project-button" :disabled="isResetting" @click="emit('reset-project')">
+        {{ isResetting ? labels.resetting : labels.resetProject }}
+        <Trash2 :size="17" aria-hidden="true" />
+      </button>
+    </div>
+
     <div class="metric-stack">
       <article class="metric-card">
         <Target :size="22" aria-hidden="true" />
@@ -308,16 +325,6 @@ function shortHash(value: string) {
       <Download :size="18" aria-hidden="true" />
     </button>
 
-    <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-prodigy')">
-      {{ labels.exportProdigy }}
-      <Download :size="18" aria-hidden="true" />
-    </button>
-
-    <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-prodigy-spans')">
-      {{ labels.exportProdigySpans }}
-      <Download :size="18" aria-hidden="true" />
-    </button>
-
     <label class="export-button secondary import-jsonl-button" :class="{ disabled: !documentMeta }">
       {{ labels.importJsonl }}
       <Upload :size="18" aria-hidden="true" />
@@ -370,9 +377,5 @@ function shortHash(value: string) {
       <RotateCw :size="18" aria-hidden="true" />
     </button>
 
-    <button class="export-button danger reset-project-button" :disabled="isResetting" @click="emit('reset-project')">
-      {{ isResetting ? labels.resetting : labels.resetProject }}
-      <Trash2 :size="18" aria-hidden="true" />
-    </button>
   </aside>
 </template>
