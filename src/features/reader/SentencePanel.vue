@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Check, Sparkles, Undo2, X } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
 import type {
@@ -50,6 +50,12 @@ const props = defineProps<{
   tokenPrefix: (sentence: SentenceDef, tokenIndex: number) => string
   tokenStyle: (sentence: SentenceDef, tokenIndex: number) => Record<string, string>
 }>()
+
+const renderedSentences = computed(() =>
+  props.sentences
+    .filter((sentence) => Math.abs(sentence.index - props.currentSentenceIndex) <= 1)
+    .sort((left, right) => left.index - right.index),
+)
 
 const emit = defineEmits<{
   import: [file: File, mode: TxtImportMode]
@@ -323,7 +329,7 @@ function predicatePositionClasses(
       @pointerleave="clearReaderSwipe"
     >
       <section
-        v-for="sentence in sentences"
+        v-for="sentence in renderedSentences"
         :key="sentence.id"
         :ref="(element) => emit('set-sentence-element', sentence.id, element)"
         class="sentence-card"
