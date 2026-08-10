@@ -22,6 +22,7 @@ import { fetchRuns, runProvenanceExportUrl } from '../api/runs'
 import {
   acceptSuggestion,
   acceptSentenceSuggestions,
+  applyDocumentSuggestionReviews,
   applySentenceSuggestionReviews,
   autoAnnotateSuggestions,
   autoAcceptSuggestions,
@@ -986,6 +987,26 @@ export function useDocumentReader() {
     }
   }
 
+  async function applyDocumentSuggestionReviewsFromLlm() {
+    if (!documentMeta.value || metrics.value.reviewed_suggestion_count === 0 || isSaving.value) return
+    isSaving.value = true
+    readerError.value = ''
+    try {
+      const payload = await applyDocumentSuggestionReviews(PROJECT_ID, documentMeta.value.id)
+      await loadDocument(documentMeta.value.id, true)
+      await refreshAuditSummary()
+      if (payload.accepted === 0 && payload.rejected === 0) {
+        readerError.value = 'No LLM accept/reject recommendations to apply in this document.'
+      } else if (payload.skipped > 0) {
+        readerError.value = `${payload.skipped} reviewed suggestions overlapped existing annotations and were skipped.`
+      }
+    } catch (error) {
+      readerError.value = error instanceof Error ? error.message : 'Could not apply document LLM review recommendations.'
+    } finally {
+      isSaving.value = false
+    }
+  }
+
   function replaceSentenceAnnotations(sentenceId: string, annotations: AnnotationDef[]) {
     sentences.value = sentences.value.map((sentence) =>
       sentence.id === sentenceId ? { ...sentence, annotations, suggestions: withoutAnnotationOverlaps(sentence.suggestions, annotations) } : sentence,
@@ -1227,6 +1248,7 @@ export function useDocumentReader() {
     reviewSuggestedSpan,
     reviewCurrentSentenceSuggestions,
     applyCurrentSentenceSuggestionReviews,
+    applyDocumentSuggestionReviewsFromLlm,
     annotationForToken,
     suggestionForToken,
     isTokenInDrag: selection.isTokenInDrag,

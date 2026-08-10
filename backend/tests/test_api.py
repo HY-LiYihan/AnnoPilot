@@ -1997,6 +1997,69 @@ def test_apply_sentence_llm_review_recommendations_updates_suggestions(tmp_path:
         assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
 
+def test_apply_document_llm_review_recommendations_updates_all_reviewed_suggestions(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage, suggestion_reviewer=CyclingSuggestionReviewer())) as client:
+        seed_pos_span_labels(client)
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("story.txt", "清晨，小猫看见金色的叶子。男孩走来，轻轻拾起叶子。", "text/plain")},
+        )
+        document_id = response.json()["document_id"]
+
+        suggestion_payload = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 4, "min_confidence": 0.98},
+        ).json()
+        suggestions = suggestion_payload["suggestions"]
+        assert len(suggestions) >= 3
+
+        reviews = []
+        for sentence_id in sorted({suggestion["sentence_id"] for suggestion in suggestions}):
+            review_response = client.post(f"/api/projects/default/sentences/{sentence_id}/suggestions/llm-review")
+            assert review_response.status_code == 200
+            reviews.extend(review_response.json()["reviews"])
+        recommendations = {review["suggestion_id"]: review["recommendation"] for review in reviews}
+        expected_accept_ids = [suggestion["id"] for suggestion in suggestions if recommendations[suggestion["id"]] == "accept"]
+        expected_reject_ids = [suggestion["id"] for suggestion in suggestions if recommendations[suggestion["id"]] == "reject"]
+        expected_kept_ids = [suggestion["id"] for suggestion in suggestions if recommendations[suggestion["id"]] == "uncertain"]
+        assert expected_accept_ids
+        assert expected_reject_ids
+        assert expected_kept_ids
+
+        apply_response = client.post(f"/api/projects/default/documents/{document_id}/suggestions/apply-llm-review")
+        assert apply_response.status_code == 200
+        applied = apply_response.json()
+        assert applied["accepted"] == len(expected_accept_ids)
+        assert applied["rejected"] == len(expected_reject_ids)
+        assert applied["skipped"] == 0
+        assert applied["kept"] == len(expected_kept_ids)
+        assert applied["accepted_suggestion_ids"] == expected_accept_ids
+        assert applied["rejected_suggestion_ids"] == expected_reject_ids
+        assert set(applied["affected_sentence_ids"]) == {
+            suggestion["sentence_id"] for suggestion in suggestions if suggestion["id"] in set(expected_accept_ids + expected_reject_ids)
+        }
+
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        assert document["metrics"]["suggestion_status_counts"] == {
+            "pending": len(expected_kept_ids),
+            "accepted": len(expected_accept_ids),
+            "rejected": len(expected_reject_ids),
+        }
+        assert document["metrics"]["suggestion_count"] == len(expected_kept_ids)
+        pending_ids = {suggestion["id"] for sentence in document["sentences"] for suggestion in sentence["suggestions"]}
+        assert pending_ids == set(expected_kept_ids)
+
+        events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
+        assert {event["suggestion_id"] for event in events if event["type"] == "suggestion.accepted"} == set(expected_accept_ids)
+        assert {event["suggestion_id"] for event in events if event["type"] == "suggestion.rejected"} == set(expected_reject_ids)
+        assert sum(1 for event in events if event["type"] == "annotation.created") == len(expected_accept_ids)
+        assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
+
+
 def test_rebuild_project_from_events_restores_runtime_state(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",

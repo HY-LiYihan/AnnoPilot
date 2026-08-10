@@ -34,6 +34,7 @@ const props = defineProps<{
   pendingSelectionText: string
   hasReviewQueue: boolean
   reviewQueueSummary: string
+  reviewedSuggestionCount: number
   readerError: string
   isUploading: boolean
   isSaving: boolean
@@ -72,6 +73,7 @@ const emit = defineEmits<{
   'review-suggestion': [suggestion: SuggestionDef]
   'review-current-suggestions': []
   'apply-current-reviews': []
+  'apply-document-reviews': []
   'suggestion-limit-change': [limit: number]
   'suggestion-min-confidence-change': [minConfidence: number]
   'next-review': []
@@ -417,6 +419,10 @@ function predicatePositionClasses(
           <button class="batch-review-button accept" :disabled="!activeSuggestions.length || isSaving" @click="emit('apply-current-reviews')">
             <Check :size="16" aria-hidden="true" />
             {{ labels.applyReview }}
+          </button>
+          <button class="batch-review-button accept" :disabled="!documentMeta || !reviewedSuggestionCount || isSaving" @click="emit('apply-document-reviews')">
+            <Check :size="16" aria-hidden="true" />
+            {{ labels.applyAllReviews }}
           </button>
           <button class="batch-review-button accept" :disabled="!documentMeta || !hasReviewQueue || isSaving" @click="emit('auto-accept-document-suggestions')">
             <Check :size="16" aria-hidden="true" />

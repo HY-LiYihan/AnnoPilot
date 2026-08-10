@@ -240,6 +240,7 @@ POST /api/projects/{project_id}/documents/{document_id}/suggestions/run
 POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-annotate
 POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-accept
 POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-reject
+POST /api/projects/{project_id}/documents/{document_id}/suggestions/apply-llm-review
 POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/accept
 POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/reject
 POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/llm-review

@@ -8,6 +8,7 @@ from ..llm import LlmError
 from ..schemas import (
     AcceptSentenceSuggestionsResponse,
     AcceptSuggestionResponse,
+    ApplyDocumentSuggestionReviewsResponse,
     ApplySentenceSuggestionReviewsResponse,
     AutoAnnotateSuggestionsResponse,
     AutoAcceptSuggestionsRequest,
@@ -103,6 +104,20 @@ def auto_reject_suggestions(
 ) -> dict:
     try:
         return storage.auto_reject_document_suggestions(project_id, document_id)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/documents/{document_id}/suggestions/apply-llm-review", response_model=ApplyDocumentSuggestionReviewsResponse)
+def apply_document_suggestion_reviews(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> dict:
+    try:
+        return storage.apply_document_suggestion_reviews(project_id, document_id)
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except NotFoundError as exc:

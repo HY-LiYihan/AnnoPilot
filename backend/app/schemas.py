@@ -389,6 +389,16 @@ class ApplySentenceSuggestionReviewsResponse(BaseModel):
     annotations: list[AnnotationResponse]
 
 
+class ApplyDocumentSuggestionReviewsResponse(BaseModel):
+    accepted: int
+    rejected: int
+    skipped: int
+    kept: int
+    accepted_suggestion_ids: list[str]
+    rejected_suggestion_ids: list[str]
+    affected_sentence_ids: list[str]
+
+
 class AutoRejectSuggestionsResponse(BaseModel):
     rejected: int
     rejected_suggestion_ids: list[str]

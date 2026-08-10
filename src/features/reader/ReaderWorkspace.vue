@@ -165,6 +165,7 @@ const {
   reviewSuggestedSpan,
   reviewCurrentSentenceSuggestions,
   applyCurrentSentenceSuggestionReviews,
+  applyDocumentSuggestionReviewsFromLlm,
   annotationForToken,
   suggestionForToken,
   isTokenInDrag,
@@ -306,6 +307,7 @@ const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.valu
         :pending-selection-text="pendingSelectionText"
         :has-review-queue="hasReviewQueue"
         :review-queue-summary="localizedReviewQueueSummary"
+        :reviewed-suggestion-count="metrics.reviewed_suggestion_count"
         :reader-error="readerError"
         :is-uploading="isUploading"
         :is-saving="isSaving"
@@ -341,6 +343,7 @@ const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.valu
         @review-suggestion="reviewSuggestedSpan"
         @review-current-suggestions="reviewCurrentSentenceSuggestions"
         @apply-current-reviews="applyCurrentSentenceSuggestionReviews"
+        @apply-document-reviews="applyDocumentSuggestionReviewsFromLlm"
         @suggestion-limit-change="setSuggestionLimit"
         @suggestion-min-confidence-change="setSuggestionMinConfidence"
         @next-review="jumpToNextReviewSentence"

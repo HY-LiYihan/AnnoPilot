@@ -64,6 +64,7 @@ POST /api/projects/{project_id}/documents/{document_id}/sentences/{sentence_id}/
 POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-accept
 POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-annotate
 POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-reject
+POST /api/projects/{project_id}/documents/{document_id}/suggestions/apply-llm-review
 POST /api/projects/{project_id}/suggestions/{suggestion_id}/accept
 POST /api/projects/{project_id}/suggestions/{suggestion_id}/reject
 POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/accept
@@ -82,7 +83,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/apply-llm-re
 - Reject 会把 suggestion 状态改为 `rejected`，后续 Character RAG 会把同 tag + text 当作 negative example。
 - Sentence-level accept/reject 会在一个 SQLite transaction 中批量处理当前句 pending suggestions，UI 的 `A` / `X` 快捷键走这组 endpoint。
 - LLM review 使用 OpenAI-compatible `/chat/completions`，返回 `recommendation`、`confidence`、`rationale` 和 `context_sha256`；sentence-scoped endpoint 会批量评审当前句仍 pending 且未被已有 annotation 覆盖的 suggestions。
-- `apply-llm-review` 会在一个 SQLite transaction 中应用当前句 latest LLM recommendations：`accept` 创建 `accepted_suggestion` annotation，`reject` 更新 suggestion 状态，`uncertain` 或未评审 suggestions 保持 pending。
+- `apply-llm-review` 支持 document scope 和 sentence scope，会在一个 SQLite transaction 中应用 latest LLM recommendations：`accept` 创建 `accepted_suggestion` annotation，`reject` 更新 suggestion 状态，`uncertain` 或未评审 suggestions 保持 pending。
 
 ## Runs And Audit
 
