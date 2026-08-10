@@ -73,5 +73,92 @@ def test_migration_backfills_legacy_columns(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_migration_v2_backfills_columns_when_baseline_already_recorded(tmp_path: Path) -> None:
+    database_path = tmp_path / "baseline-recorded.sqlite"
+    conn = sqlite3.connect(database_path)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE schema_version (
+              version INTEGER PRIMARY KEY,
+              name TEXT NOT NULL,
+              applied_at TEXT NOT NULL
+            );
+            INSERT INTO schema_version (version, name, applied_at)
+            VALUES (1, 'baseline_schema', '2026-08-10T00:00:00+00:00');
+
+            CREATE TABLE tags (
+              id TEXT NOT NULL,
+              project_id TEXT NOT NULL,
+              name TEXT NOT NULL,
+              shortcut TEXT NOT NULL,
+              color TEXT NOT NULL,
+              PRIMARY KEY (project_id, id)
+            );
+
+            CREATE TABLE sentences (
+              id TEXT PRIMARY KEY,
+              document_id TEXT NOT NULL,
+              sentence_index INTEGER NOT NULL,
+              text TEXT NOT NULL,
+              start_char INTEGER NOT NULL,
+              end_char INTEGER NOT NULL,
+              completed INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE annotations (
+              id TEXT PRIMARY KEY,
+              sentence_id TEXT NOT NULL,
+              tag_id TEXT NOT NULL,
+              start_token_index INTEGER NOT NULL,
+              end_token_index INTEGER NOT NULL,
+              start_char INTEGER NOT NULL,
+              end_char INTEGER NOT NULL,
+              text TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE annotation_suggestions (
+              id TEXT PRIMARY KEY,
+              sentence_id TEXT NOT NULL,
+              tag_id TEXT NOT NULL,
+              start_token_index INTEGER NOT NULL,
+              end_token_index INTEGER NOT NULL,
+              start_char INTEGER NOT NULL,
+              end_char INTEGER NOT NULL,
+              text TEXT NOT NULL,
+              confidence REAL NOT NULL,
+              source TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE annotation_suggestion_reviews (
+              id TEXT PRIMARY KEY,
+              suggestion_id TEXT NOT NULL,
+              model TEXT NOT NULL,
+              recommendation TEXT NOT NULL,
+              confidence REAL NOT NULL,
+              rationale TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
+            """
+        )
+
+        migrate_database(conn)
+
+        assert {"description", "examples_json"} <= _columns(conn, "tags")
+        assert "answer" in _columns(conn, "sentences")
+        assert {"source", "source_suggestion_id"} <= _columns(conn, "annotations")
+        assert {"run_id", "evidence_text", "match_key", "evidence_match_key", "context_before", "context_after"} <= _columns(
+            conn,
+            "annotation_suggestions",
+        )
+        assert "context_sha256" in _columns(conn, "annotation_suggestion_reviews")
+        assert current_schema_version(conn) == CURRENT_SCHEMA_VERSION
+    finally:
+        conn.close()
+
+
 def _columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})")}

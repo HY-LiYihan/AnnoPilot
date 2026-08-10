@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
-from .schema import create_base_schema
+from .schema import create_base_schema, ensure_legacy_columns
 
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class Migration:
 
 MIGRATIONS = (
     Migration(version=1, name="baseline_schema", apply=create_base_schema),
+    Migration(version=2, name="ensure_legacy_columns", apply=ensure_legacy_columns),
 )
 
 

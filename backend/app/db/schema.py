@@ -155,6 +155,10 @@ _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 def create_base_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(BASE_SCHEMA_SQL)
+    ensure_legacy_columns(conn)
+
+
+def ensure_legacy_columns(conn: sqlite3.Connection) -> None:
     for table_name, column_name, column_type in LEGACY_COLUMN_MIGRATIONS:
         ensure_column(conn, table_name, column_name, column_type)
 
