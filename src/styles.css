@@ -882,6 +882,21 @@ kbd {
   white-space: nowrap;
 }
 
+.total-progress-summary {
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.total-progress-summary span {
+  color: #4f5652;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.total-progress-summary strong {
+  font-size: 1.14rem;
+}
+
 .queue-block .queue-progress-track {
   height: 10px;
   margin: 9px 0 12px;

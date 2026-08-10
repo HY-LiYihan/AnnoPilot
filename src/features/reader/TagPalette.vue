@@ -314,13 +314,9 @@ function handleTagSchemaInput(event: Event) {
     </div>
 
     <div class="queue-block" :aria-label="labels.progressAria">
-      <div class="mini-heading">
-        <span>{{ labels.progressTitle }}</span>
-        <em>{{ progressPercentText }}%</em>
-      </div>
-      <div class="queue-progress-summary">
+      <div class="queue-progress-summary total-progress-summary">
         <span>{{ labels.overallProgress }}</span>
-        <strong>{{ reviewedSummary }}</strong>
+        <strong>{{ progressPercentText }}% · {{ reviewedSummary }}</strong>
       </div>
       <div class="progress-track queue-progress-track" aria-hidden="true">
         <span :style="{ width: `${progressPercent}%` }"></span>
