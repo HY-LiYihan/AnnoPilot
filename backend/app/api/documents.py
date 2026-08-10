@@ -12,6 +12,7 @@ from ..schemas import (
     DocumentResponse,
     DocumentSummaryResponse,
     ImportTxtResponse,
+    ProjectResetResponse,
     ReviewQueueResponse,
     SentencesPageResponse,
     UpdateSessionCursorRequest,
@@ -22,6 +23,14 @@ from .dependencies import get_storage
 
 
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["documents"])
+
+
+@router.post("/reset", response_model=ProjectResetResponse)
+def reset_project(
+    project_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> dict:
+    return storage.reset_project(project_id)
 
 
 @router.post("/import-txt", response_model=ImportTxtResponse)

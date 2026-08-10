@@ -4,6 +4,7 @@ import type {
   DocumentSummaryPayload,
   ImportAnnotationsResponse,
   ImportTxtResponse,
+  ProjectResetResponse,
   ReviewQueuePayload,
   SentencesPagePayload,
 } from '../types/domain'
@@ -37,6 +38,13 @@ export async function importAnnotationsJsonl(projectId: string, documentId: stri
     body: formData,
   })
   return parseJsonResponse<ImportAnnotationsResponse>(response)
+}
+
+export async function resetProject(projectId: string): Promise<ProjectResetResponse> {
+  const response = await fetch(`/api/projects/${projectId}/reset`, {
+    method: 'POST',
+  })
+  return parseJsonResponse<ProjectResetResponse>(response)
 }
 
 export async function fetchDocument(projectId: string, documentId: string): Promise<DocumentPayload> {

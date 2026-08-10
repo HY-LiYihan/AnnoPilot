@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BarChart3, DatabaseZap, Download, Keyboard, MousePointer2, RotateCw, Route, Sparkles, Target, Upload } from '@lucide/vue'
+import { BarChart3, DatabaseZap, Download, Keyboard, MousePointer2, RotateCw, Route, Sparkles, Target, Trash2, Upload } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
 import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, Metrics, RebuildPreview, ReviewQueueItem } from '../../types/domain'
 
@@ -15,6 +15,7 @@ defineProps<{
   reviewQueueOrder: 'position' | 'uncertain'
   lastAnnotationImport: AnnotationImportSummary | null
   isVerifyingRebuild: boolean
+  isResetting: boolean
 }>()
 
 const emit = defineEmits<{
@@ -26,6 +27,7 @@ const emit = defineEmits<{
   'export-tag-schema': []
   'export-run-provenance': [runId: string]
   'import-annotations': [file: File]
+  'reset-project': []
   'review-sentence': [sentenceIndex: number]
   'review-order-change': [order: 'position' | 'uncertain']
   'verify-rebuild': []
@@ -366,6 +368,11 @@ function shortHash(value: string) {
     <button class="export-button secondary" :disabled="isVerifyingRebuild" @click="emit('verify-rebuild')">
       {{ isVerifyingRebuild ? labels.verifying : labels.verifyRebuild }}
       <RotateCw :size="18" aria-hidden="true" />
+    </button>
+
+    <button class="export-button danger reset-project-button" :disabled="isResetting" @click="emit('reset-project')">
+      {{ isResetting ? labels.resetting : labels.resetProject }}
+      <Trash2 :size="18" aria-hidden="true" />
     </button>
   </aside>
 </template>

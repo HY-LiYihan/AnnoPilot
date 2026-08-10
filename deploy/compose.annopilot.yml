@@ -10,7 +10,7 @@ services:
       DATA_ROOT: /data/projects
       DATABASE_PATH: /data/runtime/annopilot.sqlite
       SERVE_STATIC: "false"
-      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:8501,http://127.0.0.1:8501}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:8888,http://127.0.0.1:8888}
       PYTHONUNBUFFERED: "1"
     volumes:
       - /opt/annopilot/data:/data
@@ -30,4 +30,4 @@ services:
       annopilot-api:
         condition: service_healthy
     ports:
-      - "${ANNOPILOT_WEB_PORT:-8501}:80"
+      - "${ANNOPILOT_WEB_PORT:-8888}:80"

@@ -95,7 +95,9 @@ def rebuild_project_from_events(
 
 def _apply_event(conn, project_id: str, event: dict[str, Any]) -> None:
     event_type = event.get("type")
-    if event_type == "document.imported":
+    if event_type == "project.reset":
+        AnnotationStorage._clear_project_runtime_rows(conn, project_id)
+    elif event_type == "document.imported":
         _apply_document_import(conn, project_id, event)
     elif event_type == "annotations.imported":
         return

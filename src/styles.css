@@ -2027,6 +2027,23 @@ kbd {
   background: #ffffff;
 }
 
+.export-button.danger {
+  margin-top: 14px;
+  border-color: #b42318;
+  color: #ffffff;
+  background: #b42318;
+}
+
+.export-button.danger:hover:not(:disabled) {
+  border-color: #8f1d14;
+  background: #8f1d14;
+}
+
+.export-button:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
 .import-jsonl-button input {
   position: absolute;
   inset: 0;

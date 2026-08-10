@@ -15,6 +15,7 @@ import {
   mergeTxt,
   prodigyExportUrl,
   prodigySpansExportUrl,
+  resetProject,
   tagSchemaExportUrl,
   updateDocumentCursor,
 } from '../api/documents'
@@ -77,15 +78,8 @@ type UndoableSpanAction =
       annotation: AnnotationDef
     }
 
-export function useDocumentReader() {
-  const tags = ref<TagDef[]>(fallbackTags)
-  const documents = ref<DocumentListItem[]>([])
-  const documentMeta = ref<DocumentMeta | null>(null)
-  const activeSession = ref<SessionState | null>(null)
-  const sentences = ref<SentenceDef[]>([])
-  const sentenceQueue = ref<SentenceQueueItem[]>([])
-  const loadedWindow = ref({ offset: 0, limit: 0, total: 0 })
-  const metrics = ref<Metrics>({
+function emptyMetrics(): Metrics {
+  return {
     sentence_count: 0,
     completed_count: 0,
     answer_counts: { accept: 0, reject: 0, ignore: 0, pending: 0 },
@@ -99,7 +93,18 @@ export function useDocumentReader() {
     reviewed_suggestion_count: 0,
     accuracy: null,
     accuracy_label: 'Waiting for review data',
-  })
+  }
+}
+
+export function useDocumentReader() {
+  const tags = ref<TagDef[]>(fallbackTags)
+  const documents = ref<DocumentListItem[]>([])
+  const documentMeta = ref<DocumentMeta | null>(null)
+  const activeSession = ref<SessionState | null>(null)
+  const sentences = ref<SentenceDef[]>([])
+  const sentenceQueue = ref<SentenceQueueItem[]>([])
+  const loadedWindow = ref({ offset: 0, limit: 0, total: 0 })
+  const metrics = ref<Metrics>(emptyMetrics())
   const selectedTagId = ref(fallbackTags[0]?.id ?? '')
   const currentSentenceIndex = ref(0)
   const suggestionLimit = ref(6)
@@ -107,6 +112,7 @@ export function useDocumentReader() {
   const isUploading = ref(false)
   const isSaving = ref(false)
   const isSuggesting = ref(false)
+  const isResetting = ref(false)
   const isVerifyingRebuild = ref(false)
   const readerError = ref('')
   const auditSummary = ref<AuditSummary | null>(null)
@@ -1081,6 +1087,40 @@ export function useDocumentReader() {
     suggestionReviews.value = restored
   }
 
+  async function resetProjectData() {
+    if (isResetting.value) return
+    isResetting.value = true
+    readerError.value = ''
+    try {
+      await resetProject(PROJECT_ID)
+      window.localStorage.removeItem(ACTIVE_DOCUMENT_KEY)
+      documentMeta.value = null
+      activeSession.value = null
+      sentences.value = []
+      sentenceQueue.value = []
+      loadedWindow.value = { offset: 0, limit: 0, total: 0 }
+      metrics.value = emptyMetrics()
+      currentSentenceIndex.value = 0
+      suggestionReviews.value = {}
+      reviewingSuggestionId.value = ''
+      lastAnnotationImport.value = null
+      lastUndoAction.value = null
+      sentenceElements.value = {}
+      rebuildPreview.value = null
+      runHistory.value = []
+      reviewQueueDetails.value = []
+      reviewQueueTotal.value = 0
+      selection.clearSelection()
+      await loadDocumentList()
+      await loadProjectTags()
+      await refreshAuditSummary()
+    } catch (error) {
+      readerError.value = error instanceof Error ? error.message : 'Could not reset project.'
+    } finally {
+      isResetting.value = false
+    }
+  }
+
   function exportJsonl() {
     if (!documentMeta.value) return
     window.location.href = documentExportUrl(PROJECT_ID, documentMeta.value.id)
@@ -1191,6 +1231,7 @@ export function useDocumentReader() {
     isUploading,
     isSaving,
     isSuggesting,
+    isResetting,
     isVerifyingRebuild,
     readerError,
     auditSummary,
@@ -1264,6 +1305,7 @@ export function useDocumentReader() {
     exportTagSchemaJson,
     exportRunProvenanceJson,
     verifyRebuildPreview,
+    resetProjectData,
     refreshAuditSummary,
     refreshRunHistory,
   }

@@ -108,6 +108,7 @@ const {
   isUploading,
   isSaving,
   isSuggesting,
+  isResetting,
   isVerifyingRebuild,
   readerError,
   auditSummary,
@@ -181,6 +182,7 @@ const {
   exportTagSchemaJson,
   exportRunProvenanceJson,
   verifyRebuildPreview,
+  resetProjectData,
 } = useDocumentReader()
 
 const localizedReviewSummary = computed(() => labels.value.tags.suggestionsWaiting(metrics.value.suggestion_count))
@@ -193,6 +195,11 @@ const localizedReviewQueueSummary = computed(() => {
     : labels.value.reader.pendingReviews(reviewQueueItems.length)
 })
 const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.value.reader.undoTitle : labels.value.reader.undoTitle))
+
+async function confirmProjectReset() {
+  if (!window.confirm(labels.value.metrics.resetConfirm)) return
+  await resetProjectData()
+}
 </script>
 
 <template>
@@ -367,6 +374,7 @@ const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.valu
         :review-queue-order="reviewQueueOrder"
         :last-annotation-import="lastAnnotationImport"
         :is-verifying-rebuild="isVerifyingRebuild"
+        :is-resetting="isResetting"
         @export="exportJsonl"
         @export-prodigy="exportProdigyJsonl"
         @export-prodigy-spans="exportProdigySpansJsonl"
@@ -378,6 +386,7 @@ const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.valu
         @export-tag-schema="exportTagSchemaJson"
         @export-run-provenance="exportRunProvenanceJson"
         @verify-rebuild="verifyRebuildPreview"
+        @reset-project="confirmProjectReset"
       />
     </section>
   </main>

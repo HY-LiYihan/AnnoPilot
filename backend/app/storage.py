@@ -39,6 +39,7 @@ RUN_PROVENANCE_SCHEMA_VERSION = "annopilot.run_provenance.v1"
 HIGH_CONFIDENCE_THRESHOLD = 0.9
 MEDIUM_CONFIDENCE_THRESHOLD = 0.75
 REPLAYABLE_EVENT_FIELDS = {
+    "project.reset": {"reset_at"},
     "tag.created": {"tag_id", "name", "shortcut", "color"},
     "tag.renamed": {"tag_id", "name"},
     "tag.updated": {"tag_id"},
@@ -1608,6 +1609,28 @@ class AnnotationStorage:
             "source_sha256": source_sha256,
             "tags": self.get_tags(project_id),
         }
+
+    def reset_project(self, project_id: str) -> dict[str, Any]:
+        self.flush_event_outbox(project_id)
+        reset_at = self._now()
+        with self.connect() as conn:
+            conn.execute("BEGIN")
+            self._seed_tags(conn, project_id)
+            counts = self._count_project_runtime_rows(conn, project_id)
+            self._clear_project_runtime_rows(conn, project_id)
+            self._enqueue_event(
+                conn,
+                project_id,
+                {
+                    "type": "project.reset",
+                    "reset_at": reset_at,
+                    **counts,
+                },
+            )
+            conn.commit()
+
+        self.flush_event_outbox(project_id)
+        return {"project_id": project_id, "reset_at": reset_at, **counts}
 
     def export_event_lines(self, project_id: str) -> list[str]:
         self.flush_event_outbox(project_id)
@@ -3273,6 +3296,135 @@ class AnnotationStorage:
             (event["event_id"], project_id, json.dumps(event, ensure_ascii=False), event["ts"]),
         )
         return event
+
+    @classmethod
+    def _count_project_runtime_rows(cls, conn: sqlite3.Connection, project_id: str) -> dict[str, int]:
+        return {
+            "deleted_documents": cls._count_rows(conn, "SELECT COUNT(*) AS count FROM documents WHERE project_id = ?", (project_id,)),
+            "deleted_sentences": cls._count_rows(
+                conn,
+                """
+                SELECT COUNT(*) AS count
+                FROM sentences s
+                JOIN documents d ON d.id = s.document_id
+                WHERE d.project_id = ?
+                """,
+                (project_id,),
+            ),
+            "deleted_tokens": cls._count_rows(
+                conn,
+                """
+                SELECT COUNT(*) AS count
+                FROM tokens t
+                JOIN sentences s ON s.id = t.sentence_id
+                JOIN documents d ON d.id = s.document_id
+                WHERE d.project_id = ?
+                """,
+                (project_id,),
+            ),
+            "deleted_annotations": cls._count_rows(
+                conn,
+                """
+                SELECT COUNT(*) AS count
+                FROM annotations a
+                JOIN sentences s ON s.id = a.sentence_id
+                JOIN documents d ON d.id = s.document_id
+                WHERE d.project_id = ?
+                """,
+                (project_id,),
+            ),
+            "deleted_suggestions": cls._count_rows(
+                conn,
+                """
+                SELECT COUNT(*) AS count
+                FROM annotation_suggestions sg
+                JOIN sentences s ON s.id = sg.sentence_id
+                JOIN documents d ON d.id = s.document_id
+                WHERE d.project_id = ?
+                """,
+                (project_id,),
+            ),
+            "deleted_suggestion_reviews": cls._count_rows(
+                conn,
+                """
+                SELECT COUNT(*) AS count
+                FROM annotation_suggestion_reviews rev
+                JOIN annotation_suggestions sg ON sg.id = rev.suggestion_id
+                JOIN sentences s ON s.id = sg.sentence_id
+                JOIN documents d ON d.id = s.document_id
+                WHERE d.project_id = ?
+                """,
+                (project_id,),
+            ),
+            "deleted_runs": cls._count_rows(conn, "SELECT COUNT(*) AS count FROM annotation_runs WHERE project_id = ?", (project_id,)),
+            "deleted_sessions": cls._count_rows(conn, "SELECT COUNT(*) AS count FROM annotation_sessions WHERE project_id = ?", (project_id,)),
+        }
+
+    @staticmethod
+    def _count_rows(conn: sqlite3.Connection, query: str, params: tuple[Any, ...]) -> int:
+        return int(conn.execute(query, params).fetchone()["count"])
+
+    @staticmethod
+    def _clear_project_runtime_rows(conn: sqlite3.Connection, project_id: str) -> None:
+        conn.execute(
+            """
+            DELETE FROM annotation_suggestion_reviews
+            WHERE suggestion_id IN (
+              SELECT sg.id
+              FROM annotation_suggestions sg
+              JOIN sentences s ON s.id = sg.sentence_id
+              JOIN documents d ON d.id = s.document_id
+              WHERE d.project_id = ?
+            )
+            """,
+            (project_id,),
+        )
+        conn.execute(
+            """
+            DELETE FROM annotation_suggestions
+            WHERE sentence_id IN (
+              SELECT s.id
+              FROM sentences s
+              JOIN documents d ON d.id = s.document_id
+              WHERE d.project_id = ?
+            )
+            """,
+            (project_id,),
+        )
+        conn.execute(
+            """
+            DELETE FROM annotations
+            WHERE sentence_id IN (
+              SELECT s.id
+              FROM sentences s
+              JOIN documents d ON d.id = s.document_id
+              WHERE d.project_id = ?
+            )
+            """,
+            (project_id,),
+        )
+        conn.execute(
+            """
+            DELETE FROM tokens
+            WHERE sentence_id IN (
+              SELECT s.id
+              FROM sentences s
+              JOIN documents d ON d.id = s.document_id
+              WHERE d.project_id = ?
+            )
+            """,
+            (project_id,),
+        )
+        conn.execute(
+            """
+            DELETE FROM sentences
+            WHERE document_id IN (SELECT id FROM documents WHERE project_id = ?)
+            """,
+            (project_id,),
+        )
+        conn.execute("DELETE FROM annotation_runs WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM annotation_sessions WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM documents WHERE project_id = ?", (project_id,))
 
     @staticmethod
     def _event_actor(payload: dict[str, Any]) -> dict[str, str]:

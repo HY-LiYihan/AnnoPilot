@@ -260,6 +260,19 @@ export type ImportTxtResponse = {
   tags: TagDef[]
 }
 
+export type ProjectResetResponse = {
+  project_id: string
+  reset_at: string
+  deleted_documents: number
+  deleted_sentences: number
+  deleted_tokens: number
+  deleted_annotations: number
+  deleted_suggestions: number
+  deleted_suggestion_reviews: number
+  deleted_runs: number
+  deleted_sessions: number
+}
+
 export type TxtImportMode = 'replace' | 'merge'
 
 export type ImportAnnotationsResponse = {

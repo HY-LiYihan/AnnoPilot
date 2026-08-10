@@ -262,6 +262,9 @@ export const UI_LABELS = {
       exportTagSchema: '导出 Tag Schema',
       verifyRebuild: '验证重放',
       verifying: '验证中...',
+      resetProject: '重置项目',
+      resetting: '重置中...',
+      resetConfirm: '确认重置当前项目？这会清除所有已导入文档、句子、人工标注、AI 建议、评审和运行状态；已创建的 span labels 会保留。',
     },
   },
   en: {
@@ -523,6 +526,9 @@ export const UI_LABELS = {
       exportTagSchema: 'Export Tag Schema',
       verifyRebuild: 'Verify Rebuild',
       verifying: 'Verifying...',
+      resetProject: 'Reset Project',
+      resetting: 'Resetting...',
+      resetConfirm: 'Reset the current project? This clears imported documents, sentences, annotations, AI suggestions, reviews, and runtime state. Existing span labels are kept.',
     },
   },
 }

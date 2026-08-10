@@ -106,6 +106,19 @@ class ImportTxtResponse(BaseModel):
     tags: list[TagResponse]
 
 
+class ProjectResetResponse(BaseModel):
+    project_id: str
+    reset_at: str
+    deleted_documents: int
+    deleted_sentences: int
+    deleted_tokens: int
+    deleted_annotations: int
+    deleted_suggestions: int
+    deleted_suggestion_reviews: int
+    deleted_runs: int
+    deleted_sessions: int
+
+
 class ImportAnnotationsResponse(BaseModel):
     document_id: str
     filename: str

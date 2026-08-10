@@ -2175,6 +2175,76 @@ def test_empty_txt_returns_400(tmp_path: Path) -> None:
         assert response.status_code == 400
 
 
+def test_project_reset_clears_runtime_data_and_replays_cleanly(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage, suggestion_reviewer=FakeSuggestionReviewer())) as client:
+        tag = client.post("/api/projects/default/tags", json={"name": "角色", "examples": ["小猫"]}).json()["tag"]
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("story.txt", "清晨，小猫看见金色的叶子。小猫坐在桥边。", "text/plain")},
+        )
+        assert response.status_code == 200
+        document_id = response.json()["document_id"]
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        first_sentence = document["sentences"][0]
+        assert client.post(
+            f"/api/projects/default/sentences/{first_sentence['id']}/annotations",
+            json={"tag_id": tag["id"], "start_token_index": 1, "end_token_index": 2},
+        ).status_code == 200
+        assert client.post(f"/api/projects/default/documents/{document_id}/suggestions/run").status_code == 200
+        first_suggestion = client.get(f"/api/projects/default/documents/{document_id}").json()["sentences"][0]["suggestions"][0]
+        assert client.post(f"/api/projects/default/suggestions/{first_suggestion['id']}/llm-review").status_code == 200
+        assert client.post(
+            f"/api/projects/default/documents/{document_id}/session/cursor",
+            json={"current_sentence_index": 1},
+        ).status_code == 200
+
+        reset_response = client.post("/api/projects/default/reset")
+        assert reset_response.status_code == 200
+        reset_payload = reset_response.json()
+        assert reset_payload["deleted_documents"] == 1
+        assert reset_payload["deleted_sentences"] == 2
+        assert reset_payload["deleted_annotations"] == 1
+        assert reset_payload["deleted_suggestions"] >= 1
+        assert reset_payload["deleted_suggestion_reviews"] == 1
+        assert reset_payload["deleted_runs"] == 1
+        assert reset_payload["deleted_sessions"] == 1
+
+        assert client.get("/api/projects/default/documents").json()["documents"] == []
+        assert client.get(f"/api/projects/default/documents/{document_id}/summary").status_code == 404
+        assert client.get("/api/projects/default/tags").json()["tags"] == [
+            {**tag, "count": 0, "usage_count": 0, "suggestion_count": 0}
+        ]
+        audit = client.get("/api/projects/default/audit").json()
+        assert audit["event_types"]["project.reset"] == 1
+        assert audit["non_replayable_event_count"] == 0
+        assert audit["rebuild_status"] == "ready"
+        preview = client.post("/api/projects/default/rebuild/preview").json()
+        assert preview["ok"] is True
+        assert preview["documents"] == 0
+        assert preview["annotations"] == 0
+        assert preview["suggestions"] == 0
+        event_path = tmp_path / "projects" / "default" / "events.jsonl"
+
+    rebuilt_database = tmp_path / "rebuilt" / "annopilot.sqlite"
+    rebuild_result = rebuild_project_from_events(
+        project_id="default",
+        event_path=event_path,
+        database_path=rebuilt_database,
+        data_root=tmp_path / "rebuilt-projects",
+        force=True,
+    )
+    assert rebuild_result.ok
+    assert rebuild_result.documents == 0
+    assert rebuild_result.annotations == 0
+    assert rebuild_result.suggestions == 0
+    assert rebuild_result.runs == 0
+    assert rebuild_result.tags == 1
+
+
 def test_audit_reports_replay_issue_details(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",
