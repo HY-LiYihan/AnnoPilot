@@ -1,0 +1,20 @@
+{
+  "schema_version": "annopilot.tag_schema.v1",
+  "record_type": "tag_schema",
+  "tags": [
+    {
+      "id": "emotion_cue",
+      "name": "情绪线索",
+      "description": "标注文中直接表达或明显暗示人物情绪、心理状态、态度变化的词语或短语。优先标具体表达，不标整句。",
+      "examples": [
+        "着急",
+        "眼睛一下子亮了起来",
+        "失望",
+        "松了一口气",
+        "心里暖暖的"
+      ],
+      "shortcut": "1",
+      "color": "#E06C75"
+    }
+  ]
+}

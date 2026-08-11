@@ -126,6 +126,7 @@ export function useDocumentReader() {
   const lastAnnotationImport = ref<AnnotationImportSummary | null>(null)
   const lastUndoAction = ref<UndoableSpanAction | null>(null)
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
+  let interactiveRefreshSerial = 0
 
   const selection = useTokenSelection(sentences)
   const currentSentence = computed(() => sentences.value.find((sentence) => sentence.index === currentSentenceIndex.value) ?? null)
@@ -322,13 +323,13 @@ export function useDocumentReader() {
     return !nearStart && !nearEnd
   }
 
-  function setCurrentSentence(index: number) {
+  function setCurrentSentence(index: number, scrollBehavior: ScrollBehavior = 'smooth') {
     if (!metrics.value.sentence_count) return
     currentSentenceIndex.value = clampIndex(index)
     selection.clearSelection()
     void (async () => {
       if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value)
-      await centerCurrentSentence()
+      await centerCurrentSentence(scrollBehavior)
       void persistSessionCursor(currentSentenceIndex.value)
     })()
   }
@@ -373,20 +374,79 @@ export function useDocumentReader() {
   async function completeCurrentSentence(answer: 'accept' | 'reject' | 'ignore' = 'accept') {
     const sentence = currentSentence.value
     if (!sentence || isSaving.value) return
+    const previousCompleted = sentence.completed
+    const previousAnswer = sentence.answer
+    const previousIndex = currentSentenceIndex.value
+    const nextIndex = Math.min(sentence.index + 1, Math.max(metrics.value.sentence_count - 1, 0))
     isSaving.value = true
     readerError.value = ''
     try {
+      applyLocalSentenceCompletion(sentence.id, true, answer)
+      updateLocalCompletionMetrics(previousCompleted, previousAnswer, true, answer)
+      setCurrentSentence(nextIndex, 'auto')
       await completeSentence(PROJECT_ID, sentence.id, true, answer)
-      sentence.completed = true
-      sentence.answer = answer
-      sentenceQueue.value = sentenceQueue.value.map((item) => (item.id === sentence.id ? { ...item, completed: true, answer } : item))
-      await refreshDocumentSummary()
-      await refreshAuditSummary()
-      setCurrentSentence(Math.min(currentSentenceIndex.value + 1, Math.max(metrics.value.sentence_count - 1, 0)))
+      void refreshAfterInteractiveSave()
     } catch (error) {
+      applyLocalSentenceCompletion(sentence.id, previousCompleted, previousAnswer)
+      updateLocalCompletionMetrics(true, answer, previousCompleted, previousAnswer)
+      setCurrentSentence(previousIndex, 'auto')
       readerError.value = error instanceof Error ? error.message : 'Could not complete sentence.'
     } finally {
       isSaving.value = false
+    }
+  }
+
+  function applyLocalSentenceCompletion(sentenceId: string, completed: boolean, answer: string) {
+    sentences.value = sentences.value.map((item) =>
+      item.id === sentenceId ? { ...item, completed, answer } : item,
+    )
+    sentenceQueue.value = sentenceQueue.value.map((item) =>
+      item.id === sentenceId ? { ...item, completed, answer } : item,
+    )
+  }
+
+  function updateLocalCompletionMetrics(
+    previousCompleted: boolean,
+    previousAnswer: string,
+    nextCompleted: boolean,
+    nextAnswer: string,
+  ) {
+    const nextAnswerCounts = { ...metrics.value.answer_counts }
+    const previousBucket = previousCompleted ? previousAnswer : 'pending'
+    const nextBucket = nextCompleted ? nextAnswer : 'pending'
+    nextAnswerCounts[previousBucket] = Math.max((nextAnswerCounts[previousBucket] ?? 0) - 1, 0)
+    nextAnswerCounts[nextBucket] = (nextAnswerCounts[nextBucket] ?? 0) + 1
+    const completedDelta = (nextCompleted ? 1 : 0) - (previousCompleted ? 1 : 0)
+    const completedCount = Math.min(
+      Math.max(metrics.value.completed_count + completedDelta, 0),
+      metrics.value.sentence_count,
+    )
+    const progress = metrics.value.sentence_count ? completedCount / metrics.value.sentence_count : 0
+    metrics.value = {
+      ...metrics.value,
+      completed_count: completedCount,
+      progress,
+      answer_counts: nextAnswerCounts,
+    }
+    documents.value = documents.value.map((document) =>
+      document.id === documentMeta.value?.id
+        ? { ...document, completed_count: completedCount, progress }
+        : document,
+    )
+  }
+
+  async function refreshAfterInteractiveSave() {
+    const refreshSerial = ++interactiveRefreshSerial
+    try {
+      if (!documentMeta.value) return
+      const payload = await fetchDocumentSummary(PROJECT_ID, documentMeta.value.id)
+      if (refreshSerial !== interactiveRefreshSerial) return
+      applyDocumentSummary(payload)
+      await loadDocumentList()
+      await refreshReviewQueue()
+      await refreshAuditSummary()
+    } catch (error) {
+      readerError.value = error instanceof Error ? error.message : 'Could not refresh workspace status.'
     }
   }
 
@@ -470,52 +530,64 @@ export function useDocumentReader() {
     if (event.key === 'Enter') {
       event.preventDefault()
       void completeCurrentSentence()
+      return
     }
     if (event.key.toLowerCase() === 'i') {
       event.preventDefault()
       void completeCurrentSentence('ignore')
+      return
     }
     if (event.key.toLowerCase() === 'j') {
       event.preventDefault()
       void completeCurrentSentence('reject')
+      return
     }
     if (event.key.toLowerCase() === 'e') {
       event.preventDefault()
       void reopenCurrentSentence()
+      return
     }
     if ((event.code === 'Space' || event.key === ' ') && !target?.matches('button, a')) {
       event.preventDefault()
       void completeCurrentSentence('ignore')
+      return
     }
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       setCurrentSentence(currentSentenceIndex.value + 1)
+      return
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault()
       setCurrentSentence(currentSentenceIndex.value - 1)
+      return
     }
     if (event.key.toLowerCase() === 'a') {
       event.preventDefault()
       void acceptCurrentSentenceSuggestions()
+      return
     }
     if (event.key.toLowerCase() === 'x') {
       event.preventDefault()
       void rejectCurrentSentenceSuggestions()
+      return
     }
     if (event.key.toLowerCase() === 'y') {
       event.preventDefault()
       const suggestion = activeSuggestions.value[0]
       if (suggestion) void acceptSuggestedSpan(suggestion)
+      return
     }
     if (event.key.toLowerCase() === 'n') {
       event.preventDefault()
       const suggestion = activeSuggestions.value[0]
       if (suggestion) void rejectSuggestedSpan(suggestion)
+      return
     }
     if (event.key.toLowerCase() === 'r') {
       event.preventDefault()
       jumpToNextReviewSentence()
+      return
     }
   }
 
@@ -523,7 +595,7 @@ export function useDocumentReader() {
     sentenceElements.value[sentenceId] = element as HTMLElement | null
   }
 
-  async function centerCurrentSentence() {
+  async function centerCurrentSentence(behavior: ScrollBehavior = 'smooth') {
     await nextTick()
     const sentence = currentSentence.value
     if (!sentence) return
@@ -536,10 +608,12 @@ export function useDocumentReader() {
     const centeredTop =
       reader.scrollTop + elementRect.top - readerRect.top - (reader.clientHeight - elementRect.height) / 2
     const maxScrollTop = Math.max(reader.scrollHeight - reader.clientHeight, 0)
-    reader.scrollTo({
-      top: Math.min(Math.max(centeredTop, 0), maxScrollTop),
-      behavior: 'smooth',
-    })
+    const top = Math.min(Math.max(centeredTop, 0), maxScrollTop)
+    if (behavior === 'auto') {
+      reader.scrollTop = top
+      return
+    }
+    reader.scrollTo({ top, behavior })
   }
 
   function onSentenceClick(sentenceIndex: number) {

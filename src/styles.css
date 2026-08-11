@@ -452,6 +452,10 @@ h2 {
   gap: 3px;
 }
 
+.tag-copy {
+  flex: 1 1 auto;
+}
+
 .tag-list,
 .metric-stack,
 .quality-list {
@@ -460,7 +464,7 @@ h2 {
 }
 
 .tag-list {
-  max-height: calc(62px * 5 + 10px * 4);
+  max-height: calc(76px * 5 + 10px * 4);
   overflow-y: auto;
   padding-right: 3px;
 }
@@ -661,16 +665,28 @@ h2 {
 }
 
 .tag-option {
-  min-height: 62px;
-  padding: 6px;
+  min-height: 76px;
+  display: grid;
+  align-items: stretch;
+  gap: 5px;
+  padding: 7px 8px;
+  cursor: default;
+}
+
+.tag-option.editing {
+  align-items: flex-start;
+  padding: 8px;
+  cursor: default;
 }
 
 .tag-main-button {
   min-width: 0;
-  flex: 1 1 auto;
-  display: flex;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 0;
   border: 0;
   color: inherit;
   background: transparent;
@@ -678,35 +694,80 @@ h2 {
   cursor: pointer;
 }
 
+.tag-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  padding-left: 21px;
+}
+
+.tag-card-actions .tag-edit-button,
+.tag-card-actions .tag-delete-button {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+.tag-card-actions kbd {
+  margin-left: 0;
+  min-width: 26px;
+  height: 26px;
+}
+
 .tag-edit-form {
   min-width: 0;
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: 13px minmax(0, 1fr) 34px 34px;
-  align-items: center;
+  grid-template-columns: 13px minmax(0, 1fr) 34px;
+  align-items: start;
   gap: 8px;
 }
 
-.tag-edit-form input {
+.tag-edit-form .tag-dot {
+  margin-top: 10px;
+}
+
+.tag-edit-fields {
   min-width: 0;
-  height: 34px;
-  flex: 1 1 auto;
-  padding: 0 9px;
+  display: grid;
+  gap: 7px;
+}
+
+.tag-edit-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.tag-edit-form input,
+.tag-edit-form textarea {
+  min-width: 0;
+  width: 100%;
+  padding: 8px 9px;
   border: 1px solid color-mix(in srgb, var(--tag-color) 45%, #d6d2c9);
   border-radius: 8px;
   color: #17201d;
   background: #ffffff;
+  font: inherit;
   outline: none;
 }
 
-.tag-edit-form input:focus {
+.tag-edit-form input {
+  height: 34px;
+}
+
+.tag-edit-form textarea {
+  min-height: 72px;
+  line-height: 1.35;
+  resize: vertical;
+}
+
+.tag-edit-form input:focus,
+.tag-edit-form textarea:focus {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--tag-color) 15%, transparent);
 }
 
-.tag-edit-form .tag-guideline-input,
-.tag-edit-form .tag-definition-input {
-  grid-column: 2 / -1;
-  height: 30px;
+.tag-edit-form .tag-guideline-input {
   font-size: 0.78rem;
 }
 
@@ -815,6 +876,8 @@ h2 {
 
 .tag-copy strong {
   overflow: hidden;
+  color: #17201d;
+  line-height: 1.22;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -825,9 +888,22 @@ h2 {
   font-size: 0.72rem;
   font-style: normal;
   font-weight: 760;
-  line-height: 1.25;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tag-count-badge {
+  width: 26px;
+  height: 26px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #00685b;
+  background: #e7f3ef;
+  font-size: 0.68rem;
+  font-weight: 900;
 }
 
 kbd {

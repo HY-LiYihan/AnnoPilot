@@ -218,57 +218,63 @@ function handleTagSchemaInput(event: Event) {
         v-for="tagItem in tags"
         :key="tagItem.id"
         class="tag-option"
-        :class="{ selected: tagItem.id === selectedTagId, applyable: hasPendingSelection }"
+        :class="{ selected: tagItem.id === selectedTagId, applyable: hasPendingSelection, editing: editingTagId === tagItem.id }"
         :style="{ '--tag-color': tagItem.color }"
       >
         <form v-if="editingTagId === tagItem.id" class="tag-edit-form" @submit.prevent="submitEditTag(tagItem)" @click.stop>
           <span class="tag-dot" aria-hidden="true"></span>
-          <input v-model="editingTagName" type="text" maxlength="32" :aria-label="labels.renameAria" :disabled="isSaving" />
-          <input
-            v-model="editingTagDescription"
-            class="tag-guideline-input"
-            type="text"
-            maxlength="280"
-            :aria-label="labels.guidelineAria"
-            :placeholder="labels.guidelinePlaceholder"
-            :disabled="isSaving"
-          />
-          <button type="submit" class="tag-edit-button" :disabled="isSaving || !editingTagName.trim()" :title="labels.saveTitle">
-            <Check :size="15" aria-hidden="true" />
-          </button>
-          <button type="button" class="tag-edit-button" :disabled="isSaving" :title="labels.cancelTitle" @click="cancelEditTag">
-            <X :size="15" aria-hidden="true" />
-          </button>
+          <div class="tag-edit-fields">
+            <input v-model="editingTagName" type="text" maxlength="32" :aria-label="labels.renameAria" :disabled="isSaving" />
+            <textarea
+              v-model="editingTagDescription"
+              class="tag-guideline-input"
+              maxlength="280"
+              rows="3"
+              :aria-label="labels.guidelineAria"
+              :placeholder="labels.guidelinePlaceholder"
+              :disabled="isSaving"
+            ></textarea>
+          </div>
+          <div class="tag-edit-actions">
+            <button type="submit" class="tag-edit-button" :disabled="isSaving || !editingTagName.trim()" :title="labels.saveTitle">
+              <Check :size="15" aria-hidden="true" />
+            </button>
+            <button type="button" class="tag-edit-button" :disabled="isSaving" :title="labels.cancelTitle" @click="cancelEditTag">
+              <X :size="15" aria-hidden="true" />
+            </button>
+          </div>
         </form>
-        <button v-else type="button" class="tag-main-button" @click="emit('tag-click', tagItem.id)">
-          <span class="tag-dot" aria-hidden="true"></span>
-          <span class="tag-copy">
-            <strong>{{ tagItem.name }}</strong>
-            <small>{{ labels.annotationCount(tagUsage(tagItem)) }}</small>
-            <em v-if="tagItem.description">{{ tagItem.description }}</em>
-          </span>
-          <kbd>{{ tagItem.shortcut }}</kbd>
-        </button>
-        <button
-          v-if="editingTagId !== tagItem.id"
-          type="button"
-          class="tag-edit-button"
-          :disabled="isSaving"
-          :title="labels.editTitle"
-          @click.stop="startEditTag(tagItem)"
-        >
-          <Pencil :size="15" aria-hidden="true" />
-        </button>
-        <button
-          v-if="editingTagId !== tagItem.id"
-          type="button"
-          class="tag-delete-button"
-          :disabled="isSaving"
-          :title="hasDeleteImpact(tagItem) ? labels.deleteWithDataTitle(deleteImpactSummary(tagItem, labels)) : labels.deleteTitle"
-          @click="requestDeleteTag(tagItem)"
-        >
-          <Trash2 :size="15" aria-hidden="true" />
-        </button>
+        <template v-else>
+          <button type="button" class="tag-main-button" @click="emit('tag-click', tagItem.id)">
+            <span class="tag-dot" aria-hidden="true"></span>
+            <span class="tag-copy">
+              <strong>{{ tagItem.name }}</strong>
+              <em v-if="tagItem.description">{{ tagItem.description }}</em>
+            </span>
+          </button>
+          <div class="tag-card-actions">
+            <span class="tag-count-badge" :title="labels.annotationCount(tagUsage(tagItem))">{{ tagUsage(tagItem) }}</span>
+            <kbd>{{ tagItem.shortcut }}</kbd>
+            <button
+              type="button"
+              class="tag-edit-button"
+              :disabled="isSaving"
+              :title="labels.editTitle"
+              @click.stop="startEditTag(tagItem)"
+            >
+              <Pencil :size="15" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              class="tag-delete-button"
+              :disabled="isSaving"
+              :title="hasDeleteImpact(tagItem) ? labels.deleteWithDataTitle(deleteImpactSummary(tagItem, labels)) : labels.deleteTitle"
+              @click="requestDeleteTag(tagItem)"
+            >
+              <Trash2 :size="15" aria-hidden="true" />
+            </button>
+          </div>
+        </template>
       </div>
     </div>
 
