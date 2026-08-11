@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 from collections.abc import Callable
 from typing import Any
+
+from .tags import TagQueryRepository
 
 
 HIGH_CONFIDENCE_THRESHOLD = 0.9
@@ -26,7 +27,7 @@ class DocumentQueryRepository:
         self.connect = connect
         self.not_found_error = not_found_error
         self.validation_error = validation_error
-        self.default_tags = default_tags or []
+        self.tags = TagQueryRepository(default_tags=default_tags)
 
     def list_documents(self, project_id: str, limit: int = 50) -> dict[str, Any]:
         safe_limit = max(1, min(int(limit), 100))
@@ -252,7 +253,7 @@ class DocumentQueryRepository:
                 """,
                 (document_id,),
             ).fetchall()
-            tags = self._get_tags(conn, project_id)
+            tags = self.tags.list_tags(conn, project_id)
             session = self._get_session(conn, project_id, document_id)
 
         sentence_count = int(sentence_stats["sentence_count"] or 0)
@@ -555,37 +556,6 @@ class DocumentQueryRepository:
             "total": int(total or 0),
         }
 
-    def _get_tags(self, conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:
-        rows = conn.execute(
-            """
-            SELECT
-              tags.id,
-              tags.name,
-              tags.description,
-              tags.examples_json,
-              tags.shortcut,
-              tags.color,
-              COUNT(DISTINCT a.id) AS usage_count,
-              COUNT(DISTINCT sg.id) AS suggestion_count
-            FROM tags
-            LEFT JOIN documents d ON d.project_id = tags.project_id
-            LEFT JOIN sentences s ON s.document_id = d.id
-            LEFT JOIN annotations a ON a.sentence_id = s.id AND a.tag_id = tags.id
-            LEFT JOIN annotation_suggestions sg ON sg.sentence_id = s.id AND sg.tag_id = tags.id
-            WHERE tags.project_id = ?
-            GROUP BY tags.id, tags.name, tags.description, tags.examples_json, tags.shortcut, tags.color
-            """,
-            (project_id,),
-        ).fetchall()
-        sort_order = {tag["id"]: index for index, tag in enumerate(self.default_tags)}
-        tags = []
-        for row in sorted(rows, key=lambda row: (sort_order.get(row["id"], len(sort_order)), self._shortcut_order(row["shortcut"]), row["name"])):
-            tag = self._row_dict(row, exclude={"examples_json"})
-            tag["examples"] = self._parse_examples_json(row["examples_json"])
-            tag["count"] = row["usage_count"]
-            tags.append(tag)
-        return tags
-
     @staticmethod
     def _get_session(conn: sqlite3.Connection, project_id: str, document_id: str) -> dict[str, Any]:
         row = conn.execute(
@@ -661,33 +631,3 @@ class DocumentQueryRepository:
         if confidence >= MEDIUM_CONFIDENCE_THRESHOLD:
             return "medium"
         return "low"
-
-    @classmethod
-    def _parse_examples_json(cls, value: str | None) -> list[str]:
-        if not value:
-            return []
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return []
-        if not isinstance(parsed, list):
-            return []
-        return cls._normalize_examples([str(item) for item in parsed])
-
-    @staticmethod
-    def _normalize_examples(values: list[str] | None) -> list[str]:
-        if not values:
-            return []
-        normalized: list[str] = []
-        seen: set[str] = set()
-        for value in values:
-            text = str(value).strip()
-            if not text or text in seen:
-                continue
-            seen.add(text)
-            normalized.append(text)
-        return normalized[:80]
-
-    @staticmethod
-    def _shortcut_order(shortcut: str) -> int:
-        return int(shortcut) if shortcut.isdigit() else 10_000

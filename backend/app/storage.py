@@ -19,7 +19,7 @@ from .rag import (
     generate_candidate_spans,
     match_normalization_config,
 )
-from .repositories import DocumentQueryRepository
+from .repositories import DocumentQueryRepository, TagQueryRepository
 from .text_processing import SentenceSpan, normalize_text, split_sentences, tokenize_sentence
 
 
@@ -117,6 +117,7 @@ class AnnotationStorage:
             validation_error=ValidationError,
             default_tags=DEFAULT_TAGS,
         )
+        self.tag_queries = TagQueryRepository(default_tags=DEFAULT_TAGS)
 
     def initialize(self) -> None:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2526,7 +2527,7 @@ class AnnotationStorage:
     def get_tags(self, project_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
             self._seed_tags(conn, project_id)
-            return self._get_tags(conn, project_id)
+            return self.tag_queries.list_tags(conn, project_id)
 
     def get_runtime_setting(self, key: str) -> str | None:
         with self.connect() as conn:
@@ -3052,35 +3053,7 @@ class AnnotationStorage:
         )
 
     def _get_tags(self, conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:
-        rows = conn.execute(
-            """
-            SELECT
-              tags.id,
-              tags.name,
-              tags.description,
-              tags.examples_json,
-              tags.shortcut,
-              tags.color,
-              COUNT(DISTINCT a.id) AS usage_count,
-              COUNT(DISTINCT sg.id) AS suggestion_count
-            FROM tags
-            LEFT JOIN documents d ON d.project_id = tags.project_id
-            LEFT JOIN sentences s ON s.document_id = d.id
-            LEFT JOIN annotations a ON a.sentence_id = s.id AND a.tag_id = tags.id
-            LEFT JOIN annotation_suggestions sg ON sg.sentence_id = s.id AND sg.tag_id = tags.id
-            WHERE tags.project_id = ?
-            GROUP BY tags.id, tags.name, tags.description, tags.examples_json, tags.shortcut, tags.color
-            """,
-            (project_id,),
-        ).fetchall()
-        sort_order = {tag["id"]: index for index, tag in enumerate(DEFAULT_TAGS)}
-        tags = []
-        for row in sorted(rows, key=lambda row: (sort_order.get(row["id"], len(sort_order)), self._shortcut_order(row["shortcut"]), row["name"])):
-            tag = self._row_dict(row, exclude={"examples_json"})
-            tag["examples"] = self._parse_examples_json(row["examples_json"])
-            tag["count"] = row["usage_count"]
-            tags.append(tag)
-        return tags
+        return self.tag_queries.list_tags(conn, project_id)
 
     def _get_document_session(self, project_id: str, document_id: str) -> dict[str, Any]:
         with self.connect() as conn:
@@ -3353,10 +3326,6 @@ class AnnotationStorage:
                 }
             )
         return tags
-
-    @staticmethod
-    def _shortcut_order(shortcut: str) -> int:
-        return int(shortcut) if shortcut.isdigit() else 10_000
 
     def _get_suggestion_row(self, project_id: str, suggestion_id: str) -> sqlite3.Row:
         with self.connect() as conn:
