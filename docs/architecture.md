@@ -2,6 +2,8 @@
 
 AnnoPilot 现在已经从早期 Streamlit 方向切到轻量的 **local-first Web application**：产品 UI 使用 Vue 3 + Vite + TypeScript，backend 使用 FastAPI，runtime state 放在 SQLite，durable audit trail 使用 JSONL。默认部署目标仍然是单个 Docker container，内存预算控制在 1 GB 以内。
 
+长期架构取舍记录在 [架构决策记录](/decisions/) 中；本页只描述当前系统形态和主要数据流。
+
 ## 当前目标
 
 - 面向 mobile 和 desktop 的 annotation / review Web UI，优先保证高频标注效率。

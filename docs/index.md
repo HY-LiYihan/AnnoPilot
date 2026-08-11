@@ -35,6 +35,7 @@ AnnoPilot repo 同时维护两个面向用户的入口：
 
 - [当前状态](/guide/current-state)：目前已经落地的 Product Web UI、FastAPI API、SQLite storage、JSONL event log 和 Docker deployment。
 - [架构设计](/architecture)：当前确定的 Vue 3 + Vite frontend、FastAPI backend、SQLite runtime store 和 JSONL durable artifacts。
+- [架构决策记录](/decisions/)：记录 SQLite + JSONL、storage facade 拆分和暂缓重型依赖等长期架构取舍。
 - [API Surface](/guide/api)：当前 FastAPI endpoints、request/response 边界和 frontend client 分工。
 - [本地开发](/guide/development)：如何启动 Web UI、API、docs site、测试和 Docker build。
 - [Runtime Storage](/guide/runtime-storage)：当前 SQLite schema、JSONL events 和 export JSONL 的职责分工。

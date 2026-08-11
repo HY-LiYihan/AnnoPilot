@@ -22,8 +22,18 @@ export default defineConfig({
           { text: '项目概览', link: '/' },
           { text: '当前状态', link: '/guide/current-state' },
           { text: '架构设计', link: '/architecture' },
+          { text: '架构决策记录', link: '/decisions/' },
           { text: 'API Surface', link: '/guide/api' },
           { text: 'Runtime Storage', link: '/guide/runtime-storage' },
+        ],
+      },
+      {
+        text: '架构决策',
+        items: [
+          { text: '决策索引', link: '/decisions/' },
+          { text: '0001 SQLite + JSONL', link: '/decisions/0001-local-first-sqlite-jsonl' },
+          { text: '0002 Storage Facade', link: '/decisions/0002-storage-facade-refactor' },
+          { text: '0003 暂缓重型依赖', link: '/decisions/0003-defer-heavy-runtime-dependencies' },
         ],
       },
       {
