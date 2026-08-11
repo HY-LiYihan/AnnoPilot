@@ -21,7 +21,7 @@ from .rag import (
     match_normalization_config,
 )
 from .repositories import DocumentQueryRepository, TagQueryRepository
-from .services import SuggestionDecisionService
+from .services import AnnotationService, SuggestionDecisionService
 from .text_processing import SentenceSpan, normalize_text, split_sentences, tokenize_sentence
 
 
@@ -130,13 +130,22 @@ class AnnotationStorage:
             human_actor_id=HUMAN_ACTOR_ID,
             system_actor_id=CHARACTER_RAG_ACTOR_ID,
         )
+        self.annotation_service = AnnotationService(
+            self.connect,
+            new_id=self._new_id,
+            now=self._now,
+            enqueue_event=self._enqueue_event,
+            flush_event_outbox=self.flush_event_outbox,
+            not_found_error=NotFoundError,
+            validation_error=ValidationError,
+        )
         self.suggestion_decisions = SuggestionDecisionService(
             self.connect,
             new_id=self._new_id,
             now=self._now,
             enqueue_event=self._enqueue_event,
             flush_event_outbox=self.flush_event_outbox,
-            get_sentence_annotations=self.get_sentence_annotations,
+            get_sentence_annotations=self.annotation_service.get_sentence_annotations,
             ranges_overlap=self._ranges_overlap,
             not_found_error=NotFoundError,
             validation_error=ValidationError,
@@ -350,161 +359,24 @@ class AnnotationStorage:
         source: str = "human",
         source_suggestion_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
-        start_index, end_index = sorted((start_token_index, end_token_index))
-        annotation_id = self._new_id("ann")
-        now = self._now()
-        if source not in {"human", "accepted_suggestion"}:
-            raise ValidationError("Unknown annotation source.")
-
-        with self.connect() as conn:
-            tag = conn.execute("SELECT id FROM tags WHERE project_id = ? AND id = ?", (project_id, tag_id)).fetchone()
-            if tag is None:
-                raise ValidationError("Unknown tag.")
-
-            sentence = conn.execute(
-                """
-                SELECT s.id, s.document_id, d.project_id, d.text AS document_text
-                FROM sentences s
-                JOIN documents d ON d.id = s.document_id
-                WHERE s.id = ? AND d.project_id = ?
-                """,
-                (sentence_id, project_id),
-            ).fetchone()
-            if sentence is None:
-                raise NotFoundError("Sentence not found.")
-
-            token_rows = conn.execute(
-                """
-                SELECT token_index, start_char, end_char
-                FROM tokens
-                WHERE sentence_id = ? AND token_index BETWEEN ? AND ?
-                ORDER BY token_index
-                """,
-                (sentence_id, start_index, end_index),
-            ).fetchall()
-            expected_count = end_index - start_index + 1
-            if len(token_rows) != expected_count:
-                raise ValidationError("Token range is invalid.")
-
-            start_char = token_rows[0]["start_char"]
-            end_char = token_rows[-1]["end_char"]
-            selected_text = sentence["document_text"][start_char:end_char]
-
-            conn.execute(
-                """
-                INSERT INTO annotations (
-                    id, sentence_id, tag_id, start_token_index, end_token_index,
-                    start_char, end_char, text, source, source_suggestion_id, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    annotation_id,
-                    sentence_id,
-                    tag_id,
-                    start_index,
-                    end_index,
-                    start_char,
-                    end_char,
-                    selected_text,
-                    source,
-                    source_suggestion_id,
-                    now,
-                ),
-            )
-            self._enqueue_event(
-                conn,
-                project_id,
-                {
-                    "type": "annotation.created",
-                    "annotation_id": annotation_id,
-                    "sentence_id": sentence_id,
-                    "tag_id": tag_id,
-                    "start_token_index": start_index,
-                    "end_token_index": end_index,
-                    "start_char": start_char,
-                    "end_char": end_char,
-                    "text": selected_text,
-                    "source": source,
-                    "source_suggestion_id": source_suggestion_id,
-                    "created_at": now,
-                },
-            )
-
-        self.flush_event_outbox(project_id)
-        return self.get_sentence_annotations(project_id, sentence_id)
+        return self.annotation_service.create_annotation(
+            project_id,
+            sentence_id,
+            tag_id,
+            start_token_index,
+            end_token_index,
+            source,
+            source_suggestion_id,
+        )
 
     def delete_annotation(self, project_id: str, annotation_id: str) -> None:
-        with self.connect() as conn:
-            annotation = conn.execute(
-                """
-                SELECT a.id, a.sentence_id
-                FROM annotations a
-                JOIN sentences s ON s.id = a.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                WHERE a.id = ? AND d.project_id = ?
-                """,
-                (annotation_id, project_id),
-            ).fetchone()
-            if annotation is None:
-                raise NotFoundError("Annotation not found.")
-            conn.execute("DELETE FROM annotations WHERE id = ?", (annotation_id,))
-            self._enqueue_event(
-                conn,
-                project_id,
-                {"type": "annotation.deleted", "annotation_id": annotation_id, "sentence_id": annotation["sentence_id"]},
-            )
-
-        self.flush_event_outbox(project_id)
+        self.annotation_service.delete_annotation(project_id, annotation_id)
 
     def set_sentence_completed(self, project_id: str, sentence_id: str, completed: bool, answer: str | None = None) -> dict[str, Any]:
-        normalized_answer = self._normalize_sentence_answer(completed, answer)
-        with self.connect() as conn:
-            sentence = conn.execute(
-                """
-                SELECT s.id, s.completed, s.answer
-                FROM sentences s
-                JOIN documents d ON d.id = s.document_id
-                WHERE s.id = ? AND d.project_id = ?
-                """,
-                (sentence_id, project_id),
-            ).fetchone()
-            if sentence is None:
-                raise NotFoundError("Sentence not found.")
-            conn.execute("UPDATE sentences SET completed = ?, answer = ? WHERE id = ?", (int(completed), normalized_answer, sentence_id))
-            self._enqueue_event(
-                conn,
-                project_id,
-                {
-                    "type": "sentence.completed",
-                    "sentence_id": sentence_id,
-                    "old_completed": bool(sentence["completed"]),
-                    "old_answer": sentence["answer"] or ("accept" if sentence["completed"] else "pending"),
-                    "completed": completed,
-                    "answer": normalized_answer,
-                },
-            )
-
-        self.flush_event_outbox(project_id)
-        return {"completed": completed, "answer": normalized_answer}
+        return self.annotation_service.set_sentence_completed(project_id, sentence_id, completed, answer)
 
     def get_sentence_annotations(self, project_id: str, sentence_id: str) -> list[dict[str, Any]]:
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT a.id, a.tag_id, tags.name AS tag_name, tags.color AS tag_color,
-                       a.start_token_index, a.end_token_index, a.start_char, a.end_char, a.text,
-                       a.source, a.source_suggestion_id, a.created_at
-                FROM annotations a
-                JOIN sentences s ON s.id = a.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                JOIN tags ON tags.id = a.tag_id AND tags.project_id = d.project_id
-                WHERE a.sentence_id = ? AND d.project_id = ?
-                ORDER BY a.start_token_index, a.created_at
-                """,
-                (sentence_id, project_id),
-            ).fetchall()
-        return [self._row_dict(row) for row in rows]
+        return self.annotation_service.get_sentence_annotations(project_id, sentence_id)
 
     def export_document_lines(self, project_id: str, document_id: str) -> list[str]:
         document = self.get_document(project_id, document_id)
@@ -2667,15 +2539,6 @@ class AnnotationStorage:
             return int(value)
         except (TypeError, ValueError) as exc:
             raise ValidationError(f"Imported {field_name} must be an integer.") from exc
-
-    @staticmethod
-    def _normalize_sentence_answer(completed: bool, answer: str | None) -> str:
-        if not completed:
-            return "pending"
-        normalized = (answer or "accept").strip().lower()
-        if normalized not in {"accept", "reject", "ignore"}:
-            raise ValidationError("Sentence answer must be accept, reject, or ignore when completed.")
-        return normalized
 
     @classmethod
     def _parse_examples_json(cls, value: str | None) -> list[str]:
