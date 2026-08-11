@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from .db.connection import configure_connection, connect_database
 from .db.migrations import migrate_database
+from .events import EventOutbox
 from .rag import (
     CHARACTER_RAG_RETRIEVAL,
     build_examples,
@@ -20,6 +21,7 @@ from .rag import (
     match_normalization_config,
 )
 from .repositories import DocumentQueryRepository, TagQueryRepository
+from .services import SuggestionDecisionService
 from .text_processing import SentenceSpan, normalize_text, split_sentences, tokenize_sentence
 
 
@@ -118,6 +120,27 @@ class AnnotationStorage:
             default_tags=DEFAULT_TAGS,
         )
         self.tag_queries = TagQueryRepository(default_tags=DEFAULT_TAGS)
+        self.event_outbox = EventOutbox(
+            self.connect,
+            self.data_root,
+            event_lock=self._event_lock,
+            new_id=self._new_id,
+            now=self._now,
+            event_schema_version=EVENT_SCHEMA_VERSION,
+            human_actor_id=HUMAN_ACTOR_ID,
+            system_actor_id=CHARACTER_RAG_ACTOR_ID,
+        )
+        self.suggestion_decisions = SuggestionDecisionService(
+            self.connect,
+            new_id=self._new_id,
+            now=self._now,
+            enqueue_event=self._enqueue_event,
+            flush_event_outbox=self.flush_event_outbox,
+            get_sentence_annotations=self.get_sentence_annotations,
+            ranges_overlap=self._ranges_overlap,
+            not_found_error=NotFoundError,
+            validation_error=ValidationError,
+        )
 
     def initialize(self) -> None:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1779,499 +1802,19 @@ class AnnotationStorage:
         }
 
     def accept_suggestion(self, project_id: str, suggestion_id: str) -> list[dict[str, Any]]:
-        suggestion = self._get_suggestion_row(project_id, suggestion_id)
-        if suggestion["status"] != "pending":
-            raise ValidationError("Only pending suggestions can be accepted.")
-        annotations = self.create_annotation(
-            project_id=project_id,
-            sentence_id=suggestion["sentence_id"],
-            tag_id=suggestion["tag_id"],
-            start_token_index=suggestion["start_token_index"],
-            end_token_index=suggestion["end_token_index"],
-            source="accepted_suggestion",
-            source_suggestion_id=suggestion_id,
-        )
-        with self.connect() as conn:
-            conn.execute("UPDATE annotation_suggestions SET status = 'accepted' WHERE id = ?", (suggestion_id,))
-            self._enqueue_event(
-                conn,
-                project_id,
-                {"type": "suggestion.accepted", "suggestion_id": suggestion_id, "sentence_id": suggestion["sentence_id"]},
-            )
-        self.flush_event_outbox(project_id)
-        return annotations
+        return self.suggestion_decisions.accept_suggestion(project_id, suggestion_id)
 
     def accept_sentence_suggestions(self, project_id: str, sentence_id: str) -> dict[str, Any]:
-        now = self._now()
-        accepted_suggestion_ids: list[str] = []
-        skipped = 0
-
-        with self.connect() as conn:
-            sentence = conn.execute(
-                """
-                SELECT s.id
-                FROM sentences s
-                JOIN documents d ON d.id = s.document_id
-                WHERE s.id = ? AND d.project_id = ?
-                """,
-                (sentence_id, project_id),
-            ).fetchone()
-            if sentence is None:
-                raise NotFoundError("Sentence not found.")
-
-            existing_rows = conn.execute(
-                """
-                SELECT start_token_index, end_token_index
-                FROM annotations
-                WHERE sentence_id = ?
-                """,
-                (sentence_id,),
-            ).fetchall()
-            blocked_ranges = [(row["start_token_index"], row["end_token_index"]) for row in existing_rows]
-
-            suggestions = conn.execute(
-                """
-                SELECT id, sentence_id, tag_id, start_token_index, end_token_index, start_char, end_char, text
-                FROM annotation_suggestions
-                WHERE sentence_id = ? AND status = 'pending'
-                ORDER BY start_token_index, end_token_index, confidence DESC, id
-                """,
-                (sentence_id,),
-            ).fetchall()
-
-            for suggestion in suggestions:
-                if any(self._ranges_overlap(suggestion["start_token_index"], suggestion["end_token_index"], start, end) for start, end in blocked_ranges):
-                    skipped += 1
-                    continue
-
-                annotation_id = self._new_id("ann")
-                conn.execute(
-                    """
-                    INSERT INTO annotations (
-                        id, sentence_id, tag_id, start_token_index, end_token_index,
-                        start_char, end_char, text, source, source_suggestion_id, created_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'accepted_suggestion', ?, ?)
-                    """,
-                    (
-                        annotation_id,
-                        suggestion["sentence_id"],
-                        suggestion["tag_id"],
-                        suggestion["start_token_index"],
-                        suggestion["end_token_index"],
-                        suggestion["start_char"],
-                        suggestion["end_char"],
-                        suggestion["text"],
-                        suggestion["id"],
-                        now,
-                    ),
-                )
-                conn.execute("UPDATE annotation_suggestions SET status = 'accepted' WHERE id = ?", (suggestion["id"],))
-                self._enqueue_event(
-                    conn,
-                    project_id,
-                    {
-                        "type": "annotation.created",
-                        "annotation_id": annotation_id,
-                        "sentence_id": suggestion["sentence_id"],
-                        "tag_id": suggestion["tag_id"],
-                        "start_token_index": suggestion["start_token_index"],
-                        "end_token_index": suggestion["end_token_index"],
-                        "start_char": suggestion["start_char"],
-                        "end_char": suggestion["end_char"],
-                        "text": suggestion["text"],
-                        "source": "accepted_suggestion",
-                        "source_suggestion_id": suggestion["id"],
-                        "created_at": now,
-                    },
-                )
-                self._enqueue_event(
-                    conn,
-                    project_id,
-                    {"type": "suggestion.accepted", "suggestion_id": suggestion["id"], "sentence_id": suggestion["sentence_id"]},
-                )
-                blocked_ranges.append((suggestion["start_token_index"], suggestion["end_token_index"]))
-                accepted_suggestion_ids.append(suggestion["id"])
-
-        self.flush_event_outbox(project_id)
-        return {
-            "accepted": len(accepted_suggestion_ids),
-            "skipped": skipped,
-            "accepted_suggestion_ids": accepted_suggestion_ids,
-            "affected_sentence_ids": [sentence_id] if accepted_suggestion_ids else [],
-            "annotations": self.get_sentence_annotations(project_id, sentence_id),
-        }
+        return self.suggestion_decisions.accept_sentence_suggestions(project_id, sentence_id)
 
     def apply_sentence_suggestion_reviews(self, project_id: str, sentence_id: str) -> dict[str, Any]:
-        now = self._now()
-        accepted_suggestion_ids: list[str] = []
-        rejected_suggestion_ids: list[str] = []
-        skipped = 0
-        kept = 0
-
-        with self.connect() as conn:
-            sentence = conn.execute(
-                """
-                SELECT s.id
-                FROM sentences s
-                JOIN documents d ON d.id = s.document_id
-                WHERE s.id = ? AND d.project_id = ?
-                """,
-                (sentence_id, project_id),
-            ).fetchone()
-            if sentence is None:
-                raise NotFoundError("Sentence not found.")
-
-            existing_rows = conn.execute(
-                """
-                SELECT start_token_index, end_token_index
-                FROM annotations
-                WHERE sentence_id = ?
-                """,
-                (sentence_id,),
-            ).fetchall()
-            blocked_ranges = [(row["start_token_index"], row["end_token_index"]) for row in existing_rows]
-
-            suggestions = conn.execute(
-                """
-                SELECT sg.id, sg.sentence_id, sg.tag_id, sg.start_token_index, sg.end_token_index,
-                       sg.start_char, sg.end_char, sg.text, rev.recommendation
-                FROM annotation_suggestions sg
-                LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
-                    SELECT latest.id
-                    FROM annotation_suggestion_reviews latest
-                    WHERE latest.suggestion_id = sg.id
-                    ORDER BY latest.created_at DESC, latest.id DESC
-                    LIMIT 1
-                )
-                WHERE sg.sentence_id = ? AND sg.status = 'pending'
-                ORDER BY sg.start_token_index, sg.end_token_index, sg.confidence DESC, sg.id
-                """,
-                (sentence_id,),
-            ).fetchall()
-
-            for suggestion in suggestions:
-                recommendation = suggestion["recommendation"]
-                if recommendation == "reject":
-                    conn.execute("UPDATE annotation_suggestions SET status = 'rejected' WHERE id = ?", (suggestion["id"],))
-                    self._enqueue_event(
-                        conn,
-                        project_id,
-                        {"type": "suggestion.rejected", "suggestion_id": suggestion["id"], "sentence_id": suggestion["sentence_id"]},
-                    )
-                    rejected_suggestion_ids.append(suggestion["id"])
-                    continue
-
-                if recommendation != "accept":
-                    kept += 1
-                    continue
-
-                if any(self._ranges_overlap(suggestion["start_token_index"], suggestion["end_token_index"], start, end) for start, end in blocked_ranges):
-                    skipped += 1
-                    continue
-
-                annotation_id = self._new_id("ann")
-                conn.execute(
-                    """
-                    INSERT INTO annotations (
-                        id, sentence_id, tag_id, start_token_index, end_token_index,
-                        start_char, end_char, text, source, source_suggestion_id, created_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'accepted_suggestion', ?, ?)
-                    """,
-                    (
-                        annotation_id,
-                        suggestion["sentence_id"],
-                        suggestion["tag_id"],
-                        suggestion["start_token_index"],
-                        suggestion["end_token_index"],
-                        suggestion["start_char"],
-                        suggestion["end_char"],
-                        suggestion["text"],
-                        suggestion["id"],
-                        now,
-                    ),
-                )
-                conn.execute("UPDATE annotation_suggestions SET status = 'accepted' WHERE id = ?", (suggestion["id"],))
-                self._enqueue_event(
-                    conn,
-                    project_id,
-                    {
-                        "type": "annotation.created",
-                        "annotation_id": annotation_id,
-                        "sentence_id": suggestion["sentence_id"],
-                        "tag_id": suggestion["tag_id"],
-                        "start_token_index": suggestion["start_token_index"],
-                        "end_token_index": suggestion["end_token_index"],
-                        "start_char": suggestion["start_char"],
-                        "end_char": suggestion["end_char"],
-                        "text": suggestion["text"],
-                        "source": "accepted_suggestion",
-                        "source_suggestion_id": suggestion["id"],
-                        "created_at": now,
-                    },
-                )
-                self._enqueue_event(
-                    conn,
-                    project_id,
-                    {"type": "suggestion.accepted", "suggestion_id": suggestion["id"], "sentence_id": suggestion["sentence_id"]},
-                )
-                blocked_ranges.append((suggestion["start_token_index"], suggestion["end_token_index"]))
-                accepted_suggestion_ids.append(suggestion["id"])
-
-        self.flush_event_outbox(project_id)
-        affected = bool(accepted_suggestion_ids or rejected_suggestion_ids)
-        return {
-            "accepted": len(accepted_suggestion_ids),
-            "rejected": len(rejected_suggestion_ids),
-            "skipped": skipped,
-            "kept": kept,
-            "accepted_suggestion_ids": accepted_suggestion_ids,
-            "rejected_suggestion_ids": rejected_suggestion_ids,
-            "affected_sentence_ids": [sentence_id] if affected else [],
-            "annotations": self.get_sentence_annotations(project_id, sentence_id),
-        }
+        return self.suggestion_decisions.apply_sentence_suggestion_reviews(project_id, sentence_id)
 
     def apply_document_suggestion_reviews(self, project_id: str, document_id: str) -> dict[str, Any]:
-        now = self._now()
-        accepted_suggestion_ids: list[str] = []
-        rejected_suggestion_ids: list[str] = []
-        affected_sentence_ids: list[str] = []
-        skipped = 0
-        kept = 0
-
-        with self.connect() as conn:
-            document = conn.execute(
-                "SELECT id FROM documents WHERE id = ? AND project_id = ?",
-                (document_id, project_id),
-            ).fetchone()
-            if document is None:
-                raise NotFoundError("Document not found.")
-
-            existing_rows = conn.execute(
-                """
-                SELECT a.sentence_id, a.start_token_index, a.end_token_index
-                FROM annotations a
-                JOIN sentences s ON s.id = a.sentence_id
-                WHERE s.document_id = ?
-                """,
-                (document_id,),
-            ).fetchall()
-            blocked_by_sentence: dict[str, list[tuple[int, int]]] = {}
-            for row in existing_rows:
-                blocked_by_sentence.setdefault(row["sentence_id"], []).append((row["start_token_index"], row["end_token_index"]))
-
-            suggestions = conn.execute(
-                """
-                SELECT sg.id, sg.sentence_id, sg.tag_id, sg.start_token_index, sg.end_token_index,
-                       sg.start_char, sg.end_char, sg.text, s.sentence_index, rev.recommendation
-                FROM annotation_suggestions sg
-                JOIN sentences s ON s.id = sg.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
-                    SELECT latest.id
-                    FROM annotation_suggestion_reviews latest
-                    WHERE latest.suggestion_id = sg.id
-                    ORDER BY latest.created_at DESC, latest.id DESC
-                    LIMIT 1
-                )
-                WHERE d.id = ? AND d.project_id = ? AND sg.status = 'pending'
-                ORDER BY s.sentence_index, sg.start_token_index, sg.end_token_index, sg.confidence DESC, sg.id
-                """,
-                (document_id, project_id),
-            ).fetchall()
-
-            for suggestion in suggestions:
-                recommendation = suggestion["recommendation"]
-                if recommendation == "reject":
-                    conn.execute("UPDATE annotation_suggestions SET status = 'rejected' WHERE id = ?", (suggestion["id"],))
-                    self._enqueue_event(
-                        conn,
-                        project_id,
-                        {"type": "suggestion.rejected", "suggestion_id": suggestion["id"], "sentence_id": suggestion["sentence_id"]},
-                    )
-                    rejected_suggestion_ids.append(suggestion["id"])
-                    if suggestion["sentence_id"] not in affected_sentence_ids:
-                        affected_sentence_ids.append(suggestion["sentence_id"])
-                    continue
-
-                if recommendation != "accept":
-                    kept += 1
-                    continue
-
-                blocked_ranges = blocked_by_sentence.setdefault(suggestion["sentence_id"], [])
-                if any(self._ranges_overlap(suggestion["start_token_index"], suggestion["end_token_index"], start, end) for start, end in blocked_ranges):
-                    skipped += 1
-                    continue
-
-                annotation_id = self._new_id("ann")
-                conn.execute(
-                    """
-                    INSERT INTO annotations (
-                        id, sentence_id, tag_id, start_token_index, end_token_index,
-                        start_char, end_char, text, source, source_suggestion_id, created_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'accepted_suggestion', ?, ?)
-                    """,
-                    (
-                        annotation_id,
-                        suggestion["sentence_id"],
-                        suggestion["tag_id"],
-                        suggestion["start_token_index"],
-                        suggestion["end_token_index"],
-                        suggestion["start_char"],
-                        suggestion["end_char"],
-                        suggestion["text"],
-                        suggestion["id"],
-                        now,
-                    ),
-                )
-                conn.execute("UPDATE annotation_suggestions SET status = 'accepted' WHERE id = ?", (suggestion["id"],))
-                self._enqueue_event(
-                    conn,
-                    project_id,
-                    {
-                        "type": "annotation.created",
-                        "annotation_id": annotation_id,
-                        "sentence_id": suggestion["sentence_id"],
-                        "tag_id": suggestion["tag_id"],
-                        "start_token_index": suggestion["start_token_index"],
-                        "end_token_index": suggestion["end_token_index"],
-                        "start_char": suggestion["start_char"],
-                        "end_char": suggestion["end_char"],
-                        "text": suggestion["text"],
-                        "source": "accepted_suggestion",
-                        "source_suggestion_id": suggestion["id"],
-                        "created_at": now,
-                    },
-                )
-                self._enqueue_event(
-                    conn,
-                    project_id,
-                    {"type": "suggestion.accepted", "suggestion_id": suggestion["id"], "sentence_id": suggestion["sentence_id"]},
-                )
-                blocked_ranges.append((suggestion["start_token_index"], suggestion["end_token_index"]))
-                accepted_suggestion_ids.append(suggestion["id"])
-                if suggestion["sentence_id"] not in affected_sentence_ids:
-                    affected_sentence_ids.append(suggestion["sentence_id"])
-
-        self.flush_event_outbox(project_id)
-        return {
-            "accepted": len(accepted_suggestion_ids),
-            "rejected": len(rejected_suggestion_ids),
-            "skipped": skipped,
-            "kept": kept,
-            "accepted_suggestion_ids": accepted_suggestion_ids,
-            "rejected_suggestion_ids": rejected_suggestion_ids,
-            "affected_sentence_ids": affected_sentence_ids,
-        }
+        return self.suggestion_decisions.apply_document_suggestion_reviews(project_id, document_id)
 
     def auto_accept_document_suggestions(self, project_id: str, document_id: str, min_confidence: float = 0.9) -> dict[str, Any]:
-        confidence_floor = max(0.0, min(float(min_confidence), 1.0))
-        now = self._now()
-        accepted_suggestion_ids: list[str] = []
-        affected_sentence_ids: list[str] = []
-        skipped = 0
-
-        with self.connect() as conn:
-            document = conn.execute(
-                "SELECT id FROM documents WHERE id = ? AND project_id = ?",
-                (document_id, project_id),
-            ).fetchone()
-            if document is None:
-                raise NotFoundError("Document not found.")
-
-            existing_rows = conn.execute(
-                """
-                SELECT a.sentence_id, a.start_token_index, a.end_token_index
-                FROM annotations a
-                JOIN sentences s ON s.id = a.sentence_id
-                WHERE s.document_id = ?
-                """,
-                (document_id,),
-            ).fetchall()
-            blocked_by_sentence: dict[str, list[tuple[int, int]]] = {}
-            for row in existing_rows:
-                blocked_by_sentence.setdefault(row["sentence_id"], []).append((row["start_token_index"], row["end_token_index"]))
-
-            suggestions = conn.execute(
-                """
-                SELECT sg.id, sg.sentence_id, sg.tag_id, sg.start_token_index, sg.end_token_index,
-                       sg.start_char, sg.end_char, sg.text, sg.confidence, s.sentence_index
-                FROM annotation_suggestions sg
-                JOIN sentences s ON s.id = sg.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                WHERE d.id = ? AND d.project_id = ? AND sg.status = 'pending' AND sg.confidence >= ?
-                ORDER BY sg.confidence DESC, s.sentence_index, sg.start_token_index, sg.id
-                """,
-                (document_id, project_id, confidence_floor),
-            ).fetchall()
-
-            for suggestion in suggestions:
-                blocked_ranges = blocked_by_sentence.setdefault(suggestion["sentence_id"], [])
-                if any(self._ranges_overlap(suggestion["start_token_index"], suggestion["end_token_index"], start, end) for start, end in blocked_ranges):
-                    skipped += 1
-                    continue
-
-                annotation_id = self._new_id("ann")
-                conn.execute(
-                    """
-                    INSERT INTO annotations (
-                        id, sentence_id, tag_id, start_token_index, end_token_index,
-                        start_char, end_char, text, source, source_suggestion_id, created_at
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'accepted_suggestion', ?, ?)
-                    """,
-                    (
-                        annotation_id,
-                        suggestion["sentence_id"],
-                        suggestion["tag_id"],
-                        suggestion["start_token_index"],
-                        suggestion["end_token_index"],
-                        suggestion["start_char"],
-                        suggestion["end_char"],
-                        suggestion["text"],
-                        suggestion["id"],
-                        now,
-                    ),
-                )
-                conn.execute("UPDATE annotation_suggestions SET status = 'accepted' WHERE id = ?", (suggestion["id"],))
-                self._enqueue_event(
-                    conn,
-                    project_id,
-                    {
-                        "type": "annotation.created",
-                        "annotation_id": annotation_id,
-                        "sentence_id": suggestion["sentence_id"],
-                        "tag_id": suggestion["tag_id"],
-                        "start_token_index": suggestion["start_token_index"],
-                        "end_token_index": suggestion["end_token_index"],
-                        "start_char": suggestion["start_char"],
-                        "end_char": suggestion["end_char"],
-                        "text": suggestion["text"],
-                        "source": "accepted_suggestion",
-                        "source_suggestion_id": suggestion["id"],
-                        "created_at": now,
-                    },
-                )
-                self._enqueue_event(
-                    conn,
-                    project_id,
-                    {"type": "suggestion.accepted", "suggestion_id": suggestion["id"], "sentence_id": suggestion["sentence_id"]},
-                )
-                blocked_ranges.append((suggestion["start_token_index"], suggestion["end_token_index"]))
-                accepted_suggestion_ids.append(suggestion["id"])
-                if suggestion["sentence_id"] not in affected_sentence_ids:
-                    affected_sentence_ids.append(suggestion["sentence_id"])
-
-        self.flush_event_outbox(project_id)
-        return {
-            "accepted": len(accepted_suggestion_ids),
-            "skipped": skipped,
-            "min_confidence": confidence_floor,
-            "accepted_suggestion_ids": accepted_suggestion_ids,
-            "affected_sentence_ids": affected_sentence_ids,
-        }
+        return self.suggestion_decisions.auto_accept_document_suggestions(project_id, document_id, min_confidence)
 
     def auto_annotate_document_suggestions(
         self,
@@ -2291,102 +1834,13 @@ class AnnotationStorage:
         }
 
     def reject_suggestion(self, project_id: str, suggestion_id: str) -> dict[str, Any]:
-        suggestion = self._get_suggestion_row(project_id, suggestion_id)
-        if suggestion["status"] != "pending":
-            raise ValidationError("Only pending suggestions can be rejected.")
-        with self.connect() as conn:
-            conn.execute("UPDATE annotation_suggestions SET status = 'rejected' WHERE id = ?", (suggestion_id,))
-            self._enqueue_event(
-                conn,
-                project_id,
-                {"type": "suggestion.rejected", "suggestion_id": suggestion_id, "sentence_id": suggestion["sentence_id"]},
-            )
-        self.flush_event_outbox(project_id)
-        return {"rejected": True, "suggestion_id": suggestion_id}
+        return self.suggestion_decisions.reject_suggestion(project_id, suggestion_id)
 
     def reject_sentence_suggestions(self, project_id: str, sentence_id: str) -> dict[str, Any]:
-        rejected_suggestion_ids: list[str] = []
-
-        with self.connect() as conn:
-            sentence = conn.execute(
-                """
-                SELECT s.id
-                FROM sentences s
-                JOIN documents d ON d.id = s.document_id
-                WHERE s.id = ? AND d.project_id = ?
-                """,
-                (sentence_id, project_id),
-            ).fetchone()
-            if sentence is None:
-                raise NotFoundError("Sentence not found.")
-
-            suggestions = conn.execute(
-                """
-                SELECT id, sentence_id
-                FROM annotation_suggestions
-                WHERE sentence_id = ? AND status = 'pending'
-                ORDER BY start_token_index, end_token_index, confidence DESC, id
-                """,
-                (sentence_id,),
-            ).fetchall()
-
-            for suggestion in suggestions:
-                conn.execute("UPDATE annotation_suggestions SET status = 'rejected' WHERE id = ?", (suggestion["id"],))
-                self._enqueue_event(
-                    conn,
-                    project_id,
-                    {"type": "suggestion.rejected", "suggestion_id": suggestion["id"], "sentence_id": suggestion["sentence_id"]},
-                )
-                rejected_suggestion_ids.append(suggestion["id"])
-
-        self.flush_event_outbox(project_id)
-        return {
-            "rejected": len(rejected_suggestion_ids),
-            "rejected_suggestion_ids": rejected_suggestion_ids,
-            "affected_sentence_ids": [sentence_id] if rejected_suggestion_ids else [],
-        }
+        return self.suggestion_decisions.reject_sentence_suggestions(project_id, sentence_id)
 
     def auto_reject_document_suggestions(self, project_id: str, document_id: str) -> dict[str, Any]:
-        rejected_suggestion_ids: list[str] = []
-        affected_sentence_ids: list[str] = []
-
-        with self.connect() as conn:
-            document = conn.execute(
-                "SELECT id FROM documents WHERE id = ? AND project_id = ?",
-                (document_id, project_id),
-            ).fetchone()
-            if document is None:
-                raise NotFoundError("Document not found.")
-
-            suggestions = conn.execute(
-                """
-                SELECT sg.id, sg.sentence_id
-                FROM annotation_suggestions sg
-                JOIN sentences s ON s.id = sg.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                WHERE d.id = ? AND d.project_id = ? AND sg.status = 'pending'
-                ORDER BY s.sentence_index, sg.start_token_index, sg.id
-                """,
-                (document_id, project_id),
-            ).fetchall()
-
-            for suggestion in suggestions:
-                conn.execute("UPDATE annotation_suggestions SET status = 'rejected' WHERE id = ?", (suggestion["id"],))
-                self._enqueue_event(
-                    conn,
-                    project_id,
-                    {"type": "suggestion.rejected", "suggestion_id": suggestion["id"], "sentence_id": suggestion["sentence_id"]},
-                )
-                rejected_suggestion_ids.append(suggestion["id"])
-                if suggestion["sentence_id"] not in affected_sentence_ids:
-                    affected_sentence_ids.append(suggestion["sentence_id"])
-
-        self.flush_event_outbox(project_id)
-        return {
-            "rejected": len(rejected_suggestion_ids),
-            "rejected_suggestion_ids": rejected_suggestion_ids,
-            "affected_sentence_ids": affected_sentence_ids,
-        }
+        return self.suggestion_decisions.auto_reject_document_suggestions(project_id, document_id)
 
     def get_suggestion_review_context(self, project_id: str, suggestion_id: str) -> dict[str, Any]:
         with self.connect() as conn:
@@ -2744,54 +2198,10 @@ class AnnotationStorage:
         self.flush_event_outbox(project_id)
 
     def flush_event_outbox(self, project_id: str) -> int:
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT id, event_json
-                FROM event_outbox
-                WHERE project_id = ? AND flushed_at IS NULL
-                ORDER BY created_at, id
-                """,
-                (project_id,),
-            ).fetchall()
-        if not rows:
-            return 0
-
-        project_dir = self.data_root / project_id
-        project_dir.mkdir(parents=True, exist_ok=True)
-        event_path = project_dir / "events.jsonl"
-        flushed_ids = [row["id"] for row in rows]
-        with self._event_lock:
-            with event_path.open("a", encoding="utf-8") as handle:
-                for row in rows:
-                    handle.write(row["event_json"] + "\n")
-            placeholders = ", ".join("?" for _ in flushed_ids)
-            with self.connect() as conn:
-                conn.execute(
-                    f"UPDATE event_outbox SET flushed_at = ? WHERE id IN ({placeholders})",
-                    (self._now(), *flushed_ids),
-                )
-        return len(flushed_ids)
+        return self.event_outbox.flush(project_id)
 
     def _enqueue_event(self, conn: sqlite3.Connection, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        actor = self._event_actor(payload)
-        event = {
-            "schema_version": EVENT_SCHEMA_VERSION,
-            "record_type": "event",
-            "event_id": self._new_id("evt"),
-            "ts": self._now(),
-            "project_id": project_id,
-            **actor,
-            **payload,
-        }
-        conn.execute(
-            """
-            INSERT INTO event_outbox (id, project_id, event_json, created_at, flushed_at)
-            VALUES (?, ?, ?, ?, NULL)
-            """,
-            (event["event_id"], project_id, json.dumps(event, ensure_ascii=False), event["ts"]),
-        )
-        return event
+        return self.event_outbox.enqueue(conn, project_id, payload)
 
     @classmethod
     def _count_project_runtime_rows(cls, conn: sqlite3.Connection, project_id: str) -> dict[str, int]:
@@ -2921,17 +2331,6 @@ class AnnotationStorage:
         conn.execute("DELETE FROM annotation_runs WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM annotation_sessions WHERE project_id = ?", (project_id,))
         conn.execute("DELETE FROM documents WHERE project_id = ?", (project_id,))
-
-    @staticmethod
-    def _event_actor(payload: dict[str, Any]) -> dict[str, str]:
-        event_type = payload.get("type")
-        if event_type == "suggestion.llm_reviewed":
-            return {"actor_type": "llm", "actor_id": str(payload.get("model") or "unknown")}
-        if event_type == "suggestions.generated" or (
-            event_type == "annotation.created" and payload.get("source") == "accepted_suggestion"
-        ):
-            return {"actor_type": "system", "actor_id": CHARACTER_RAG_ACTOR_ID}
-        return {"actor_type": "human", "actor_id": HUMAN_ACTOR_ID}
 
     def _seed_tags(self, conn: sqlite3.Connection, project_id: str) -> None:
         self._remove_legacy_seeded_tags(conn, project_id)
