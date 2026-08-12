@@ -446,12 +446,12 @@ class DocumentQueryRepository:
     def get_review_queue(self, project_id: str, document_id: str, limit: int = 20, order: str = "position") -> dict[str, Any]:
         safe_limit = max(1, min(int(limit), 100))
         normalized_order = str(order or "position").strip().lower()
-        if normalized_order not in {"position", "uncertain", "goldsmith"}:
-            raise self.validation_error("Review queue order must be position, uncertain, or goldsmith.")
+        if normalized_order not in {"position", "uncertain", "goldsmith", "hybrid"}:
+            raise self.validation_error("Review queue order must be position, uncertain, goldsmith, or hybrid.")
         if normalized_order == "uncertain":
             order_sql = "MIN(sg.confidence) ASC, s.sentence_index"
             suggestion_order_sql = "s.sentence_index, sg.confidence ASC, sg.start_token_index, sg.id"
-        elif normalized_order == "goldsmith":
+        elif normalized_order in {"goldsmith", "hybrid"}:
             order_sql = (
                 "((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) DESC, "
                 "COUNT(DISTINCT sg.id) DESC, "
@@ -462,6 +462,8 @@ class DocumentQueryRepository:
         else:
             order_sql = "s.sentence_index"
             suggestion_order_sql = "s.sentence_index, sg.start_token_index, sg.confidence DESC, sg.id"
+        hybrid_calibration_limit = max(1, safe_limit // 5) if normalized_order == "hybrid" and safe_limit >= 5 else 0
+        query_limit = safe_limit + hybrid_calibration_limit if normalized_order == "hybrid" else safe_limit
         with self.connect() as conn:
             document = conn.execute(
                 "SELECT id FROM documents WHERE id = ? AND project_id = ?",
@@ -510,8 +512,36 @@ class DocumentQueryRepository:
                 ORDER BY {order_sql}
                 LIMIT ?
                 """,
-                (document_id, safe_limit),
+                (document_id, query_limit),
             ).fetchall()
+            review_routes: dict[str, str] = {}
+            if normalized_order == "hybrid":
+                calibration_rows = []
+                if hybrid_calibration_limit:
+                    calibration_rows = conn.execute(
+                        """
+                        SELECT s.id, s.sentence_index, s.text,
+                               COUNT(DISTINCT sg.id) AS suggestion_count,
+                               MIN(sg.confidence) AS min_confidence,
+                               ((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) AS risk_score
+                        FROM sentences s
+                        JOIN annotation_suggestions sg ON sg.sentence_id = s.id
+                        WHERE s.document_id = ? AND s.completed = 0 AND sg.status = 'pending'
+                          AND NOT EXISTS (
+                            SELECT 1
+                            FROM annotations a
+                            WHERE a.sentence_id = sg.sentence_id
+                              AND a.start_token_index <= sg.end_token_index
+                              AND a.end_token_index >= sg.start_token_index
+                          )
+                        GROUP BY s.id, s.sentence_index, s.text
+                        HAVING MIN(sg.confidence) >= ?
+                        ORDER BY MIN(sg.confidence) DESC, s.sentence_index
+                        LIMIT ?
+                        """,
+                        (document_id, HIGH_CONFIDENCE_THRESHOLD, hybrid_calibration_limit),
+                    ).fetchall()
+                sentence_rows, review_routes = self._hybrid_review_rows(sentence_rows, calibration_rows, safe_limit)
             sentence_ids = [row["id"] for row in sentence_rows]
             first_suggestion_by_sentence: dict[str, dict[str, Any]] = {}
             if sentence_ids:
@@ -561,12 +591,40 @@ class DocumentQueryRepository:
                     "priority_score": float(row["min_confidence"] or 0),
                     "min_confidence": float(row["min_confidence"] or 0),
                     "risk_score": float(row["risk_score"] or 0),
+                    "review_route": review_routes.get(
+                        row["id"],
+                        "risk" if normalized_order in {"goldsmith", "hybrid"} else normalized_order,
+                    ),
                     "first_suggestion": first_suggestion_by_sentence.get(row["id"]),
                 }
                 for row in sentence_rows
             ],
             "total": int(total or 0),
         }
+
+    @staticmethod
+    def _hybrid_review_rows(
+        risk_rows: list[sqlite3.Row],
+        calibration_rows: list[sqlite3.Row],
+        limit: int,
+    ) -> tuple[list[sqlite3.Row], dict[str, str]]:
+        if limit <= 0:
+            return [], {}
+        calibration_ids = {row["id"] for row in calibration_rows}
+        risk_pool = [row for row in risk_rows if row["id"] not in calibration_ids]
+
+        risk_slots = max(limit - len(calibration_rows), 0)
+        selected = risk_pool[:risk_slots]
+        for index, row in enumerate(calibration_rows):
+            insert_at = min((index + 1) * 4, len(selected))
+            selected.insert(insert_at, row)
+        for row in risk_pool[risk_slots:]:
+            if len(selected) >= limit:
+                break
+            selected.append(row)
+        selected = selected[:limit]
+        routes = {row["id"]: ("calibration" if row["id"] in calibration_ids else "risk") for row in selected}
+        return selected, routes
 
     @staticmethod
     def _get_session(conn: sqlite3.Connection, project_id: str, document_id: str) -> dict[str, Any]:

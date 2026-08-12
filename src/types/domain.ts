@@ -99,10 +99,11 @@ export type ReviewQueueItem = {
   priority_score: number
   min_confidence: number
   risk_score: number
+  review_route: 'position' | 'uncertain' | 'risk' | 'calibration' | string
   first_suggestion: SuggestionDef | null
 }
 
-export type ReviewQueueOrder = 'position' | 'uncertain' | 'goldsmith'
+export type ReviewQueueOrder = 'position' | 'uncertain' | 'goldsmith' | 'hybrid'
 
 export type DocumentMeta = {
   id: string

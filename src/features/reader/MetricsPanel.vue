@@ -114,9 +114,12 @@ function accuracyLabel(value: string, labels: UiLabels['metrics']) {
 
 function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics'], order: ReviewQueueOrder) {
   const suggestion = item.first_suggestion
-  const score = order === 'goldsmith'
-    ? `${labels.riskScore} ${item.risk_score.toFixed(2)}`
-    : `${Math.round(item.min_confidence * 100)}%`
+  let score = `${Math.round(item.min_confidence * 100)}%`
+  if (order === 'hybrid' && item.review_route === 'calibration') {
+    score = `${labels.calibrationSample} ${Math.round(item.min_confidence * 100)}%`
+  } else if (order === 'goldsmith' || order === 'hybrid') {
+    score = `${labels.riskScore} ${item.risk_score.toFixed(2)}`
+  }
   return suggestion ? `${suggestion.tag_name}: ${suggestion.text} · ${score}` : labels.queuePreviewFallback(item.suggestion_count)
 }
 
@@ -276,6 +279,9 @@ function shortHash(value: string) {
         </button>
         <button type="button" :class="{ active: reviewQueueOrder === 'goldsmith' }" @click="emit('review-order-change', 'goldsmith')">
           {{ labels.goldsmith }}
+        </button>
+        <button type="button" :class="{ active: reviewQueueOrder === 'hybrid' }" @click="emit('review-order-change', 'hybrid')">
+          {{ labels.hybrid }}
         </button>
       </div>
       <div class="review-queue-list">

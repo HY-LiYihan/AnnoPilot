@@ -261,6 +261,7 @@ class ReviewQueueItemResponse(BaseModel):
     priority_score: float
     min_confidence: float
     risk_score: float
+    review_route: str = "risk"
     first_suggestion: Optional[SuggestionResponse] = None
 
 

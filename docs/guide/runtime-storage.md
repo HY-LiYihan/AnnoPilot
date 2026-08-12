@@ -234,7 +234,7 @@ Frontend 在右侧 metrics/export panel 暴露 `Import JSONL` 入口，可把外
 GET /api/projects/{project_id}/documents/{document_id}/summary
 GET /api/projects/{project_id}/documents?limit=50
 GET /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50
-GET /api/projects/{project_id}/documents/{document_id}/review-queue?limit=20&order=position|uncertain|goldsmith
+GET /api/projects/{project_id}/documents/{document_id}/review-queue?limit=20&order=position|uncertain|goldsmith|hybrid
 POST /api/projects/{project_id}/documents/{document_id}/session/cursor
 POST /api/projects/{project_id}/documents/{document_id}/suggestions/run
 POST /api/projects/{project_id}/documents/{document_id}/suggestions/auto-annotate
@@ -254,7 +254,7 @@ GET /api/projects/{project_id}/events.jsonl
 GET /api/projects/{project_id}/tags/schema.json
 ```
 
-Product UI 使用 `summary` 读取全局 metrics、tags 和 sentence-dot state，使用 `sentences` 读取 paged reader window，使用 `review-queue` 读取右侧待审任务列表。Summary metrics 会输出 document-level `suggestion_status_counts`、LLM latest review 的 `suggestion_review_counts` / `reviewed_suggestion_count`，并对当前可处理的 pending suggestions 输出 `suggestion_source_counts` 和 `suggestion_confidence_counts`，因此右侧运行状态无需加载全文 sentence window 也能展示待审队列质量和评审分布。Review queue 支持 `order=position`、`order=uncertain` 和 `order=goldsmith`；`uncertain` 按句内最低 Character RAG confidence 优先，`goldsmith` 按 `(1 - min_confidence) × pending suggestion 数量` 的综合风险优先。队列 item 返回 `min_confidence`、`risk_score` 和兼容字段 `priority_score=min_confidence`，UI 在 `goldsmith` 模式下显示 `risk_score`。旧的 full document endpoint 仍保留，用于兼容和 export-adjacent workflows。
+Product UI 使用 `summary` 读取全局 metrics、tags 和 sentence-dot state，使用 `sentences` 读取 paged reader window，使用 `review-queue` 读取右侧待审任务列表。Summary metrics 会输出 document-level `suggestion_status_counts`、LLM latest review 的 `suggestion_review_counts` / `reviewed_suggestion_count`，并对当前可处理的 pending suggestions 输出 `suggestion_source_counts` 和 `suggestion_confidence_counts`，因此右侧运行状态无需加载全文 sentence window 也能展示待审队列质量和评审分布。Review queue 支持 `order=position`、`order=uncertain`、`order=goldsmith` 和 `order=hybrid`；`uncertain` 按句内最低 Character RAG confidence 优先，`goldsmith` 按 `(1 - min_confidence) × pending suggestion 数量` 的综合风险优先，`hybrid` 保留高风险优先并插入少量高置信 `calibration` 抽检样本。队列 item 返回 `min_confidence`、`risk_score`、`review_route` 和兼容字段 `priority_score=min_confidence`，UI 在 `goldsmith` / `hybrid` 风险项显示 `risk_score`，在 `hybrid` 抽检项显示校准置信度。旧的 full document endpoint 仍保留，用于兼容和 export-adjacent workflows。
 
 Task JSONL 输出以 sentence 为粒度，每行包含：
 

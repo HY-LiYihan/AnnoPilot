@@ -1758,6 +1758,89 @@ def test_review_queue_can_prioritize_goldsmith_risk_density(tmp_path: Path) -> N
         assert by_goldsmith["items"][0]["risk_score"] > by_goldsmith["items"][1]["risk_score"]
 
 
+def test_review_queue_hybrid_reserves_high_confidence_calibration_sample(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={
+                "file": (
+                    "hybrid.txt",
+                    "Alpha beta. Delta epsilon zeta. Medium risk phrase. Stable cue. Another risk. Last risk.",
+                    "text/plain",
+                )
+            },
+        ).json()
+        document_id = imported["document_id"]
+        tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "复核", "description": "混合复核候选。"},
+        ).json()["tag"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=6").json()
+        sentences = page["sentences"]
+
+        with storage.connect() as conn:
+            now = "2026-01-01T00:00:00Z"
+
+            def insert_suggestion(sentence_index: int, token_index: int, confidence: float) -> None:
+                sentence = sentences[sentence_index]
+                token = sentence["tokens"][token_index]
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestions (
+                      id, sentence_id, tag_id, start_token_index, end_token_index,
+                      start_char, end_char, text, confidence, source, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                    """,
+                    (
+                        f"sg-{sentence_index}-{token_index}-{confidence}",
+                        sentence["id"],
+                        tag["id"],
+                        token["token_index"],
+                        token["token_index"],
+                        token["start_char"],
+                        token["end_char"],
+                        token["text"],
+                        confidence,
+                        "test",
+                        now,
+                    ),
+                )
+
+            insert_suggestion(0, 0, 0.55)
+            insert_suggestion(1, 0, 0.74)
+            insert_suggestion(1, 1, 0.75)
+            insert_suggestion(2, 0, 0.86)
+            insert_suggestion(2, 1, 0.87)
+            insert_suggestion(2, 2, 0.88)
+            insert_suggestion(3, 0, 0.98)
+            insert_suggestion(4, 0, 0.60)
+            insert_suggestion(5, 0, 0.61)
+
+        by_goldsmith = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith&limit=5").json()
+        assert [item["id"] for item in by_goldsmith["items"]] == [
+            sentences[1]["id"],
+            sentences[0]["id"],
+            sentences[2]["id"],
+            sentences[4]["id"],
+            sentences[5]["id"],
+        ]
+
+        by_hybrid = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=hybrid&limit=5").json()
+        assert [item["id"] for item in by_hybrid["items"]] == [
+            sentences[1]["id"],
+            sentences[0]["id"],
+            sentences[2]["id"],
+            sentences[4]["id"],
+            sentences[3]["id"],
+        ]
+        assert by_hybrid["items"][-1]["review_route"] == "calibration"
+        assert by_hybrid["items"][-1]["min_confidence"] == 0.98
+
+
 def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:
     with TestClient(
         create_app(

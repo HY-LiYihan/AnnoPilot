@@ -42,6 +42,7 @@ Web UI 空白阅读器中也会显示同一组内置样例按钮；点击后会�
 
 - **Gold seed**：label schema 中的 bilingual lexical examples 是最小 gold-like seed。
 - **Score review**：suggestion confidence、LLM review recommendation 和人工 accept/reject 共同形成 review signal。
+- **Hybrid review**：右侧 review queue 支持 `hybrid`，先排高风险句子，同时保留少量高置信样本抽检，用来估计自动通过样本的真实错误率。
 - **Boundary feedback**：rejected suggestions 作为 negative examples，降低重复误报。
 - **Auditability**：SQLite 保存 runtime state，`events.jsonl` 保存可审计 durable event；manifest 会记录 export hash、run provenance 和 audit summary。
 
