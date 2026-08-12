@@ -15,7 +15,7 @@ API routers 当前比较薄，调用 `AnnotationStorage` 的方法名也已经�
 
 - `repositories/` 承接 SQL 查询、read model 和只读导出组装。
 - `services/` 承接事务、校验、业务编排和 event-producing workflows。
-- `events/` 承接 outbox 写入、JSONL flush 和后续 replay validation。
+- `events/` 承接 outbox 写入、JSONL flush、replay validation 和 replay apply。
 - routers 暂时继续依赖 `AnnotationStorage`，公开 API path、request/response shape 不随拆分变化。
 
 ## Consequences

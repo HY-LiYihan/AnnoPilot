@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from .db.connection import configure_connection, connect_database
 from .db.migrations import migrate_database
-from .events import EventOutbox
+from .events import EventOutbox, clear_project_runtime_rows, event_replay_issue, has_import_snapshot
 from .rag import (
     CHARACTER_RAG_RETRIEVAL,
     build_examples,
@@ -41,29 +41,6 @@ TAG_SCHEMA_VERSION = "annopilot.tag_schema.v1"
 RUN_PROVENANCE_SCHEMA_VERSION = "annopilot.run_provenance.v1"
 HIGH_CONFIDENCE_THRESHOLD = 0.9
 MEDIUM_CONFIDENCE_THRESHOLD = 0.75
-REPLAYABLE_EVENT_FIELDS = {
-    "project.reset": {"reset_at"},
-    "tag.created": {"tag_id", "name", "shortcut", "color"},
-    "tag.renamed": {"tag_id", "name"},
-    "tag.updated": {"tag_id"},
-    "tag.deleted": {"tag_id"},
-    "annotations.imported": {"document_id", "filename", "record_count", "source_sha256"},
-    "annotation.created": {
-        "annotation_id",
-        "sentence_id",
-        "tag_id",
-        "start_token_index",
-        "end_token_index",
-        "start_char",
-        "end_char",
-        "text",
-    },
-    "annotation.deleted": {"annotation_id"},
-    "sentence.completed": {"sentence_id", "completed"},
-    "suggestion.accepted": {"suggestion_id"},
-    "suggestion.rejected": {"suggestion_id"},
-}
-
 DEFAULT_TAGS: list[dict[str, Any]] = []
 
 LEGACY_SEEDED_TAGS = [
@@ -143,7 +120,7 @@ class AnnotationStorage:
             self.connect,
             self.data_root,
             flush_event_outbox=self.flush_event_outbox,
-            event_replay_issue=self._event_replay_issue,
+            event_replay_issue=event_replay_issue,
         )
         self.annotation_service = AnnotationService(
             self.connect,
@@ -844,7 +821,7 @@ class AnnotationStorage:
             conn.execute("BEGIN")
             self._seed_tags(conn, project_id)
             counts = self._count_project_runtime_rows(conn, project_id)
-            self._clear_project_runtime_rows(conn, project_id)
+            clear_project_runtime_rows(conn, project_id)
             self._enqueue_event(
                 conn,
                 project_id,
@@ -1663,65 +1640,7 @@ class AnnotationStorage:
 
     @staticmethod
     def _clear_project_runtime_rows(conn: sqlite3.Connection, project_id: str) -> None:
-        conn.execute(
-            """
-            DELETE FROM annotation_suggestion_reviews
-            WHERE suggestion_id IN (
-              SELECT sg.id
-              FROM annotation_suggestions sg
-              JOIN sentences s ON s.id = sg.sentence_id
-              JOIN documents d ON d.id = s.document_id
-              WHERE d.project_id = ?
-            )
-            """,
-            (project_id,),
-        )
-        conn.execute(
-            """
-            DELETE FROM annotation_suggestions
-            WHERE sentence_id IN (
-              SELECT s.id
-              FROM sentences s
-              JOIN documents d ON d.id = s.document_id
-              WHERE d.project_id = ?
-            )
-            """,
-            (project_id,),
-        )
-        conn.execute(
-            """
-            DELETE FROM annotations
-            WHERE sentence_id IN (
-              SELECT s.id
-              FROM sentences s
-              JOIN documents d ON d.id = s.document_id
-              WHERE d.project_id = ?
-            )
-            """,
-            (project_id,),
-        )
-        conn.execute(
-            """
-            DELETE FROM tokens
-            WHERE sentence_id IN (
-              SELECT s.id
-              FROM sentences s
-              JOIN documents d ON d.id = s.document_id
-              WHERE d.project_id = ?
-            )
-            """,
-            (project_id,),
-        )
-        conn.execute(
-            """
-            DELETE FROM sentences
-            WHERE document_id IN (SELECT id FROM documents WHERE project_id = ?)
-            """,
-            (project_id,),
-        )
-        conn.execute("DELETE FROM annotation_runs WHERE project_id = ?", (project_id,))
-        conn.execute("DELETE FROM annotation_sessions WHERE project_id = ?", (project_id,))
-        conn.execute("DELETE FROM documents WHERE project_id = ?", (project_id,))
+        clear_project_runtime_rows(conn, project_id)
 
     def _seed_tags(self, conn: sqlite3.Connection, project_id: str) -> None:
         self._remove_legacy_seeded_tags(conn, project_id)
@@ -2172,56 +2091,11 @@ class AnnotationStorage:
 
     @classmethod
     def _event_replay_issue(cls, event: dict[str, Any]) -> str | None:
-        if event.get("record_type") != "event" or not event.get("event_id"):
-            return "legacy_event"
-
-        event_type = event.get("type")
-        if event_type == "document.imported":
-            text = event.get("text")
-            if not isinstance(text, str):
-                return "document_import_missing_text"
-            if event.get("text_sha256") != cls._text_sha256(text):
-                return "document_import_checksum_mismatch"
-            if event.get("snapshot_version") != "annopilot.import_snapshot.v1":
-                return "document_import_missing_snapshot_version"
-            if not cls._has_import_snapshot(event):
-                return "document_import_missing_sentence_snapshot"
-        elif event_type == "suggestions.generated":
-            suggestions = event.get("suggestions")
-            if not isinstance(suggestions, list) or len(suggestions) != event.get("suggestion_count"):
-                return "suggestion_run_missing_snapshot"
-            required = {"id", "run_id", "sentence_id", "tag_id", "start_token_index", "end_token_index", "text", "confidence", "source", "status"}
-            if any(not isinstance(suggestion, dict) or not required.issubset(suggestion) for suggestion in suggestions):
-                return "suggestion_run_incomplete_snapshot"
-        elif event_type == "suggestion.llm_reviewed":
-            required = {"suggestion_id", "review_id", "model", "recommendation", "confidence", "rationale"}
-            if not required.issubset(event):
-                return "llm_review_missing_snapshot"
-        elif event_type in REPLAYABLE_EVENT_FIELDS:
-            missing = REPLAYABLE_EVENT_FIELDS[event_type] - set(event)
-            if missing:
-                return f"{event_type}_missing_fields:{','.join(sorted(missing))}"
-        else:
-            return "unknown_replay_event"
-
-        return None
+        return event_replay_issue(event)
 
     @staticmethod
     def _has_import_snapshot(event: dict[str, Any]) -> bool:
-        sentences = event.get("sentences")
-        if not isinstance(sentences, list) or not sentences:
-            return False
-        sentence_required = {"id", "sentence_index", "text", "start_char", "end_char", "tokens"}
-        token_required = {"id", "token_index", "text", "start_char", "end_char"}
-        for sentence in sentences:
-            if not isinstance(sentence, dict) or not sentence_required.issubset(sentence):
-                return False
-            tokens = sentence.get("tokens")
-            if not isinstance(tokens, list):
-                return False
-            if any(not isinstance(token, dict) or not token_required.issubset(token) for token in tokens):
-                return False
-        return True
+        return has_import_snapshot(event)
 
     @staticmethod
     def _row_dict(row: sqlite3.Row, exclude: set[str] | None = None) -> dict[str, Any]:

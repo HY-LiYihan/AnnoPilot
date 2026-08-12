@@ -287,7 +287,7 @@ Prodigy JSONL 提供 `ner_manual` 和 `spans_manual` 两种兼容导出，并写
 
 ## 当前边界
 
-当前 JSONL 已作为 audit trail，并支持 non-destructive rebuild preview 与 CLI rebuild。当前已经可重放的核心事件包括 document import snapshot、tag mutations、annotation mutations、sentence decisions、suggestion runs、suggestion decisions 和 LLM review snapshots。长期目标是：
+当前 JSONL 已作为 audit trail，并支持 non-destructive rebuild preview 与 CLI rebuild。Replay validation 和 apply 逻辑集中在 `backend/app/events/replay.py`，避免 audit preview、CLI rebuild 和 `AnnotationStorage` facade 各自维护一套事件规则。当前已经可重放的核心事件包括 document import snapshot、tag mutations、annotation mutations、sentence decisions、suggestion runs、suggestion decisions 和 LLM review snapshots。长期目标是：
 
 - SQLite 可从 JSONL artifacts rebuild。
 - Import、annotation、suggestion、LLM review 和后续 batch run 都有可重放 event。
