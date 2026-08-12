@@ -183,6 +183,8 @@ const {
   exportEventsJsonl,
   exportTagSchemaJson,
   exportRunProvenanceJson,
+  exportGoldsmithReviewQueueJsonl,
+  exportGoldsmithHumanChoicesJsonl,
   verifyRebuildPreview,
   resetProjectData,
 } = useDocumentReader()
@@ -389,6 +391,8 @@ async function confirmProjectReset() {
         @export-events="exportEventsJsonl"
         @export-tag-schema="exportTagSchemaJson"
         @export-run-provenance="exportRunProvenanceJson"
+        @export-goldsmith-review-queue="exportGoldsmithReviewQueueJsonl"
+        @export-goldsmith-human-choices="exportGoldsmithHumanChoicesJsonl"
         @verify-rebuild="verifyRebuildPreview"
         @reset-project="confirmProjectReset"
       />

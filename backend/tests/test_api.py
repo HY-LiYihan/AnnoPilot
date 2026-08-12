@@ -2126,7 +2126,9 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         )
         document_id = response.json()["document_id"]
         suggestion_response = client.post(f"/api/projects/default/documents/{document_id}/suggestions/run")
-        suggestion_id = suggestion_response.json()["suggestions"][0]["id"]
+        assert suggestion_response.json()["suggestions"]
+        queue = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith").json()
+        suggestion_id = queue["items"][0]["first_suggestion"]["id"]
         expected_context_sha256 = storage._payload_sha256(storage.get_suggestion_review_context("default", suggestion_id))
 
         review_response = client.post(f"/api/projects/default/suggestions/{suggestion_id}/llm-review")
@@ -2175,6 +2177,18 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert all("evidence_match_key" in item and item["evidence_match_key"] for item in exported_suggestions)
         assert all("context_before" in item and "context_after" in item for item in exported_suggestions)
 
+        review_queue_export = client.get(
+            f"/api/projects/default/documents/{document_id}/export.goldsmith.review-queue.jsonl?order=goldsmith"
+        )
+        assert review_queue_export.status_code == 200
+        review_queue_lines = [json.loads(line) for line in review_queue_export.text.splitlines()]
+        assert review_queue_lines
+        assert review_queue_lines[0]["schema_version"] == "annopilot.goldsmith_review_queue.v1"
+        assert review_queue_lines[0]["record_type"] == "human_review_queue_item"
+        assert review_queue_lines[0]["queue_order"] == "goldsmith"
+        assert review_queue_lines[0]["first_suggestion"]["id"] == suggestion_id
+        assert review_queue_lines[0]["first_suggestion"]["latest_review"]["recommendation"] == "accept"
+
         accept_response = client.post(f"/api/projects/default/suggestions/{suggestion_id}/accept")
         assert accept_response.status_code == 200
         reviewed_document = client.get(f"/api/projects/default/documents/{document_id}").json()
@@ -2186,10 +2200,25 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert reviewed_document["metrics"]["suggestion_review_counts"] == {"accept": 1, "reject": 0, "uncertain": 0}
         assert reviewed_document["metrics"]["reviewed_suggestion_count"] == 1
 
+        choices_export = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.human-choices.jsonl")
+        assert choices_export.status_code == 200
+        choices = [json.loads(line) for line in choices_export.text.splitlines()]
+        assert len(choices) == 1
+        assert choices[0]["schema_version"] == "annopilot.goldsmith_human_choices.v1"
+        assert choices[0]["record_type"] == "human_choice"
+        assert choices[0]["suggestion_id"] == suggestion_id
+        assert choices[0]["human_decision"] == "accept"
+        assert choices[0]["latest_review"]["recommendation"] == "accept"
+        assert choices[0]["disagreement"] is False
+        assert choices[0]["span"]["text"] == choices[0]["suggestion"]["text"]
+
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert manifest["metrics"]["suggestion_review_counts"] == {"accept": 1, "reject": 0, "uncertain": 0}
         assert manifest["metrics"]["reviewed_suggestion_count"] == 1
         assert manifest["metrics"]["calibration_error_rate"] == 0.0
+        assert manifest["artifacts"]["goldsmith_review_queue_jsonl"]["schema_version"] == "annopilot.goldsmith_review_queue.v1"
+        assert manifest["artifacts"]["goldsmith_human_choices_jsonl"]["schema_version"] == "annopilot.goldsmith_human_choices.v1"
+        assert manifest["artifacts"]["goldsmith_human_choices_jsonl"]["line_count"] == 1
 
         audit = client.get("/api/projects/default/audit").json()
         assert audit["event_types"]["suggestions.generated"] == 1

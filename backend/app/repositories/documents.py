@@ -611,6 +611,43 @@ class DocumentQueryRepository:
             "total": int(total or 0),
         }
 
+    def get_goldsmith_human_choices(self, project_id: str, document_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            document = conn.execute(
+                "SELECT id FROM documents WHERE id = ? AND project_id = ?",
+                (document_id, project_id),
+            ).fetchone()
+            if document is None:
+                raise self.not_found_error("Document not found.")
+            rows = conn.execute(
+                """
+                SELECT sg.id, sg.run_id, sg.sentence_id, s.sentence_index, s.text AS sentence_text,
+                       sg.tag_id, tags.name AS tag_name, tags.color AS tag_color,
+                       sg.start_token_index, sg.end_token_index, sg.start_char, sg.end_char, sg.text,
+                       sg.confidence, sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key,
+                       sg.context_before, sg.context_after, sg.status, sg.created_at,
+                       rev.model AS review_model, rev.recommendation AS review_recommendation,
+                       rev.confidence AS review_confidence, rev.rationale AS review_rationale,
+                       rev.context_sha256 AS review_context_sha256,
+                       rev.created_at AS review_created_at
+                FROM annotation_suggestions sg
+                JOIN sentences s ON s.id = sg.sentence_id
+                JOIN documents d ON d.id = s.document_id
+                JOIN tags ON tags.id = sg.tag_id AND tags.project_id = d.project_id
+                LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
+                    SELECT latest.id
+                    FROM annotation_suggestion_reviews latest
+                    WHERE latest.suggestion_id = sg.id
+                    ORDER BY latest.created_at DESC, latest.id DESC
+                    LIMIT 1
+                )
+                WHERE d.id = ? AND d.project_id = ? AND sg.status IN ('accepted', 'rejected')
+                ORDER BY s.sentence_index, sg.start_token_index, sg.id
+                """,
+                (document_id, project_id),
+            ).fetchall()
+        return [self._goldsmith_choice_row_dict(row) for row in rows]
+
     @staticmethod
     def _hybrid_review_rows(
         risk_rows: list[sqlite3.Row],
@@ -776,6 +813,50 @@ class DocumentQueryRepository:
             "early_disagreement_count": sum(1 for item in ordered_items[:early_reviewed_count] if item["disagreement"]),
             "first_disagreement_rank": first_disagreement_rank,
             "points": points,
+        }
+
+    def _goldsmith_choice_row_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        latest_review = None
+        if row["review_model"] is not None:
+            latest_review = {
+                "model": row["review_model"],
+                "recommendation": row["review_recommendation"],
+                "confidence": row["review_confidence"],
+                "rationale": row["review_rationale"],
+                "context_sha256": row["review_context_sha256"],
+                "created_at": row["review_created_at"],
+            }
+        human_decision = "accept" if row["status"] == "accepted" else "reject"
+        return {
+            "id": row["id"],
+            "run_id": row["run_id"],
+            "sentence_id": row["sentence_id"],
+            "sentence_index": row["sentence_index"],
+            "sentence_text": row["sentence_text"],
+            "tag_id": row["tag_id"],
+            "tag_name": row["tag_name"],
+            "tag_color": row["tag_color"],
+            "start_token_index": row["start_token_index"],
+            "end_token_index": row["end_token_index"],
+            "start_char": row["start_char"],
+            "end_char": row["end_char"],
+            "text": row["text"],
+            "confidence": row["confidence"],
+            "source": row["source"],
+            "evidence_text": row["evidence_text"],
+            "match_key": row["match_key"],
+            "evidence_match_key": row["evidence_match_key"],
+            "context_before": row["context_before"],
+            "context_after": row["context_after"],
+            "status": row["status"],
+            "human_decision": human_decision,
+            "latest_review": latest_review,
+            "disagreement": bool(
+                latest_review
+                and latest_review.get("recommendation") in {"accept", "reject"}
+                and latest_review["recommendation"] != human_decision
+            ),
+            "created_at": row["created_at"],
         }
 
     @staticmethod

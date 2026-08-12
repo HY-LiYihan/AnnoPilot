@@ -39,6 +39,8 @@ PRODIGY_EXPORT_SCHEMA_VERSION = "prodigy.ner_manual.compat.v1"
 PRODIGY_SPANS_EXPORT_SCHEMA_VERSION = "prodigy.spans_manual.compat.v1"
 TAG_SCHEMA_VERSION = "annopilot.tag_schema.v1"
 RUN_PROVENANCE_SCHEMA_VERSION = "annopilot.run_provenance.v1"
+GOLDSMITH_REVIEW_QUEUE_SCHEMA_VERSION = "annopilot.goldsmith_review_queue.v1"
+GOLDSMITH_HUMAN_CHOICES_SCHEMA_VERSION = "annopilot.goldsmith_human_choices.v1"
 HIGH_CONFIDENCE_THRESHOLD = 0.9
 MEDIUM_CONFIDENCE_THRESHOLD = 0.75
 DEFAULT_TAGS: list[dict[str, Any]] = []
@@ -144,6 +146,8 @@ class AnnotationStorage:
         )
         self.export_service = ExportService(
             get_document=self.get_document,
+            get_review_queue=self.get_review_queue,
+            get_goldsmith_human_choices=self.document_queries.get_goldsmith_human_choices,
             export_event_lines=self.export_event_lines,
             audit_project=self.audit_project,
             export_tag_schema=self.export_tag_schema,
@@ -158,6 +162,8 @@ class AnnotationStorage:
             tag_schema_version=TAG_SCHEMA_VERSION,
             event_schema_version=EVENT_SCHEMA_VERSION,
             run_provenance_schema_version=RUN_PROVENANCE_SCHEMA_VERSION,
+            goldsmith_review_queue_schema_version=GOLDSMITH_REVIEW_QUEUE_SCHEMA_VERSION,
+            goldsmith_human_choices_schema_version=GOLDSMITH_HUMAN_CHOICES_SCHEMA_VERSION,
         )
 
     def initialize(self) -> None:
@@ -398,6 +404,18 @@ class AnnotationStorage:
 
     def export_manifest(self, project_id: str, document_id: str) -> dict[str, Any]:
         return self.export_service.export_manifest(project_id, document_id)
+
+    def export_goldsmith_review_queue_lines(
+        self,
+        project_id: str,
+        document_id: str,
+        order: str = "hybrid",
+        limit: int = 100,
+    ) -> list[str]:
+        return self.export_service.export_goldsmith_review_queue_lines(project_id, document_id, order=order, limit=limit)
+
+    def export_goldsmith_human_choices_lines(self, project_id: str, document_id: str) -> list[str]:
+        return self.export_service.export_goldsmith_human_choices_lines(project_id, document_id)
 
     def export_tag_schema(self, project_id: str) -> dict[str, Any]:
         tags = self.get_tags(project_id)

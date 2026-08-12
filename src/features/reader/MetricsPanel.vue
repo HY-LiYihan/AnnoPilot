@@ -26,6 +26,8 @@ const emit = defineEmits<{
   'export-events': []
   'export-tag-schema': []
   'export-run-provenance': [runId: string]
+  'export-goldsmith-review-queue': []
+  'export-goldsmith-human-choices': []
   'import-annotations': [file: File]
   'reset-project': []
   'review-sentence': [sentenceIndex: number]
@@ -401,6 +403,16 @@ function shortHash(value: string) {
 
     <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-manifest')">
       {{ labels.exportManifest }}
+      <Download :size="18" aria-hidden="true" />
+    </button>
+
+    <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-goldsmith-review-queue')">
+      {{ labels.exportReviewQueue }}
+      <Download :size="18" aria-hidden="true" />
+    </button>
+
+    <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-goldsmith-human-choices')">
+      {{ labels.exportHumanChoices }}
       <Download :size="18" aria-hidden="true" />
     </button>
 

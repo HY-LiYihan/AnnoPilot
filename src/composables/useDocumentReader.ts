@@ -10,6 +10,8 @@ import {
   fetchDocumentSummary,
   fetchReviewQueue,
   fetchSamplePresets,
+  goldsmithHumanChoicesExportUrl,
+  goldsmithReviewQueueExportUrl,
   importAnnotationsJsonl,
   importTxt,
   loadSamplePreset as loadSamplePresetApi,
@@ -1235,6 +1237,16 @@ export function useDocumentReader() {
     window.location.href = runProvenanceExportUrl(PROJECT_ID, runId)
   }
 
+  function exportGoldsmithReviewQueueJsonl() {
+    if (!documentMeta.value) return
+    window.location.href = goldsmithReviewQueueExportUrl(PROJECT_ID, documentMeta.value.id, reviewQueueOrder.value)
+  }
+
+  function exportGoldsmithHumanChoicesJsonl() {
+    if (!documentMeta.value) return
+    window.location.href = goldsmithHumanChoicesExportUrl(PROJECT_ID, documentMeta.value.id)
+  }
+
   async function refreshAuditSummary() {
     try {
       auditSummary.value = await fetchAuditSummary(PROJECT_ID)
@@ -1370,6 +1382,8 @@ export function useDocumentReader() {
     exportEventsJsonl,
     exportTagSchemaJson,
     exportRunProvenanceJson,
+    exportGoldsmithReviewQueueJsonl,
+    exportGoldsmithHumanChoicesJsonl,
     verifyRebuildPreview,
     resetProjectData,
     refreshAuditSummary,

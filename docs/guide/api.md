@@ -118,6 +118,9 @@ POST /api/projects/{project_id}/rebuild/preview
 ```text
 GET /api/projects/{project_id}/documents/{document_id}/export.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.prodigy.jsonl
+GET /api/projects/{project_id}/documents/{document_id}/export.prodigy.spans.jsonl
+GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.review-queue.jsonl?order=hybrid&limit=100
+GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.human-choices.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.manifest.json
 GET /api/projects/{project_id}/events.jsonl
 GET /api/projects/{project_id}/tags/schema.json
@@ -125,6 +128,8 @@ GET /api/projects/{project_id}/tags/schema.json
 
 - Task JSONL 使用 `annopilot.task.v1`，按 sentence 输出 tokens、spans、annotations、suggestions、answer、meta，并包含 Prodigy-style `_input_hash`、`_task_hash`、`_session_id`、`_annotator_id` 和 `_view_id`。
 - Prodigy JSONL 使用 `prodigy.ner_manual.compat.v1`，保持 `_view_id=ner_manual`、`_session_id`、`_annotator_id`、`_input_hash` 和 `_task_hash`；包含 annotations 但尚未人工 complete 的句子会以顶层 `answer=accept` 导出，原始 runtime answer 保留在 `meta.answer`。
+- Goldsmith review queue JSONL 使用 `annopilot.goldsmith_review_queue.v1`，按当前 `order` 导出待人工复核句子、rank、risk score、route 和首条 suggestion，可作为 Rosetta 风格 `human_review_queue.jsonl`。
+- Goldsmith human choices JSONL 使用 `annopilot.goldsmith_human_choices.v1`，导出已被人工 accept/reject 的 suggestions、latest LLM review、是否错配和 span payload，可作为 Rosetta 风格 `human_choices.jsonl`。
 - Manifest JSON 使用 `annopilot.export_manifest.v1`，记录 artifact hashes、source run ids、annotation import history、run provenance summaries、live queue metrics 和 event audit，并提供排除生成时间的稳定 `content_sha256`。
 - Events JSONL 是 project-level audit trail。
 - `annotations.imported` event 会保存逐行 `source_record_results` manifest，用于审计外部 JSONL 每条记录的 hash、匹配状态、目标 sentence、answer 和 Prodigy-style source metadata。

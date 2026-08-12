@@ -13,6 +13,8 @@ class ExportService:
         self,
         *,
         get_document: Callable[[str, str], dict[str, Any]],
+        get_review_queue: Callable[[str, str, int, str], dict[str, Any]],
+        get_goldsmith_human_choices: Callable[[str, str], list[dict[str, Any]]],
         export_event_lines: Callable[[str], list[str]],
         audit_project: Callable[[str], dict[str, Any]],
         export_tag_schema: Callable[[str], dict[str, Any]],
@@ -27,8 +29,12 @@ class ExportService:
         tag_schema_version: str,
         event_schema_version: str,
         run_provenance_schema_version: str,
+        goldsmith_review_queue_schema_version: str,
+        goldsmith_human_choices_schema_version: str,
     ) -> None:
         self.get_document = get_document
+        self.get_review_queue = get_review_queue
+        self.get_goldsmith_human_choices = get_goldsmith_human_choices
         self.export_event_lines = export_event_lines
         self.audit_project = audit_project
         self.export_tag_schema = export_tag_schema
@@ -43,6 +49,8 @@ class ExportService:
         self.tag_schema_version = tag_schema_version
         self.event_schema_version = event_schema_version
         self.run_provenance_schema_version = run_provenance_schema_version
+        self.goldsmith_review_queue_schema_version = goldsmith_review_queue_schema_version
+        self.goldsmith_human_choices_schema_version = goldsmith_human_choices_schema_version
 
     def export_document_lines(self, project_id: str, document_id: str) -> list[str]:
         document = self.get_document(project_id, document_id)
@@ -104,6 +112,8 @@ class ExportService:
         task_lines = self.export_document_lines(project_id, document_id)
         prodigy_lines = self.export_prodigy_document_lines(project_id, document_id)
         prodigy_spans_lines = self.export_prodigy_spans_document_lines(project_id, document_id)
+        goldsmith_queue_lines = self.export_goldsmith_review_queue_lines(project_id, document_id, order="hybrid", limit=100)
+        goldsmith_choices_lines = self.export_goldsmith_human_choices_lines(project_id, document_id)
         event_lines = self.export_event_lines(project_id)
         audit_summary = self.audit_project(project_id)
         tag_schema_payload = self.export_tag_schema(project_id)
@@ -166,10 +176,97 @@ class ExportService:
                     lines=[tag_schema_line],
                     content_sha256=tag_schema_payload["content_sha256"],
                 ),
+                "goldsmith_review_queue_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.review-queue.jsonl",
+                    schema_version=self.goldsmith_review_queue_schema_version,
+                    lines=goldsmith_queue_lines,
+                ),
+                "goldsmith_human_choices_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.human-choices.jsonl",
+                    schema_version=self.goldsmith_human_choices_schema_version,
+                    lines=goldsmith_choices_lines,
+                ),
             },
         }
         manifest["content_sha256"] = self._payload_sha256(self._manifest_content_payload(manifest))
         return manifest
+
+    def export_goldsmith_review_queue_lines(
+        self,
+        project_id: str,
+        document_id: str,
+        *,
+        order: str = "hybrid",
+        limit: int = 100,
+    ) -> list[str]:
+        queue = self.get_review_queue(project_id, document_id, limit, order)
+        generated_at = self.now()
+        lines = []
+        for rank, item in enumerate(queue["items"], start=1):
+            line = {
+                "schema_version": self.goldsmith_review_queue_schema_version,
+                "record_type": "human_review_queue_item",
+                "generated_at": generated_at,
+                "project_id": project_id,
+                "document_id": document_id,
+                "queue_order": order,
+                "rank": rank,
+                "sentence_id": item["id"],
+                "sentence_index": item["index"],
+                "text": item["text"],
+                "suggestion_count": item["suggestion_count"],
+                "min_confidence": item["min_confidence"],
+                "risk_score": item["risk_score"],
+                "review_route": item["review_route"],
+                "first_suggestion": self._export_goldsmith_suggestion(item.get("first_suggestion")),
+                "meta": {
+                    "source": "annopilot",
+                    "artifact": "human_review_queue.jsonl",
+                    "total_queue_items": queue["total"],
+                },
+            }
+            lines.append(json.dumps(line, ensure_ascii=False) + "\n")
+        return lines
+
+    def export_goldsmith_human_choices_lines(self, project_id: str, document_id: str) -> list[str]:
+        choices = self.get_goldsmith_human_choices(project_id, document_id)
+        generated_at = self.now()
+        lines = []
+        for choice in choices:
+            line = {
+                "schema_version": self.goldsmith_human_choices_schema_version,
+                "record_type": "human_choice",
+                "generated_at": generated_at,
+                "project_id": project_id,
+                "document_id": document_id,
+                "sentence_id": choice["sentence_id"],
+                "sentence_index": choice["sentence_index"],
+                "text": choice["sentence_text"],
+                "suggestion_id": choice["id"],
+                "run_id": choice.get("run_id"),
+                "human_decision": choice["human_decision"],
+                "suggestion_status": choice["status"],
+                "disagreement": choice["disagreement"],
+                "span": {
+                    "label": choice["tag_name"],
+                    "label_id": choice["tag_id"],
+                    "text": choice["text"],
+                    "start": choice["start_char"],
+                    "end": choice["end_char"],
+                    "token_start": choice["start_token_index"],
+                    "token_end": choice["end_token_index"],
+                },
+                "suggestion": self._export_goldsmith_suggestion(choice),
+                "latest_review": choice.get("latest_review"),
+                "meta": {
+                    "source": "annopilot",
+                    "artifact": "human_choices.jsonl",
+                    "match_key": choice.get("match_key"),
+                    "evidence_match_key": choice.get("evidence_match_key"),
+                },
+            }
+            lines.append(json.dumps(line, ensure_ascii=False) + "\n")
+        return lines
 
     def _export_prodigy_document_lines(self, project_id: str, document_id: str, view_id: str) -> list[str]:
         document = self.get_document(project_id, document_id)
@@ -251,6 +348,28 @@ class ExportService:
                 if isinstance(artifact, dict) and artifact.get("content_sha256"):
                     artifact.pop("sha256", None)
         return payload
+
+    @staticmethod
+    def _export_goldsmith_suggestion(suggestion: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not suggestion:
+            return None
+        return {
+            "id": suggestion["id"],
+            "run_id": suggestion.get("run_id"),
+            "tag_id": suggestion["tag_id"],
+            "tag_name": suggestion["tag_name"],
+            "text": suggestion["text"],
+            "confidence": suggestion["confidence"],
+            "source": suggestion["source"],
+            "evidence_text": suggestion.get("evidence_text"),
+            "start_token_index": suggestion["start_token_index"],
+            "end_token_index": suggestion["end_token_index"],
+            "start_char": suggestion["start_char"],
+            "end_char": suggestion["end_char"],
+            "context_before": suggestion.get("context_before"),
+            "context_after": suggestion.get("context_after"),
+            "latest_review": suggestion.get("latest_review"),
+        }
 
     @staticmethod
     def _export_token(token: dict[str, Any]) -> dict[str, Any]:

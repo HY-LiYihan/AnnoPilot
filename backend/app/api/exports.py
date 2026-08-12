@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..schemas import ExportManifestResponse, TagSchemaExportResponse
-from ..storage import AnnotationStorage, NotFoundError
+from ..storage import AnnotationStorage, NotFoundError, ValidationError
 from .dependencies import get_storage
 
 
@@ -65,6 +65,38 @@ def export_manifest(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     headers = {"Content-Disposition": f'attachment; filename="{document_id}.manifest.json"'}
     return JSONResponse(manifest, headers=headers)
+
+
+@router.get("/documents/{document_id}/export.goldsmith.review-queue.jsonl")
+def export_goldsmith_review_queue(
+    project_id: str,
+    document_id: str,
+    order: str = Query("hybrid"),
+    limit: int = Query(100, ge=1, le=100),
+    storage: AnnotationStorage = Depends(get_storage),
+) -> StreamingResponse:
+    try:
+        lines = storage.export_goldsmith_review_queue_lines(project_id, document_id, order=order, limit=limit)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.goldsmith.review-queue.jsonl"'}
+    return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
+
+
+@router.get("/documents/{document_id}/export.goldsmith.human-choices.jsonl")
+def export_goldsmith_human_choices(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> StreamingResponse:
+    try:
+        lines = storage.export_goldsmith_human_choices_lines(project_id, document_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.goldsmith.human-choices.jsonl"'}
+    return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
 
 
 @router.get("/events.jsonl")
