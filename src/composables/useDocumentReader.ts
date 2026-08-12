@@ -143,10 +143,18 @@ export function useDocumentReader() {
   const activeAnnotations = computed(() => currentSentence.value?.annotations ?? [])
   const activeSuggestions = computed(() => currentSentence.value?.suggestions ?? [])
   const reviewQueueItems = computed(() => sentenceQueue.value.filter((sentence) => !sentence.completed && sentence.suggestion_count > 0))
+  const reviewNavigationItems = computed(() => {
+    if (reviewQueueOrder.value === 'position' || !reviewQueueDetails.value.length) {
+      return reviewQueueItems.value.map((sentence) => ({ id: sentence.id, index: sentence.index }))
+    }
+    return reviewQueueDetails.value.map((sentence) => ({ id: sentence.id, index: sentence.index }))
+  })
   const reviewQueueSummary = computed(() => {
-    if (!reviewQueueItems.value.length) return 'No review queue'
-    const queueIndex = reviewQueueItems.value.findIndex((sentence) => sentence.index === currentSentenceIndex.value)
-    return queueIndex >= 0 ? `Review ${queueIndex + 1}/${reviewQueueItems.value.length}` : `${reviewQueueItems.value.length} pending reviews`
+    const items = reviewNavigationItems.value
+    const total = reviewQueueOrder.value === 'position' ? reviewQueueItems.value.length : reviewQueueTotal.value || items.length
+    if (!total) return 'No review queue'
+    const queueIndex = items.findIndex((sentence) => sentence.index === currentSentenceIndex.value)
+    return queueIndex >= 0 ? `Review ${queueIndex + 1}/${total}` : `${total} pending reviews`
   })
   const canUndoSpanAction = computed(() => Boolean(lastUndoAction.value))
   const undoLabel = computed(() => lastUndoAction.value?.label ?? 'Undo span')
@@ -412,11 +420,14 @@ export function useDocumentReader() {
   }
 
   function jumpToNextReviewSentence() {
-    if (!reviewQueueItems.value.length) return
-    const startIndex = currentSentenceIndex.value + 1
-    const next = reviewQueueItems.value.find((sentence) => sentence.index >= startIndex)
-    const wrapped = reviewQueueItems.value[0]
-    const target = next ?? wrapped
+    const items = reviewNavigationItems.value
+    if (!items.length) return
+    const currentQueueIndex = items.findIndex((sentence) => sentence.index === currentSentenceIndex.value)
+    const target = currentQueueIndex >= 0
+      ? items[(currentQueueIndex + 1) % items.length]
+      : reviewQueueOrder.value === 'position'
+        ? items.find((sentence) => sentence.index >= currentSentenceIndex.value + 1) ?? items[0]
+        : items[0]
     if (target) setCurrentSentence(target.index)
   }
 
