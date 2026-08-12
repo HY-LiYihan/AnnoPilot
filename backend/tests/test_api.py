@@ -1188,6 +1188,7 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
             "appraisal-engagement-cn-en",
             "appraisal-engagement-news-policy-cn-en",
             "appraisal-engagement-academic-method-cn-en",
+            "appraisal-engagement-platform-review-cn-en",
         ]
         assert [preset["id"] for preset in presets] == expected_preset_ids
         assert all(preset["tag_count"] == 9 for preset in presets)
@@ -1205,6 +1206,29 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
             assert loaded_preset["suggestion_run_id"].startswith("run_")
             assert loaded_preset["suggestions_created"] > 0
             assert sum(loaded_preset["source_counts"].values()) == loaded_preset["suggestions_created"]
+            assert loaded_preset["source_counts"] == {"lexical_exact": loaded_preset["suggestions_created"]}
+
+            auto_accept_response = client.post(
+                f"/api/projects/default/documents/{loaded_preset['document_id']}/suggestions/auto-accept",
+                json={"min_confidence": 0.98},
+            )
+            assert auto_accept_response.status_code == 200
+            assert auto_accept_response.json()["accepted"] > 0
+
+            prodigy_response = client.get(f"/api/projects/default/documents/{loaded_preset['document_id']}/export.prodigy.jsonl")
+            assert prodigy_response.status_code == 200
+            prodigy_lines = [json.loads(line) for line in prodigy_response.text.splitlines()]
+            exported_labels = {span["label"] for line in prodigy_lines for span in line["spans"]}
+            assert "Entertain 可能化" in exported_labels
+            assert "Disclaim Counter 转折反驳" in exported_labels
+            assert any(line["_view_id"] == "ner_manual" for line in prodigy_lines)
+            assert any(source["source"] == "accepted_suggestion" for line in prodigy_lines for source in line["meta"]["annotation_sources"])
+
+            prodigy_spans_response = client.get(f"/api/projects/default/documents/{loaded_preset['document_id']}/export.prodigy.spans.jsonl")
+            assert prodigy_spans_response.status_code == 200
+            prodigy_spans_lines = [json.loads(line) for line in prodigy_spans_response.text.splitlines()]
+            assert all(line["_view_id"] == "spans_manual" for line in prodigy_spans_lines)
+            assert sum(len(line["spans"]) for line in prodigy_spans_lines) == sum(len(line["spans"]) for line in prodigy_lines)
 
         loaded = loaded_by_id["appraisal-engagement-cn-en"]
         document_id = loaded["document_id"]
@@ -1215,22 +1239,11 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         summary_response = client.get(f"/api/projects/default/documents/{document_id}/summary")
         assert summary_response.status_code == 200
         summary = summary_response.json()
-        assert summary["metrics"]["suggestion_count"] == loaded["suggestions_created"]
+        assert summary["metrics"]["annotation_count"] >= 20
+        assert summary["metrics"]["suggestion_status_counts"]["accepted"] >= 20
         assert [tag["id"] for tag in summary["tags"]] == [tag["id"] for tag in loaded["tags"]]
 
-        auto_accept_response = client.post(
-            f"/api/projects/default/documents/{document_id}/suggestions/auto-accept",
-            json={"min_confidence": 0.98},
-        )
-        assert auto_accept_response.status_code == 200
-        assert auto_accept_response.json()["accepted"] >= 20
-
-        prodigy_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl")
-        assert prodigy_response.status_code == 200
-        prodigy_lines = [json.loads(line) for line in prodigy_response.text.splitlines()]
-        exported_labels = {span["label"] for line in prodigy_lines for span in line["spans"]}
-        assert "Entertain 可能化" in exported_labels
-        assert "Disclaim Counter 转折反驳" in exported_labels
+        assert loaded_by_id["appraisal-engagement-platform-review-cn-en"]["suggestions_created"] >= 20
 
 
 def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:

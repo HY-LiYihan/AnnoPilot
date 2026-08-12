@@ -120,6 +120,18 @@ Some participants reportedly felt the label names were too abstract; nevertheles
 """
 
 
+APPRAISAL_ENGAGEMENT_PLATFORM_REVIEW_TEXT = """The user said the tool may reduce review time, but it does not replace expert judgment.
+According to the pilot notes, the hybrid queue clearly shows which spans need attention.
+Some annotators allegedly claimed the labels were confusing; however, the examples demonstrate the intended boundary.
+Of course, one export cannot prove corpus quality, yet the Prodigy file shows every accepted span.
+
+用户表示，这个工具可能减少复核时间，但它不能替代专家判断。
+试点记录指出，混合队列显然显示哪些 span 需要关注。
+一些标注者据称声称标签令人困惑；然而，示例证明了预期边界。
+当然，一次导出不能证明语料质量，不过 Prodigy 文件显示每个被接受的 span。
+"""
+
+
 @dataclass(frozen=True)
 class SamplePreset:
     id: str
@@ -170,6 +182,15 @@ BUILTIN_SAMPLE_PRESETS = {
         description="面向论文方法、实验结果和研究讨论的中英 engagement 线索，适合练习 evidence、uncertainty 和 countering。",
         filename="appraisal-engagement-academic-method-cn-en.txt",
         text=APPRAISAL_ENGAGEMENT_ACADEMIC_METHOD_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-platform-review-cn-en": SamplePreset(
+        id="appraisal-engagement-platform-review-cn-en",
+        title="Engagement 平台复核样例",
+        description="面向产品反馈、标注平台复核和 Prodigy 导出的中英 engagement 线索，适合测试 mixed review workflow。",
+        filename="appraisal-engagement-platform-review-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_PLATFORM_REVIEW_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
     )
