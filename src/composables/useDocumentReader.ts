@@ -1,4 +1,4 @@
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { createAnnotation, deleteAnnotation } from '../api/annotations'
 import { fetchAnnotationImports, fetchAuditSummary, previewRebuild } from '../api/audit'
 import {
@@ -63,6 +63,7 @@ import {
   type TxtImportMode,
 } from '../types/domain'
 import { normalizedRange, useTokenSelection } from './useTokenSelection'
+import { useReaderKeyboardShortcuts } from './useReaderKeyboardShortcuts'
 
 const SENTENCE_WINDOW_SIZE = 60
 const SENTENCE_WINDOW_PADDING = 20
@@ -152,8 +153,23 @@ export function useDocumentReader() {
   const hasReviewQueue = computed(() => sentenceQueue.value.some((sentence) => !sentence.completed && sentence.suggestion_count > 0))
   const queueItems = computed(() => sentenceQueue.value)
 
+  useReaderKeyboardShortcuts({
+    acceptCurrentSentenceSuggestions,
+    acceptSuggestedSpan,
+    activeSuggestions,
+    applyTagToSelection,
+    completeCurrentSentence,
+    currentSentenceIndex,
+    jumpToNextReviewSentence,
+    rejectCurrentSentenceSuggestions,
+    rejectSuggestedSpan,
+    reopenCurrentSentence,
+    setCurrentSentence,
+    tags,
+    undoLastSpanAction,
+  })
+
   onMounted(async () => {
-    window.addEventListener('keydown', handleKeydown)
     await loadDocumentList()
     await loadSamplePresets()
     const activeDocumentId = window.localStorage.getItem(ACTIVE_DOCUMENT_KEY)
@@ -169,10 +185,6 @@ export function useDocumentReader() {
       await loadProjectTags()
       await refreshAuditSummary()
     }
-  })
-
-  onBeforeUnmount(() => {
-    window.removeEventListener('keydown', handleKeydown)
   })
 
   async function handleImport(file: File, mode: TxtImportMode = 'replace') {
@@ -552,84 +564,6 @@ export function useDocumentReader() {
   function setSuggestionMinConfidence(value: number) {
     const numericValue = Number.isFinite(value) ? value : suggestionMinConfidence.value
     suggestionMinConfidence.value = Math.min(Math.max(numericValue, 0), 1)
-  }
-
-  function handleKeydown(event: KeyboardEvent) {
-    const target = event.target as HTMLElement | null
-    if (target?.matches('input, textarea, select') || target?.isContentEditable) return
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
-      event.preventDefault()
-      void undoLastSpanAction()
-      return
-    }
-    const shortcutTag = tags.value.find((tagItem) => tagItem.shortcut === event.key)
-    if (shortcutTag) {
-      event.preventDefault()
-      void applyTagToSelection(shortcutTag.id)
-      return
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      void completeCurrentSentence()
-      return
-    }
-    if (event.key.toLowerCase() === 'i') {
-      event.preventDefault()
-      void completeCurrentSentence('ignore')
-      return
-    }
-    if (event.key.toLowerCase() === 'j') {
-      event.preventDefault()
-      void completeCurrentSentence('reject')
-      return
-    }
-    if (event.key.toLowerCase() === 'e') {
-      event.preventDefault()
-      void reopenCurrentSentence()
-      return
-    }
-    if ((event.code === 'Space' || event.key === ' ') && !target?.matches('button, a')) {
-      event.preventDefault()
-      void completeCurrentSentence('ignore')
-      return
-    }
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      setCurrentSentence(currentSentenceIndex.value + 1)
-      return
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      setCurrentSentence(currentSentenceIndex.value - 1)
-      return
-    }
-    if (event.key.toLowerCase() === 'a') {
-      event.preventDefault()
-      void acceptCurrentSentenceSuggestions()
-      return
-    }
-    if (event.key.toLowerCase() === 'x') {
-      event.preventDefault()
-      void rejectCurrentSentenceSuggestions()
-      return
-    }
-    if (event.key.toLowerCase() === 'y') {
-      event.preventDefault()
-      const suggestion = activeSuggestions.value[0]
-      if (suggestion) void acceptSuggestedSpan(suggestion)
-      return
-    }
-    if (event.key.toLowerCase() === 'n') {
-      event.preventDefault()
-      const suggestion = activeSuggestions.value[0]
-      if (suggestion) void rejectSuggestedSpan(suggestion)
-      return
-    }
-    if (event.key.toLowerCase() === 'r') {
-      event.preventDefault()
-      jumpToNextReviewSentence()
-      return
-    }
   }
 
   function setSentenceElement(sentenceId: string, element: unknown) {
