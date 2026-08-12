@@ -446,14 +446,22 @@ class DocumentQueryRepository:
     def get_review_queue(self, project_id: str, document_id: str, limit: int = 20, order: str = "position") -> dict[str, Any]:
         safe_limit = max(1, min(int(limit), 100))
         normalized_order = str(order or "position").strip().lower()
-        if normalized_order not in {"position", "uncertain"}:
-            raise self.validation_error("Review queue order must be position or uncertain.")
-        order_sql = "MIN(sg.confidence) ASC, s.sentence_index" if normalized_order == "uncertain" else "s.sentence_index"
-        suggestion_order_sql = (
-            "s.sentence_index, sg.confidence ASC, sg.start_token_index, sg.id"
-            if normalized_order == "uncertain"
-            else "s.sentence_index, sg.start_token_index, sg.confidence DESC, sg.id"
-        )
+        if normalized_order not in {"position", "uncertain", "goldsmith"}:
+            raise self.validation_error("Review queue order must be position, uncertain, or goldsmith.")
+        if normalized_order == "uncertain":
+            order_sql = "MIN(sg.confidence) ASC, s.sentence_index"
+            suggestion_order_sql = "s.sentence_index, sg.confidence ASC, sg.start_token_index, sg.id"
+        elif normalized_order == "goldsmith":
+            order_sql = (
+                "((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) DESC, "
+                "COUNT(DISTINCT sg.id) DESC, "
+                "MIN(sg.confidence) ASC, "
+                "s.sentence_index"
+            )
+            suggestion_order_sql = "s.sentence_index, sg.confidence ASC, sg.start_token_index, sg.id"
+        else:
+            order_sql = "s.sentence_index"
+            suggestion_order_sql = "s.sentence_index, sg.start_token_index, sg.confidence DESC, sg.id"
         with self.connect() as conn:
             document = conn.execute(
                 "SELECT id FROM documents WHERE id = ? AND project_id = ?",

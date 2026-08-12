@@ -7,6 +7,7 @@ import type {
   LoadSamplePresetResponse,
   ProjectResetResponse,
   ReviewQueuePayload,
+  ReviewQueueOrder,
   SamplePresetListPayload,
   SentencesPagePayload,
 } from '../types/domain'
@@ -90,7 +91,7 @@ export async function fetchDocumentSentences(
   return parseJsonResponse<SentencesPagePayload>(response)
 }
 
-export async function fetchReviewQueue(projectId: string, documentId: string, limit = 20, order: 'position' | 'uncertain' = 'position'): Promise<ReviewQueuePayload> {
+export async function fetchReviewQueue(projectId: string, documentId: string, limit = 20, order: ReviewQueueOrder = 'position'): Promise<ReviewQueuePayload> {
   const params = new URLSearchParams({ limit: String(limit), order })
   const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/review-queue?${params.toString()}`)
   return parseJsonResponse<ReviewQueuePayload>(response)

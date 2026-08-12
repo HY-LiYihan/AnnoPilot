@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { BarChart3, DatabaseZap, Download, Keyboard, MousePointer2, RotateCw, Route, Sparkles, Target, Trash2, Upload } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
-import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, Metrics, RebuildPreview, ReviewQueueItem } from '../../types/domain'
+import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder } from '../../types/domain'
 
 defineProps<{
   labels: UiLabels['metrics']
@@ -12,7 +12,7 @@ defineProps<{
   runHistory: AnnotationRun[]
   reviewQueueDetails: ReviewQueueItem[]
   reviewQueueTotal: number
-  reviewQueueOrder: 'position' | 'uncertain'
+  reviewQueueOrder: ReviewQueueOrder
   lastAnnotationImport: AnnotationImportSummary | null
   isVerifyingRebuild: boolean
   isResetting: boolean
@@ -29,7 +29,7 @@ const emit = defineEmits<{
   'import-annotations': [file: File]
   'reset-project': []
   'review-sentence': [sentenceIndex: number]
-  'review-order-change': [order: 'position' | 'uncertain']
+  'review-order-change': [order: ReviewQueueOrder]
   'verify-rebuild': []
 }>()
 
@@ -271,6 +271,9 @@ function shortHash(value: string) {
         </button>
         <button type="button" :class="{ active: reviewQueueOrder === 'uncertain' }" @click="emit('review-order-change', 'uncertain')">
           {{ labels.uncertain }}
+        </button>
+        <button type="button" :class="{ active: reviewQueueOrder === 'goldsmith' }" @click="emit('review-order-change', 'goldsmith')">
+          {{ labels.goldsmith }}
         </button>
       </div>
       <div class="review-queue-list">

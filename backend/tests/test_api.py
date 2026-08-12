@@ -1694,6 +1694,67 @@ def test_review_queue_can_prioritize_uncertain_suggestions(tmp_path: Path) -> No
         assert invalid_order.status_code == 400
 
 
+def test_review_queue_can_prioritize_goldsmith_risk_density(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("risk.txt", "Alpha beta gamma. Delta epsilon zeta.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "风险", "description": "需要复核的候选 span。"},
+        ).json()["tag"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=2").json()
+        first_sentence = page["sentences"][0]
+        second_sentence = page["sentences"][1]
+
+        with storage.connect() as conn:
+            now = "2026-01-01T00:00:00Z"
+            controlled_suggestions = [
+                ("sg-low-single", first_sentence, first_sentence["tokens"][0], 0.55),
+                ("sg-medium-a", second_sentence, second_sentence["tokens"][0], 0.74),
+                ("sg-medium-b", second_sentence, second_sentence["tokens"][1], 0.75),
+            ]
+            for suggestion_id, sentence, token, confidence in controlled_suggestions:
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestions (
+                      id, sentence_id, tag_id, start_token_index, end_token_index,
+                      start_char, end_char, text, confidence, source, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                    """,
+                    (
+                        suggestion_id,
+                        sentence["id"],
+                        tag["id"],
+                        token["token_index"],
+                        token["token_index"],
+                        token["start_char"],
+                        token["end_char"],
+                        token["text"],
+                        confidence,
+                        "test",
+                        now,
+                    ),
+                )
+
+        by_position = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=position").json()
+        assert [item["id"] for item in by_position["items"]] == [first_sentence["id"], second_sentence["id"]]
+
+        by_uncertainty = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=uncertain").json()
+        assert [item["id"] for item in by_uncertainty["items"]] == [first_sentence["id"], second_sentence["id"]]
+
+        by_goldsmith = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith").json()
+        assert [item["id"] for item in by_goldsmith["items"]] == [second_sentence["id"], first_sentence["id"]]
+        assert by_goldsmith["items"][0]["suggestion_count"] == 2
+        assert by_goldsmith["items"][0]["priority_score"] == 0.74
+
+
 def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:
     with TestClient(
         create_app(

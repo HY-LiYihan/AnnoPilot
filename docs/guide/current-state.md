@@ -62,7 +62,7 @@ GET    /api/projects/{project_id}/documents?limit=50
 GET    /api/projects/{project_id}/documents/{document_id}
 GET    /api/projects/{project_id}/documents/{document_id}/summary
 GET    /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit=50
-GET    /api/projects/{project_id}/documents/{document_id}/review-queue?limit=20&order=position
+GET    /api/projects/{project_id}/documents/{document_id}/review-queue?limit=20&order=position|uncertain|goldsmith
 POST   /api/projects/{project_id}/documents/{document_id}/session/cursor
 POST   /api/projects/{project_id}/sentences/{sentence_id}/annotations
 DELETE /api/projects/{project_id}/annotations/{annotation_id}

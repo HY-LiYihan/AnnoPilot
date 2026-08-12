@@ -52,6 +52,7 @@ import {
   type Metrics,
   type RebuildPreview,
   type ReviewQueueItem,
+  type ReviewQueueOrder,
   type SamplePreset,
   type SentenceDef,
   type SentenceQueueItem,
@@ -124,7 +125,7 @@ export function useDocumentReader() {
   const runHistory = ref<AnnotationRun[]>([])
   const reviewQueueDetails = ref<ReviewQueueItem[]>([])
   const reviewQueueTotal = ref(0)
-  const reviewQueueOrder = ref<'position' | 'uncertain'>('position')
+  const reviewQueueOrder = ref<ReviewQueueOrder>('position')
   const suggestionReviews = ref<Record<string, SuggestionReview>>({})
   const reviewingSuggestionId = ref('')
   const lastAnnotationImport = ref<AnnotationImportSummary | null>(null)
@@ -325,7 +326,7 @@ export function useDocumentReader() {
     }
   }
 
-  function setReviewQueueOrder(order: 'position' | 'uncertain') {
+  function setReviewQueueOrder(order: ReviewQueueOrder) {
     if (reviewQueueOrder.value === order) return
     reviewQueueOrder.value = order
     void refreshReviewQueue()

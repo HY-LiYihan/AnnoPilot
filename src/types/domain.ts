@@ -100,6 +100,8 @@ export type ReviewQueueItem = {
   first_suggestion: SuggestionDef | null
 }
 
+export type ReviewQueueOrder = 'position' | 'uncertain' | 'goldsmith'
+
 export type DocumentMeta = {
   id: string
   filename: string
