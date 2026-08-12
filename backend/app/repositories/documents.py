@@ -450,9 +450,12 @@ class DocumentQueryRepository:
     def get_review_queue(self, project_id: str, document_id: str, limit: int = 20, order: str = "position") -> dict[str, Any]:
         safe_limit = max(1, min(int(limit), 100))
         normalized_order = str(order or "position").strip().lower()
-        if normalized_order not in {"position", "uncertain", "goldsmith", "hybrid"}:
-            raise self.validation_error("Review queue order must be position, uncertain, goldsmith, or hybrid.")
-        if normalized_order == "uncertain":
+        if normalized_order not in {"position", "random", "uncertain", "goldsmith", "hybrid"}:
+            raise self.validation_error("Review queue order must be position, random, uncertain, goldsmith, or hybrid.")
+        if normalized_order == "random":
+            order_sql = "substr(s.id, -12), s.sentence_index"
+            suggestion_order_sql = "s.sentence_index, sg.start_token_index, sg.confidence DESC, sg.id"
+        elif normalized_order == "uncertain":
             order_sql = "MIN(sg.confidence) ASC, s.sentence_index"
             suggestion_order_sql = "s.sentence_index, sg.confidence ASC, sg.start_token_index, sg.id"
         elif normalized_order in {"goldsmith", "hybrid"}:

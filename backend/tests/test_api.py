@@ -1707,11 +1707,17 @@ def test_review_queue_can_prioritize_uncertain_suggestions(tmp_path: Path) -> No
         by_position = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=position").json()
         assert [item["id"] for item in by_position["items"]] == [exact_sentence_id, uncertain_sentence_id]
 
+        by_random = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=random").json()
+        repeat_random = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=random").json()
+        assert [item["id"] for item in by_random["items"]] == [item["id"] for item in repeat_random["items"]]
+        assert {item["id"] for item in by_random["items"]} == {exact_sentence_id, uncertain_sentence_id}
+        assert all(item["review_route"] == "random" for item in by_random["items"])
+
         by_uncertainty = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=uncertain").json()
         assert [item["id"] for item in by_uncertainty["items"]] == [uncertain_sentence_id, exact_sentence_id]
         assert by_uncertainty["items"][0]["priority_score"] < by_uncertainty["items"][1]["priority_score"]
 
-        invalid_order = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=random")
+        invalid_order = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=shuffle")
         assert invalid_order.status_code == 400
 
 

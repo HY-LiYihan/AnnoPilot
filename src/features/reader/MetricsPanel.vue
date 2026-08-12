@@ -277,6 +277,9 @@ function shortHash(value: string) {
         <button type="button" :class="{ active: reviewQueueOrder === 'position' }" @click="emit('review-order-change', 'position')">
           {{ labels.position }}
         </button>
+        <button type="button" :class="{ active: reviewQueueOrder === 'random' }" @click="emit('review-order-change', 'random')">
+          {{ labels.random }}
+        </button>
         <button type="button" :class="{ active: reviewQueueOrder === 'uncertain' }" @click="emit('review-order-change', 'uncertain')">
           {{ labels.uncertain }}
         </button>

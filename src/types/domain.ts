@@ -103,7 +103,7 @@ export type ReviewQueueItem = {
   first_suggestion: SuggestionDef | null
 }
 
-export type ReviewQueueOrder = 'position' | 'uncertain' | 'goldsmith' | 'hybrid'
+export type ReviewQueueOrder = 'position' | 'random' | 'uncertain' | 'goldsmith' | 'hybrid'
 
 export type DocumentMeta = {
   id: string
