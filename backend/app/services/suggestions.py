@@ -16,6 +16,10 @@ from ..rag import (
 )
 
 
+REVIEW_CONTEXT_SCHEMA_VERSION = "annopilot.suggestion_review_context.v1"
+MAX_REVIEW_CONTEXT_EXAMPLES = 12
+
+
 class SuggestionService:
     """Suggestion generation, review context, and suggestion read workflows."""
 
@@ -357,6 +361,8 @@ class SuggestionService:
             if row is None:
                 raise self.not_found_error("Pending suggestion not found.")
             tags = self.get_tags(conn, project_id)
+            review_tags = [self._review_tag_context(tag) for tag in tags]
+            candidate_tag = next((tag for tag in review_tags if tag["id"] == row["tag_id"]), None)
             annotations = conn.execute(
                 """
                 SELECT a.tag_id, tags.name AS tag_name, a.text
@@ -374,11 +380,20 @@ class SuggestionService:
             "sentence_id": row["sentence_id"],
             "sentence_index": row["sentence_index"],
             "sentence_text": row["sentence_text"],
+            "review_guidance": self._review_guidance(review_tags),
+            "tag_schema": {
+                "schema_version": self.tag_schema_version,
+                "record_type": "tag_schema_context",
+                "tag_count": len(review_tags),
+                "tags": review_tags,
+            },
             "suggestion": {
                 "id": row["id"],
                 "text": row["span_text"],
                 "tag_id": row["tag_id"],
                 "tag_name": row["tag_name"],
+                "tag_description": candidate_tag["description"] if candidate_tag else None,
+                "tag_examples": candidate_tag["examples"] if candidate_tag else [],
                 "start_token_index": row["start_token_index"],
                 "end_token_index": row["end_token_index"],
                 "lexical_confidence": row["lexical_confidence"],
@@ -390,7 +405,7 @@ class SuggestionService:
                 "context_after": row["context_after"],
                 "span_context": f"{row['context_before'] or ''}[{row['span_text']}]{row['context_after'] or ''}",
             },
-            "tags": [{"id": tag["id"], "name": tag["name"]} for tag in tags],
+            "tags": review_tags,
             "existing_sentence_annotations": [self._row_dict(annotation) for annotation in annotations],
         }
 
@@ -514,6 +529,47 @@ class SuggestionService:
             "tag_count": len(schema_tags),
             "retrieval": "character_rag_lexical_examples",
             "tags": schema_tags,
+        }
+
+    def _review_guidance(self, tags: list[dict[str, Any]]) -> dict[str, Any]:
+        guidance: dict[str, Any] = {
+            "schema_version": REVIEW_CONTEXT_SCHEMA_VERSION,
+            "task": "span_label_review",
+            "domain": "appraisal_engagement" if self._is_appraisal_engagement_schema(tags) else "generic_span_annotation",
+            "annotation_unit": "contiguous token span with document-level character offsets",
+            "decision_policy": [
+                "accept when the bracketed span is a minimal, sufficient realization of the suggested label",
+                "reject when the span belongs to another label, is only a fragment of a multiword cue, or includes unrelated context",
+                "return uncertain when the lexical cue is plausible but sentence context or project guideline boundaries are ambiguous",
+            ],
+        }
+        if guidance["domain"] == "appraisal_engagement":
+            guidance["framework"] = {
+                "name": "Appraisal Theory: Engagement",
+                "goal": "identify how the author opens or contracts dialogic space through attribution, modality, denial, countering, endorsement, or emphasis",
+                "boundary_rules": [
+                    "prefer the cue span itself over the whole clause unless the label definition requires a larger assertion",
+                    "distinguish acknowledge attribution from distancing attribution by whether the author signals skepticism or non-commitment",
+                    "distinguish disclaim deny from disclaim counter by whether the span directly negates or pivots against an expected position",
+                    "treat Monogloss as direct unmodalized assertion; lexical suggestion usually needs human judgment for this label",
+                ],
+            }
+        return guidance
+
+    @staticmethod
+    def _is_appraisal_engagement_schema(tags: list[dict[str, Any]]) -> bool:
+        engagement_tags = [tag for tag in tags if str(tag.get("id") or "").startswith("engagement_")]
+        return len(engagement_tags) >= 4
+
+    @staticmethod
+    def _review_tag_context(tag: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": tag["id"],
+            "name": tag["name"],
+            "description": tag.get("description"),
+            "examples": list(tag.get("examples") or [])[:MAX_REVIEW_CONTEXT_EXAMPLES],
+            "shortcut": tag.get("shortcut"),
+            "color": tag.get("color"),
         }
 
     @staticmethod

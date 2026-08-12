@@ -14,6 +14,10 @@ class FakeSuggestionReviewer:
         assert context["suggestion"]["text"]
         assert context["suggestion"]["span_context"]
         assert f"[{context['suggestion']['text']}]" in context["suggestion"]["span_context"]
+        assert context["review_guidance"]["schema_version"] == "annopilot.suggestion_review_context.v1"
+        assert context["tag_schema"]["record_type"] == "tag_schema_context"
+        assert "tag_description" in context["suggestion"]
+        assert "tag_examples" in context["suggestion"]
         return {
             "model": "fake-gpt5.5",
             "recommendation": "accept",
@@ -1250,6 +1254,32 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
 
         assert loaded_by_id["appraisal-engagement-platform-review-cn-en"]["suggestions_created"] >= 20
         assert loaded_by_id["appraisal-engagement-customer-support-cn-en"]["suggestions_created"] >= 20
+
+
+def test_appraisal_engagement_review_context_includes_guidelines(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        load_response = client.post("/api/projects/default/sample-presets/appraisal-engagement-cn-en/load")
+        assert load_response.status_code == 200
+        document_id = load_response.json()["document_id"]
+        queue = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith").json()
+        suggestion_id = queue["items"][0]["first_suggestion"]["id"]
+
+        context = storage.get_suggestion_review_context("default", suggestion_id)
+
+    assert context["review_guidance"]["domain"] == "appraisal_engagement"
+    assert context["review_guidance"]["framework"]["name"] == "Appraisal Theory: Engagement"
+    assert any("Monogloss" in rule for rule in context["review_guidance"]["framework"]["boundary_rules"])
+    assert context["tag_schema"]["tag_count"] == 9
+    assert len(context["tags"]) == 9
+    assert all("description" in tag and "examples" in tag for tag in context["tags"])
+    suggested_tag = next(tag for tag in context["tags"] if tag["id"] == context["suggestion"]["tag_id"])
+    assert context["suggestion"]["tag_description"] == suggested_tag["description"]
+    assert context["suggestion"]["tag_examples"] == suggested_tag["examples"]
+    assert context["suggestion"]["tag_examples"]
 
 
 def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:

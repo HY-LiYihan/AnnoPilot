@@ -48,6 +48,7 @@ Web UI 空白阅读器中也会显示同一组内置样例按钮；点击后会�
 - **Hybrid review**：右侧 review queue 支持 `hybrid`，先排高风险句子，同时保留少量高置信样本抽检，用来估计自动通过样本的真实错误率；UI 的 `R` / next review 跳转会跟随当前选择的 position、random、uncertain、risk 或 hybrid 队列排序。
 - **Error discovery**：Document metrics 会用已有 human accept/reject 决策和 latest LLM review 生成累计错配发现曲线，比较 random、uncertainty、Goldsmith risk 和 hybrid queue 在前 5 条复核中发现多少错配。
 - **Review artifacts**：右侧运行状态可导出 Goldsmith/Rosetta-style `human_review_queue.jsonl` 和 `human_choices.jsonl`，把 engagement 标注中的待审队列、人工选择、LLM review 和错配标记交给离线优化/评估流程。
+- **Guided LLM review**：LLM review context 会携带 Engagement label definitions、bilingual examples、candidate span context、已有句内标注和边界规则；`context_sha256` 会随该结构化上下文一起进入 audit log，便于追踪当次复核依据。
 - **Boundary feedback**：rejected suggestions 作为 negative examples，降低重复误报。
 - **Auditability**：SQLite 保存 runtime state，`events.jsonl` 保存可审计 durable event；manifest 会记录 export hash、run provenance 和 audit summary。
 

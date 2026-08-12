@@ -193,7 +193,7 @@ annopilot.run_provenance.v1
 ### LLM Review
 
 1. UI 对 pending suggestion 发起 LLM review。
-2. `services/suggestions.py` 构造包含 sentence、candidate span、tag list、existing annotations 和 `span_context` 的结构化 context。
+2. `services/suggestions.py` 构造包含 sentence、candidate span、tag definitions/examples、existing annotations、Engagement boundary guidance 和 `span_context` 的结构化 context。
 3. OpenAI-compatible provider 返回 `accept`、`reject` 或 `uncertain` recommendation。
 4. Backend 保存 review row 和 `suggestion.llm_reviewed` event，并记录 `context_sha256`。
 
