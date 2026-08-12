@@ -260,6 +260,8 @@ class ReviewQueueItemResponse(BaseModel):
     suggestion_count: int
     priority_score: float
     min_confidence: float
+    lexical_risk_score: float = 0.0
+    llm_review_risk_score: float = 0.0
     risk_score: float
     review_route: str = "risk"
     first_suggestion: Optional[SuggestionResponse] = None

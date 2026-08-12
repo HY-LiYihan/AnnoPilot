@@ -9,6 +9,8 @@ from .tags import TagQueryRepository
 
 HIGH_CONFIDENCE_THRESHOLD = 0.9
 MEDIUM_CONFIDENCE_THRESHOLD = 0.75
+LLM_REVIEW_REJECT_RISK_WEIGHT = 1.0
+LLM_REVIEW_UNCERTAIN_RISK_WEIGHT = 0.6
 DEFAULT_SESSION_ID = "annopilot-human"
 HUMAN_ACTOR_ID = "annopilot-human"
 
@@ -462,12 +464,16 @@ class DocumentQueryRepository:
             suggestion_order_sql = "s.sentence_index, sg.confidence ASC, sg.start_token_index, sg.id"
         elif normalized_order in {"goldsmith", "hybrid"}:
             order_sql = (
-                "((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) DESC, "
-                "COUNT(DISTINCT sg.id) DESC, "
-                "MIN(sg.confidence) ASC, "
+                "risk_score DESC, "
+                "llm_review_risk_score DESC, "
+                "suggestion_count DESC, "
+                "min_confidence ASC, "
                 "s.sentence_index"
             )
-            suggestion_order_sql = "s.sentence_index, sg.confidence ASC, sg.start_token_index, sg.id"
+            suggestion_order_sql = (
+                f"s.sentence_index, {self._llm_review_risk_sql()} DESC, "
+                "sg.confidence ASC, sg.start_token_index, sg.id"
+            )
         else:
             order_sql = "s.sentence_index"
             suggestion_order_sql = "s.sentence_index, sg.start_token_index, sg.confidence DESC, sg.id"
@@ -506,9 +512,18 @@ class DocumentQueryRepository:
                 SELECT s.id, s.sentence_index, s.text,
                        COUNT(DISTINCT sg.id) AS suggestion_count,
                        MIN(sg.confidence) AS min_confidence,
-                       ((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) AS risk_score
+                       ((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) AS lexical_risk_score,
+                       SUM({self._llm_review_risk_sql()}) AS llm_review_risk_score,
+                       (((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) + SUM({self._llm_review_risk_sql()})) AS risk_score
                 FROM sentences s
                 JOIN annotation_suggestions sg ON sg.sentence_id = s.id
+                LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
+                    SELECT latest.id
+                    FROM annotation_suggestion_reviews latest
+                    WHERE latest.suggestion_id = sg.id
+                    ORDER BY latest.created_at DESC, latest.id DESC
+                    LIMIT 1
+                )
                 WHERE s.document_id = ? AND s.completed = 0 AND sg.status = 'pending'
                   AND NOT EXISTS (
                     SELECT 1
@@ -528,13 +543,22 @@ class DocumentQueryRepository:
                 calibration_rows = []
                 if hybrid_calibration_limit:
                     calibration_rows = conn.execute(
-                        """
+                        f"""
                         SELECT s.id, s.sentence_index, s.text,
                                COUNT(DISTINCT sg.id) AS suggestion_count,
                                MIN(sg.confidence) AS min_confidence,
-                               ((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) AS risk_score
+                               ((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) AS lexical_risk_score,
+                               SUM({self._llm_review_risk_sql()}) AS llm_review_risk_score,
+                               (((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) + SUM({self._llm_review_risk_sql()})) AS risk_score
                         FROM sentences s
                         JOIN annotation_suggestions sg ON sg.sentence_id = s.id
+                        LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
+                            SELECT latest.id
+                            FROM annotation_suggestion_reviews latest
+                            WHERE latest.suggestion_id = sg.id
+                            ORDER BY latest.created_at DESC, latest.id DESC
+                            LIMIT 1
+                        )
                         WHERE s.document_id = ? AND s.completed = 0 AND sg.status = 'pending'
                           AND NOT EXISTS (
                             SELECT 1
@@ -544,7 +568,7 @@ class DocumentQueryRepository:
                               AND a.end_token_index >= sg.start_token_index
                           )
                         GROUP BY s.id, s.sentence_index, s.text
-                        HAVING MIN(sg.confidence) >= ?
+                        HAVING MIN(sg.confidence) >= ? AND SUM({self._llm_review_risk_sql()}) = 0
                         ORDER BY MIN(sg.confidence) DESC, s.sentence_index
                         LIMIT ?
                         """,
@@ -599,6 +623,8 @@ class DocumentQueryRepository:
                     "suggestion_count": row["suggestion_count"],
                     "priority_score": float(row["min_confidence"] or 0),
                     "min_confidence": float(row["min_confidence"] or 0),
+                    "lexical_risk_score": float(row["lexical_risk_score"] or 0),
+                    "llm_review_risk_score": float(row["llm_review_risk_score"] or 0),
                     "risk_score": float(row["risk_score"] or 0),
                     "review_route": review_routes.get(
                         row["id"],
@@ -610,6 +636,15 @@ class DocumentQueryRepository:
             ],
             "total": int(total or 0),
         }
+
+    @staticmethod
+    def _llm_review_risk_sql(alias: str = "rev") -> str:
+        return (
+            f"CASE {alias}.recommendation "
+            f"WHEN 'reject' THEN {LLM_REVIEW_REJECT_RISK_WEIGHT} "
+            f"WHEN 'uncertain' THEN {LLM_REVIEW_UNCERTAIN_RISK_WEIGHT} "
+            "ELSE 0 END"
+        )
 
     def get_goldsmith_human_choices(self, project_id: str, document_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:

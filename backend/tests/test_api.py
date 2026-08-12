@@ -1862,6 +1862,87 @@ def test_review_queue_can_prioritize_goldsmith_risk_density(tmp_path: Path) -> N
         assert by_goldsmith["items"][0]["risk_score"] > by_goldsmith["items"][1]["risk_score"]
 
 
+def test_review_queue_goldsmith_uses_llm_review_risk_signal(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("llm-risk.txt", "Stable cue. Dense lexical risk.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "复核", "description": "需要优先复核的候选。"},
+        ).json()["tag"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=2").json()
+        first_sentence = page["sentences"][0]
+        second_sentence = page["sentences"][1]
+
+        with storage.connect() as conn:
+            now = "2026-01-01T00:00:00Z"
+            controlled_suggestions = [
+                ("sg-llm-reject", first_sentence, first_sentence["tokens"][0], 0.98, "reject"),
+                ("sg-dense-a", second_sentence, second_sentence["tokens"][0], 0.74, None),
+                ("sg-dense-b", second_sentence, second_sentence["tokens"][1], 0.75, None),
+            ]
+            for suggestion_id, sentence, token, confidence, recommendation in controlled_suggestions:
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestions (
+                      id, sentence_id, tag_id, start_token_index, end_token_index,
+                      start_char, end_char, text, confidence, source, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                    """,
+                    (
+                        suggestion_id,
+                        sentence["id"],
+                        tag["id"],
+                        token["token_index"],
+                        token["token_index"],
+                        token["start_char"],
+                        token["end_char"],
+                        token["text"],
+                        confidence,
+                        "test",
+                        now,
+                    ),
+                )
+                if recommendation:
+                    conn.execute(
+                        """
+                        INSERT INTO annotation_suggestion_reviews (
+                          id, suggestion_id, model, recommendation, confidence, rationale, context_sha256, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            f"rev-{suggestion_id}",
+                            suggestion_id,
+                            "fake-gpt5.5",
+                            recommendation,
+                            0.89,
+                            "LLM marked this high-confidence lexical cue as boundary-risky.",
+                            hashlib.sha256(suggestion_id.encode("utf-8")).hexdigest(),
+                            now,
+                        ),
+                    )
+
+        by_goldsmith = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith").json()
+        assert [item["id"] for item in by_goldsmith["items"]] == [first_sentence["id"], second_sentence["id"]]
+        assert round(by_goldsmith["items"][0]["lexical_risk_score"], 2) == 0.02
+        assert by_goldsmith["items"][0]["llm_review_risk_score"] == 1.0
+        assert round(by_goldsmith["items"][0]["risk_score"], 2) == 1.02
+        assert round(by_goldsmith["items"][1]["risk_score"], 2) == 0.52
+        assert by_goldsmith["items"][0]["first_suggestion"]["id"] == "sg-llm-reject"
+        assert by_goldsmith["items"][0]["first_suggestion"]["latest_review"]["recommendation"] == "reject"
+
+        by_hybrid = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=hybrid&limit=5").json()
+        assert by_hybrid["items"][0]["id"] == first_sentence["id"]
+        assert by_hybrid["items"][0]["review_route"] == "risk"
+
+
 def test_review_queue_hybrid_reserves_high_confidence_calibration_sample(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",

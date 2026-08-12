@@ -98,6 +98,8 @@ export type ReviewQueueItem = {
   suggestion_count: number
   priority_score: number
   min_confidence: number
+  lexical_risk_score: number
+  llm_review_risk_score: number
   risk_score: number
   review_route: 'position' | 'uncertain' | 'risk' | 'calibration' | string
   first_suggestion: SuggestionDef | null
