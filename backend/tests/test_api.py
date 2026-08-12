@@ -2007,6 +2007,27 @@ def test_review_queue_goldsmith_uses_llm_review_risk_signal(tmp_path: Path) -> N
         assert round(review_queue_lines[0]["risk_score"], 2) == 1.02
         assert review_queue_lines[0]["first_suggestion"]["latest_review"]["recommendation"] == "reject"
 
+        boundary_feedback_response = client.get(
+            f"/api/projects/default/documents/{document_id}/export.goldsmith.boundary-feedback.jsonl"
+        )
+        assert boundary_feedback_response.status_code == 200
+        boundary_feedback = [json.loads(line) for line in boundary_feedback_response.text.splitlines()]
+        assert len(boundary_feedback) == 1
+        assert boundary_feedback[0]["schema_version"] == "annopilot.goldsmith_boundary_feedback.v1"
+        assert boundary_feedback[0]["record_type"] == "boundary_feedback"
+        assert boundary_feedback[0]["source_type"] == "llm_reviewed_pending_suggestion"
+        assert boundary_feedback[0]["feedback_polarity"] == "negative"
+        assert boundary_feedback[0]["suggestion_id"] == "sg-llm-reject"
+        assert boundary_feedback[0]["human_decision"] is None
+        assert boundary_feedback[0]["latest_review"]["recommendation"] == "reject"
+        assert boundary_feedback[0]["hard_example_reasons"] == ["llm_rejected_pending_suggestion"]
+        assert "boundary feedback" in boundary_feedback[0]["failure_note"]
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        boundary_artifact = manifest["artifacts"]["goldsmith_boundary_feedback_jsonl"]
+        assert boundary_artifact["schema_version"] == "annopilot.goldsmith_boundary_feedback.v1"
+        assert boundary_artifact["line_count"] == 1
+
 
 def test_review_queue_hybrid_reserves_high_confidence_calibration_sample(tmp_path: Path) -> None:
     storage = AnnotationStorage(
@@ -2559,9 +2580,23 @@ def test_llm_review_calibration_disagreement_is_measured(tmp_path: Path) -> None
         assert hard_examples[0]["hard_example_reasons"] == ["llm_human_disagreement", "human_rejected_suggestion"]
         assert "negative example" in hard_examples[0]["failure_note"]
 
+        boundary_feedback_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.boundary-feedback.jsonl")
+        assert boundary_feedback_response.status_code == 200
+        boundary_feedback = [json.loads(line) for line in boundary_feedback_response.text.splitlines()]
+        assert len(boundary_feedback) == 1
+        assert boundary_feedback[0]["schema_version"] == "annopilot.goldsmith_boundary_feedback.v1"
+        assert boundary_feedback[0]["source_type"] == "human_choice"
+        assert boundary_feedback[0]["feedback_polarity"] == "negative"
+        assert boundary_feedback[0]["suggestion_id"] == suggestion_id
+        assert boundary_feedback[0]["human_decision"] == "reject"
+        assert boundary_feedback[0]["latest_review"]["recommendation"] == "accept"
+        assert boundary_feedback[0]["hard_example_reasons"] == ["llm_human_disagreement", "human_rejected_suggestion"]
+
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert manifest["artifacts"]["goldsmith_hard_examples_jsonl"]["schema_version"] == "annopilot.goldsmith_hard_examples.v1"
         assert manifest["artifacts"]["goldsmith_hard_examples_jsonl"]["line_count"] == 1
+        assert manifest["artifacts"]["goldsmith_boundary_feedback_jsonl"]["schema_version"] == "annopilot.goldsmith_boundary_feedback.v1"
+        assert manifest["artifacts"]["goldsmith_boundary_feedback_jsonl"]["line_count"] == 1
 
 
 def test_review_efficiency_curves_measure_error_discovery_by_queue_order(tmp_path: Path) -> None:

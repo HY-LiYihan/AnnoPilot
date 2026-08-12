@@ -32,6 +32,7 @@ class ExportService:
         goldsmith_review_queue_schema_version: str,
         goldsmith_human_choices_schema_version: str,
         goldsmith_hard_examples_schema_version: str,
+        goldsmith_boundary_feedback_schema_version: str,
         medium_confidence_threshold: float,
     ) -> None:
         self.get_document = get_document
@@ -54,6 +55,7 @@ class ExportService:
         self.goldsmith_review_queue_schema_version = goldsmith_review_queue_schema_version
         self.goldsmith_human_choices_schema_version = goldsmith_human_choices_schema_version
         self.goldsmith_hard_examples_schema_version = goldsmith_hard_examples_schema_version
+        self.goldsmith_boundary_feedback_schema_version = goldsmith_boundary_feedback_schema_version
         self.medium_confidence_threshold = medium_confidence_threshold
 
     def export_document_lines(self, project_id: str, document_id: str) -> list[str]:
@@ -119,6 +121,7 @@ class ExportService:
         goldsmith_queue_lines = self.export_goldsmith_review_queue_lines(project_id, document_id, order="hybrid", limit=100)
         goldsmith_choices_lines = self.export_goldsmith_human_choices_lines(project_id, document_id)
         goldsmith_hard_example_lines = self.export_goldsmith_hard_examples_lines(project_id, document_id)
+        goldsmith_boundary_feedback_lines = self.export_goldsmith_boundary_feedback_lines(project_id, document_id)
         event_lines = self.export_event_lines(project_id)
         audit_summary = self.audit_project(project_id)
         tag_schema_payload = self.export_tag_schema(project_id)
@@ -195,6 +198,11 @@ class ExportService:
                     filename=f"{document_id}.goldsmith.hard-examples.jsonl",
                     schema_version=self.goldsmith_hard_examples_schema_version,
                     lines=goldsmith_hard_example_lines,
+                ),
+                "goldsmith_boundary_feedback_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.boundary-feedback.jsonl",
+                    schema_version=self.goldsmith_boundary_feedback_schema_version,
+                    lines=goldsmith_boundary_feedback_lines,
                 ),
             },
         }
@@ -285,6 +293,71 @@ class ExportService:
                 },
             }
             lines.append(json.dumps(line, ensure_ascii=False) + "\n")
+        return lines
+
+    def export_goldsmith_boundary_feedback_lines(self, project_id: str, document_id: str) -> list[str]:
+        generated_at = self.now()
+        lines = []
+        rank = 0
+        seen_suggestion_ids: set[str] = set()
+
+        for choice in self.get_goldsmith_human_choices(project_id, document_id):
+            reasons = self._hard_example_reasons(choice)
+            if not reasons:
+                continue
+            rank += 1
+            seen_suggestion_ids.add(choice["id"])
+            lines.append(
+                json.dumps(
+                    self._boundary_feedback_line(
+                        project_id=project_id,
+                        document_id=document_id,
+                        generated_at=generated_at,
+                        rank=rank,
+                        source_type="human_choice",
+                        suggestion=choice,
+                        sentence_index=choice["sentence_index"],
+                        sentence_text=choice["sentence_text"],
+                        reasons=reasons,
+                        human_decision=choice["human_decision"],
+                        failure_note=self._hard_example_failure_note(choice, reasons),
+                    ),
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+
+        document = self.get_document(project_id, document_id)
+        for sentence in document["sentences"]:
+            for suggestion in sentence["suggestions"]:
+                if suggestion["id"] in seen_suggestion_ids:
+                    continue
+                reasons = self._pending_boundary_feedback_reasons(suggestion)
+                if not reasons:
+                    continue
+                latest_review = suggestion.get("latest_review") or {}
+                rank += 1
+                lines.append(
+                    json.dumps(
+                        self._boundary_feedback_line(
+                            project_id=project_id,
+                            document_id=document_id,
+                            generated_at=generated_at,
+                            rank=rank,
+                            source_type="llm_reviewed_pending_suggestion",
+                            suggestion=suggestion,
+                            sentence_index=sentence["index"],
+                            sentence_text=sentence["text"],
+                            reasons=reasons,
+                            human_decision=None,
+                            failure_note=self._pending_boundary_feedback_note(suggestion, reasons),
+                            feedback_polarity="negative" if latest_review.get("recommendation") == "reject" else "uncertain",
+                        ),
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+                seen_suggestion_ids.add(suggestion["id"])
         return lines
 
     def export_goldsmith_human_choices_lines(self, project_id: str, document_id: str) -> list[str]:
@@ -458,6 +531,97 @@ class ExportService:
         if "llm_uncertain" in reasons:
             notes.append("LLM marked the case uncertain; clarify label definition or add bilingual examples.")
         return " ".join(notes) or "Hard example selected for guideline calibration."
+
+    def _boundary_feedback_line(
+        self,
+        *,
+        project_id: str,
+        document_id: str,
+        generated_at: str,
+        rank: int,
+        source_type: str,
+        suggestion: dict[str, Any],
+        sentence_index: int,
+        sentence_text: str,
+        reasons: list[str],
+        human_decision: str | None,
+        failure_note: str,
+        feedback_polarity: str | None = None,
+    ) -> dict[str, Any]:
+        polarity = feedback_polarity or self._boundary_feedback_polarity(human_decision, suggestion.get("latest_review"))
+        return {
+            "schema_version": self.goldsmith_boundary_feedback_schema_version,
+            "record_type": "boundary_feedback",
+            "generated_at": generated_at,
+            "project_id": project_id,
+            "document_id": document_id,
+            "rank": rank,
+            "source_type": source_type,
+            "feedback_polarity": polarity,
+            "sentence_id": suggestion["sentence_id"],
+            "sentence_index": sentence_index,
+            "text": sentence_text,
+            "suggestion_id": suggestion["id"],
+            "run_id": suggestion.get("run_id"),
+            "hard_example_reasons": reasons,
+            "failure_note": failure_note,
+            "human_decision": human_decision,
+            "suggestion_status": suggestion.get("status"),
+            "span": {
+                "label": suggestion["tag_name"],
+                "label_id": suggestion["tag_id"],
+                "text": suggestion["text"],
+                "start": suggestion["start_char"],
+                "end": suggestion["end_char"],
+                "token_start": suggestion["start_token_index"],
+                "token_end": suggestion["end_token_index"],
+            },
+            "suggestion": self._export_goldsmith_suggestion(suggestion),
+            "latest_review": suggestion.get("latest_review"),
+            "meta": {
+                "source": "annopilot",
+                "artifact": "boundary_feedback.jsonl",
+                "match_key": suggestion.get("match_key"),
+                "evidence_match_key": suggestion.get("evidence_match_key"),
+            },
+        }
+
+    def _pending_boundary_feedback_reasons(self, suggestion: dict[str, Any]) -> list[str]:
+        latest_review = suggestion.get("latest_review") or {}
+        recommendation = latest_review.get("recommendation")
+        if recommendation not in {"reject", "uncertain"}:
+            return []
+        reasons = ["llm_rejected_pending_suggestion" if recommendation == "reject" else "llm_uncertain"]
+        if float(suggestion.get("confidence") or 0.0) < self.medium_confidence_threshold:
+            reasons.append("low_character_rag_confidence")
+        return reasons
+
+    @staticmethod
+    def _pending_boundary_feedback_note(suggestion: dict[str, Any], reasons: list[str]) -> str:
+        latest_review = suggestion.get("latest_review") or {}
+        notes = []
+        if "llm_rejected_pending_suggestion" in reasons:
+            notes.append("LLM rejected this still-pending suggestion; use it as boundary feedback before human resolution.")
+        if "llm_uncertain" in reasons:
+            notes.append("LLM marked this still-pending suggestion uncertain; route it for guideline or bilingual example calibration.")
+        if "low_character_rag_confidence" in reasons:
+            notes.append("Character RAG confidence was below the medium threshold; inspect lexical seed and span boundary.")
+        if latest_review.get("rationale"):
+            notes.append(f"Latest LLM rationale: {latest_review['rationale']}")
+        return " ".join(notes) or "Pending reviewed suggestion selected for boundary feedback."
+
+    @staticmethod
+    def _boundary_feedback_polarity(human_decision: str | None, latest_review: dict[str, Any] | None) -> str:
+        if human_decision == "reject":
+            return "negative"
+        if human_decision == "accept":
+            return "positive"
+        recommendation = (latest_review or {}).get("recommendation")
+        if recommendation == "reject":
+            return "negative"
+        if recommendation == "uncertain":
+            return "uncertain"
+        return "mixed"
 
     @staticmethod
     def _export_token(token: dict[str, Any]) -> dict[str, Any]:

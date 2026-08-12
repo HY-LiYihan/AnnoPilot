@@ -142,6 +142,10 @@ export function goldsmithHardExamplesExportUrl(projectId: string, documentId: st
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.hard-examples.jsonl`
 }
 
+export function goldsmithBoundaryFeedbackExportUrl(projectId: string, documentId: string) {
+  return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.boundary-feedback.jsonl`
+}
+
 export function manifestExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.manifest.json`
 }

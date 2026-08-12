@@ -10,6 +10,7 @@ import {
   fetchDocumentSummary,
   fetchReviewQueue,
   fetchSamplePresets,
+  goldsmithBoundaryFeedbackExportUrl,
   goldsmithHardExamplesExportUrl,
   goldsmithHumanChoicesExportUrl,
   goldsmithReviewQueueExportUrl,
@@ -1253,6 +1254,11 @@ export function useDocumentReader() {
     window.location.href = goldsmithHardExamplesExportUrl(PROJECT_ID, documentMeta.value.id)
   }
 
+  function exportGoldsmithBoundaryFeedbackJsonl() {
+    if (!documentMeta.value) return
+    window.location.href = goldsmithBoundaryFeedbackExportUrl(PROJECT_ID, documentMeta.value.id)
+  }
+
   async function refreshAuditSummary() {
     try {
       auditSummary.value = await fetchAuditSummary(PROJECT_ID)
@@ -1391,6 +1397,7 @@ export function useDocumentReader() {
     exportGoldsmithReviewQueueJsonl,
     exportGoldsmithHumanChoicesJsonl,
     exportGoldsmithHardExamplesJsonl,
+    exportGoldsmithBoundaryFeedbackJsonl,
     verifyRebuildPreview,
     resetProjectData,
     refreshAuditSummary,

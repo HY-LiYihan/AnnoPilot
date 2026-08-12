@@ -122,6 +122,7 @@ GET /api/projects/{project_id}/documents/{document_id}/export.prodigy.spans.json
 GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.review-queue.jsonl?order=hybrid&limit=100
 GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.human-choices.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.hard-examples.jsonl
+GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.boundary-feedback.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.manifest.json
 GET /api/projects/{project_id}/events.jsonl
 GET /api/projects/{project_id}/tags/schema.json
@@ -132,6 +133,7 @@ GET /api/projects/{project_id}/tags/schema.json
 - Goldsmith review queue JSONL 使用 `annopilot.goldsmith_review_queue.v1`，按当前 `order` 导出待人工复核句子、rank、lexical / LLM / 综合 risk score、route 和首条 suggestion，可作为 Rosetta 风格 `human_review_queue.jsonl`。
 - Goldsmith human choices JSONL 使用 `annopilot.goldsmith_human_choices.v1`，导出已被人工 accept/reject 的 suggestions、latest LLM review、是否错配和 span payload，可作为 Rosetta 风格 `human_choices.jsonl`。
 - Goldsmith hard examples JSONL 使用 `annopilot.goldsmith_hard_examples.v1`，从 human choices 中筛出人工拒绝、LLM/人工分歧、低置信或 LLM uncertain 样本，并附 `failure_note` 作为 Rosetta hard-example / boundary-feedback 输入。
+- Goldsmith boundary feedback JSONL 使用 `annopilot.goldsmith_boundary_feedback.v1`，合并 human hard examples 与仍 pending 但 latest LLM review 为 `reject` / `uncertain` 的候选，供下一轮 label boundary、负例和 bilingual examples 优化。
 - Manifest JSON 使用 `annopilot.export_manifest.v1`，记录 artifact hashes、source run ids、annotation import history、run provenance summaries、live queue metrics 和 event audit，并提供排除生成时间的稳定 `content_sha256`。
 - Events JSONL 是 project-level audit trail。
 - `annotations.imported` event 会保存逐行 `source_record_results` manifest，用于审计外部 JSONL 每条记录的 hash、匹配状态、目标 sentence、answer 和 Prodigy-style source metadata。

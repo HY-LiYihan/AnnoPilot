@@ -113,6 +113,20 @@ def export_goldsmith_hard_examples(
     return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
 
 
+@router.get("/documents/{document_id}/export.goldsmith.boundary-feedback.jsonl")
+def export_goldsmith_boundary_feedback(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> StreamingResponse:
+    try:
+        lines = storage.export_goldsmith_boundary_feedback_lines(project_id, document_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.goldsmith.boundary-feedback.jsonl"'}
+    return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
+
+
 @router.get("/events.jsonl")
 def export_events(
     project_id: str,

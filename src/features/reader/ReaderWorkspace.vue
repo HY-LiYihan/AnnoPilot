@@ -186,6 +186,7 @@ const {
   exportGoldsmithReviewQueueJsonl,
   exportGoldsmithHumanChoicesJsonl,
   exportGoldsmithHardExamplesJsonl,
+  exportGoldsmithBoundaryFeedbackJsonl,
   verifyRebuildPreview,
   resetProjectData,
 } = useDocumentReader()
@@ -395,6 +396,7 @@ async function confirmProjectReset() {
         @export-goldsmith-review-queue="exportGoldsmithReviewQueueJsonl"
         @export-goldsmith-human-choices="exportGoldsmithHumanChoicesJsonl"
         @export-goldsmith-hard-examples="exportGoldsmithHardExamplesJsonl"
+        @export-goldsmith-boundary-feedback="exportGoldsmithBoundaryFeedbackJsonl"
         @verify-rebuild="verifyRebuildPreview"
         @reset-project="confirmProjectReset"
       />
