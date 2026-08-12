@@ -1340,6 +1340,49 @@ def test_suggestion_review_context_includes_same_label_boundary_feedback(tmp_pat
     assert f"[{rejected_suggestion['text']}]" in feedback["hard_examples"][0]["span_context"]
 
 
+def test_suggestion_review_context_includes_pending_llm_rejected_boundary_feedback(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage, suggestion_reviewer=RejectingSuggestionReviewer())) as client:
+        tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "Engagement Cue", "description": "Potential cue needing human review.", "examples": ["Alpha"]},
+        ).json()["tag"]
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("llm-boundary.txt", "Alpha beta. Alpha gamma.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        run = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 5, "min_confidence": 0.98},
+        ).json()
+        suggestions = [suggestion for suggestion in run["suggestions"] if suggestion["tag_id"] == tag["id"]]
+        assert len(suggestions) >= 2
+        llm_rejected_suggestion = suggestions[0]
+        target_suggestion = suggestions[1]
+
+        review_response = client.post(f"/api/projects/default/suggestions/{llm_rejected_suggestion['id']}/llm-review")
+        assert review_response.status_code == 200
+        assert review_response.json()["recommendation"] == "reject"
+
+        context = storage.get_suggestion_review_context("default", target_suggestion["id"])
+
+    feedback = context["boundary_feedback"]
+    assert feedback["schema_version"] == "annopilot.boundary_feedback.v1"
+    assert feedback["target_tag_id"] == tag["id"]
+    assert feedback["negative_example_count"] == 1
+    assert feedback["hard_example_count"] == 1
+    assert feedback["negative_examples"][0]["suggestion_id"] == llm_rejected_suggestion["id"]
+    assert feedback["negative_examples"][0]["status"] == "pending"
+    assert feedback["negative_examples"][0]["human_decision"] is None
+    assert feedback["negative_examples"][0]["latest_review"]["recommendation"] == "reject"
+    assert feedback["negative_examples"][0]["hard_example_reasons"] == ["llm_rejected_pending_suggestion"]
+    assert feedback["hard_examples"][0]["suggestion_id"] == llm_rejected_suggestion["id"]
+
+
 def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
     with TestClient(
         create_app(

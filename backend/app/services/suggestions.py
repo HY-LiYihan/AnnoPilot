@@ -485,7 +485,10 @@ class SuggestionService:
             WHERE d.project_id = ?
               AND sg.tag_id = ?
               AND sg.id != ?
-              AND sg.status IN ('accepted', 'rejected')
+              AND (
+                sg.status IN ('accepted', 'rejected')
+                OR (sg.status = 'pending' AND rev.recommendation = 'reject')
+              )
             ORDER BY sg.created_at DESC, sg.id DESC
             LIMIT ?
             """,
@@ -496,7 +499,10 @@ class SuggestionService:
         hard_examples = []
         for row in rows:
             example = self._boundary_feedback_example(row)
-            if row["status"] == "rejected" and len(negative_examples) < MAX_BOUNDARY_FEEDBACK_EXAMPLES:
+            latest_review = example.get("latest_review") or {}
+            if (
+                row["status"] == "rejected" or latest_review.get("recommendation") == "reject"
+            ) and len(negative_examples) < MAX_BOUNDARY_FEEDBACK_EXAMPLES:
                 negative_examples.append(example)
             if example["hard_example_reasons"] and len(hard_examples) < MAX_BOUNDARY_FEEDBACK_EXAMPLES:
                 hard_examples.append(example)
@@ -660,7 +666,7 @@ class SuggestionService:
 
     def _boundary_feedback_example(self, row: sqlite3.Row) -> dict[str, Any]:
         latest_review = self._latest_review_from_row(row)
-        human_decision = "accept" if row["status"] == "accepted" else "reject"
+        human_decision = self._human_decision_from_suggestion_status(row["status"])
         reasons = self._boundary_feedback_reasons(row, latest_review)
         return {
             "suggestion_id": row["id"],
@@ -683,17 +689,27 @@ class SuggestionService:
 
     def _boundary_feedback_reasons(self, row: sqlite3.Row, latest_review: dict[str, Any] | None) -> list[str]:
         reasons: list[str] = []
-        human_decision = "accept" if row["status"] == "accepted" else "reject"
+        human_decision = self._human_decision_from_suggestion_status(row["status"])
         review_recommendation = latest_review.get("recommendation") if latest_review else None
-        if review_recommendation in {"accept", "reject"} and review_recommendation != human_decision:
+        if human_decision and review_recommendation in {"accept", "reject"} and review_recommendation != human_decision:
             reasons.append("llm_human_disagreement")
         if row["status"] == "rejected":
             reasons.append("human_rejected_suggestion")
+        if row["status"] == "pending" and review_recommendation == "reject":
+            reasons.append("llm_rejected_pending_suggestion")
         if float(row["confidence"] or 0.0) < self.medium_confidence_threshold:
             reasons.append("low_character_rag_confidence")
         if review_recommendation == "uncertain":
             reasons.append("llm_uncertain")
         return reasons
+
+    @staticmethod
+    def _human_decision_from_suggestion_status(status: str) -> str | None:
+        if status == "accepted":
+            return "accept"
+        if status == "rejected":
+            return "reject"
+        return None
 
     @staticmethod
     def _latest_review_from_row(row: sqlite3.Row) -> dict[str, Any] | None:

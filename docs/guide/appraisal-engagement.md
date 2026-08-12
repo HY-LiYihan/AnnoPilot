@@ -49,7 +49,7 @@ Web UI 空白阅读器中也会显示同一组内置样例按钮；点击后会�
 - **Error discovery**：Document metrics 会用已有 human accept/reject 决策和 latest LLM review 生成累计错配发现曲线，比较 random、uncertainty、Goldsmith risk 和 hybrid queue 在前 5 条复核中发现多少错配。
 - **Review artifacts**：右侧运行状态可导出 Goldsmith/Rosetta-style `human_review_queue.jsonl`、`human_choices.jsonl` 和 `hard_examples.jsonl`，把 engagement 标注中的待审队列、人工选择、LLM review、错配标记和边界失败样例交给离线优化/评估流程。
 - **Guided LLM review**：LLM review context 会携带 Engagement label definitions、bilingual examples、candidate span context、已有句内标注、同标签 boundary feedback 和边界规则；`context_sha256` 会随该结构化上下文一起进入 audit log，便于追踪当次复核依据。
-- **Boundary feedback**：rejected suggestions 作为 negative examples，人工拒绝、LLM/人工分歧、低置信和 LLM uncertain 样本也会进入下一条同标签 LLM review context，形成在线 hard-example 反馈。
+- **Boundary feedback**：rejected suggestions 作为 negative examples，人工拒绝、pending LLM reject、LLM/人工分歧、低置信和 LLM uncertain 样本也会进入下一条同标签 LLM review context，形成在线 hard-example 反馈。
 - **Auditability**：SQLite 保存 runtime state，`events.jsonl` 保存可审计 durable event；manifest 会记录 export hash、run provenance 和 audit summary。
 
 这个版本符合当前 1GB 内存目标：不引入向量库、队列或重型 optimizer；等标注流稳定后，再把 Rosetta 里的 prompt optimization / contrastive retrieval 作为离线 pipeline 接入。
