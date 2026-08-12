@@ -91,7 +91,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/apply-llm-re
 - `auto-annotate` 会先运行 Character RAG suggestions，再按同一 `min_confidence` 自动接受高置信 span，形成一键低算力自动标注 slice。
 - Suggestion payload 保留 `evidence_text`、`match_key` 和 `evidence_match_key`，用于审计字符规则实际命中的原始证据与归一化匹配键。
 - Accept 会创建 `source=accepted_suggestion` annotation，并把 suggestion 状态改为 `accepted`。
-- Reject 会把 suggestion 状态改为 `rejected`，后续 Character RAG 会把同 tag + text 当作 negative example。
+- Reject 会把 suggestion 状态改为 `rejected`，后续 Character RAG 会把同 tag + text 当作 negative example；如果 pending suggestion 已有 latest LLM review 且 recommendation 为 `reject`，重新运行 Character RAG 时也会作为 LLM-sourced negative example，并保留该已 review pending suggestion 等待人工决策。
 - Sentence-level accept/reject 会在一个 SQLite transaction 中批量处理当前句 pending suggestions，UI 的 `A` / `X` 快捷键走这组 endpoint。
 - LLM review 使用 OpenAI-compatible `/chat/completions`，返回 `recommendation`、`confidence`、`rationale` 和 `context_sha256`；sentence-scoped endpoint 会批量评审当前句仍 pending 且未被已有 annotation 覆盖的 suggestions。
 - `apply-llm-review` 支持 document scope 和 sentence scope，会在一个 SQLite transaction 中应用 latest LLM recommendations：`accept` 创建 `accepted_suggestion` annotation，`reject` 更新 suggestion 状态，`uncertain` 或未评审 suggestions 保持 pending。

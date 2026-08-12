@@ -27,6 +27,17 @@ class FakeSuggestionReviewer:
         }
 
 
+class RejectingSuggestionReviewer:
+    def review(self, context: dict) -> dict:
+        assert context["suggestion"]["text"]
+        return {
+            "model": "fake-gpt5.5",
+            "recommendation": "reject",
+            "confidence": 0.89,
+            "rationale": "候选边界不应自动进入该标签。",
+        }
+
+
 class CyclingSuggestionReviewer:
     def __init__(self) -> None:
         self.index = 0
@@ -2227,6 +2238,64 @@ def test_rejected_suggestions_become_project_negative_examples(tmp_path: Path) -
         )
         assert generated_event["config"]["negative_example_count"] == 1
         assert generated_event["config"]["negative_examples_by_tag"] == runs[0]["config"]["negative_examples_by_tag"]
+
+
+def test_llm_rejected_pending_suggestions_survive_rerun_as_negative_examples(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage, suggestion_reviewer=RejectingSuggestionReviewer())) as client:
+        tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "Engagement Cue", "description": "Potential cue needing human review.", "examples": ["Alpha"]},
+        ).json()["tag"]
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("llm-negative.txt", "Alpha beta.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        first_run = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 2, "min_confidence": 0.98},
+        ).json()
+        assert first_run["suggestions_created"] == 1
+        suggestion = first_run["suggestions"][0]
+        assert suggestion["tag_id"] == tag["id"]
+
+        review_response = client.post(f"/api/projects/default/suggestions/{suggestion['id']}/llm-review")
+        assert review_response.status_code == 200
+        assert review_response.json()["recommendation"] == "reject"
+
+        second_run = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 2, "min_confidence": 0.98},
+        ).json()
+        assert second_run["suggestions_created"] == 0
+        assert second_run["suggestions"] == []
+
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        live_suggestions = [suggestion for sentence in document["sentences"] for suggestion in sentence["suggestions"]]
+        assert [item["id"] for item in live_suggestions] == [suggestion["id"]]
+        assert live_suggestions[0]["latest_review"]["recommendation"] == "reject"
+        assert document["metrics"]["suggestion_count"] == 1
+        assert document["metrics"]["reviewed_suggestion_count"] == 1
+
+        runs = client.get(f"/api/projects/default/runs?document_id={document_id}&limit=2").json()["runs"]
+        latest_config = runs[0]["config"]
+        assert latest_config["pending_suggestion_clear_policy"] == "clear_unreviewed_pending_preserve_llm_reviewed"
+        assert latest_config["negative_example_policy"] == "human_rejected_or_latest_llm_reject"
+        assert latest_config["negative_example_count"] == 1
+        assert latest_config["negative_example_source_counts"] == {"llm_rejected": 1}
+        assert latest_config["negative_examples_by_tag"] == {tag["id"]: [suggestion["text"]]}
+
+        generated_event = next(
+            event
+            for event in [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
+            if event["type"] == "suggestions.generated" and event["run_id"] == second_run["run_id"]
+        )
+        assert generated_event["cleared_pending_suggestion_ids"] == []
+        assert generated_event["config"]["negative_example_source_counts"] == {"llm_rejected": 1}
 
 
 def test_rejected_phrase_suggestions_block_case_variants(tmp_path: Path) -> None:

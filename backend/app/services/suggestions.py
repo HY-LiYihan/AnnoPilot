@@ -107,16 +107,32 @@ class SuggestionService:
 
             project_rejected_suggestions = conn.execute(
                 """
-                SELECT sg.tag_id, sg.text
+                SELECT sg.tag_id, sg.text,
+                       CASE
+                         WHEN sg.status = 'rejected' THEN 'human_rejected'
+                         ELSE 'llm_rejected'
+                       END AS negative_source
                 FROM annotation_suggestions sg
                 JOIN sentences s ON s.id = sg.sentence_id
                 JOIN documents d ON d.id = s.document_id
-                WHERE d.project_id = ? AND sg.status = 'rejected'
+                LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
+                    SELECT latest.id
+                    FROM annotation_suggestion_reviews latest
+                    WHERE latest.suggestion_id = sg.id
+                    ORDER BY latest.created_at DESC, latest.id DESC
+                    LIMIT 1
+                )
+                WHERE d.project_id = ?
+                  AND (
+                    sg.status = 'rejected'
+                    OR (sg.status = 'pending' AND rev.recommendation = 'reject')
+                  )
                 """,
                 (project_id,),
             ).fetchall()
             negative_examples = build_negative_examples(tags, [self._row_dict(row) for row in project_rejected_suggestions])
             negative_example_count = sum(len(values) for values in negative_examples.values())
+            negative_example_source_counts = self._negative_example_source_counts(project_rejected_suggestions)
             negative_examples_sha256 = self._payload_sha256(negative_examples)
             negative_examples_match_keys = build_match_keys_by_tag(negative_examples)
             negative_examples_match_key_count = sum(len(values) for values in negative_examples_match_keys.values())
@@ -135,12 +151,15 @@ class SuggestionService:
                 "examples_match_keys_sha256": examples_match_keys_sha256,
                 "examples_match_keys_by_tag": examples_match_keys,
                 "negative_example_count": negative_example_count,
+                "negative_example_policy": "human_rejected_or_latest_llm_reject",
+                "negative_example_source_counts": negative_example_source_counts,
                 "negative_examples_sha256": negative_examples_sha256,
                 "negative_examples_by_tag": negative_examples,
                 "negative_examples_match_key_count": negative_examples_match_key_count,
                 "negative_examples_match_keys_sha256": negative_examples_match_keys_sha256,
                 "negative_examples_match_keys_by_tag": negative_examples_match_keys,
                 "retrieval": CHARACTER_RAG_RETRIEVAL,
+                "pending_suggestion_clear_policy": "clear_unreviewed_pending_preserve_llm_reviewed",
                 "scope": "sentence" if sentence_id else "document",
                 "sentence_id": sentence_id,
             }
@@ -183,12 +202,23 @@ class SuggestionService:
                 """,
                 scoped_params,
             ).fetchall()
-            rejected_rows = conn.execute(
+            blocked_suggestion_rows = conn.execute(
                 f"""
                 SELECT sg.sentence_id, sg.start_token_index, sg.end_token_index
                 FROM annotation_suggestions sg
                 JOIN sentences s ON s.id = sg.sentence_id
-                WHERE {sentence_filter} AND sg.status = 'rejected'
+                LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
+                    SELECT latest.id
+                    FROM annotation_suggestion_reviews latest
+                    WHERE latest.suggestion_id = sg.id
+                    ORDER BY latest.created_at DESC, latest.id DESC
+                    LIMIT 1
+                )
+                WHERE {sentence_filter}
+                  AND (
+                    sg.status = 'rejected'
+                    OR (sg.status = 'pending' AND rev.recommendation IS NOT NULL)
+                  )
                 """,
                 scoped_params,
             ).fetchall()
@@ -201,6 +231,11 @@ class SuggestionService:
                     FROM annotation_suggestions
                     WHERE status = 'pending'
                       AND {pending_filter}
+                      AND NOT EXISTS (
+                        SELECT 1
+                        FROM annotation_suggestion_reviews rev
+                        WHERE rev.suggestion_id = annotation_suggestions.id
+                      )
                     ORDER BY created_at, id
                     """.format(pending_filter=pending_filter),
                     pending_params,
@@ -212,6 +247,11 @@ class SuggestionService:
                 DELETE FROM annotation_suggestions
                 WHERE status = 'pending'
                   AND {pending_filter}
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM annotation_suggestion_reviews rev
+                    WHERE rev.suggestion_id = annotation_suggestions.id
+                  )
                 """,
                 pending_params,
             )
@@ -239,7 +279,7 @@ class SuggestionService:
                 tokens_by_sentence.setdefault(row["sentence_id"], []).append(self._row_dict(row, exclude={"sentence_id"}))
 
             blocked_by_sentence: dict[str, list[tuple[int, int]]] = {}
-            for row in list(annotation_rows) + list(rejected_rows):
+            for row in list(annotation_rows) + list(blocked_suggestion_rows):
                 blocked_by_sentence.setdefault(row["sentence_id"], []).append((row["start_token_index"], row["end_token_index"]))
 
             for sentence in sentence_rows:
@@ -689,6 +729,14 @@ class SuggestionService:
         counts: dict[str, int] = {}
         for suggestion in suggestions:
             source = str(suggestion.get("source") or "unknown")
+            counts[source] = counts.get(source, 0) + 1
+        return dict(sorted(counts.items()))
+
+    @staticmethod
+    def _negative_example_source_counts(rows: list[sqlite3.Row]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for row in rows:
+            source = str(row["negative_source"] or "unknown")
             counts[source] = counts.get(source, 0) + 1
         return dict(sorted(counts.items()))
 
