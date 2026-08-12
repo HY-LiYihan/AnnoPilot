@@ -115,7 +115,7 @@ GET    /api/projects/{project_id}/tags/schema.json
 
 ### Runtime Storage
 
-当前 backend 使用 `backend/app/storage.py` 作为 API 兼容 facade，底层通过 SQLite 保存 runtime store，通过 JSONL event log 保存 durable audit trail；annotation mutation、suggestion generation/review、suggestion decisions、audit/export 和 event replay/outbox 已逐步迁入 `services/` / `events/`。
+当前 backend 使用 `backend/app/storage.py` 作为 API 兼容 facade，底层通过 SQLite 保存 runtime store，通过 JSONL event log 保存 durable audit trail；annotation mutation、tag schema、suggestion generation/review、suggestion decisions、audit/export 和 event replay/outbox 已逐步迁入 `services/` / `events/`。
 右侧 Accuracy 指标当前定义为 LLM review recommendation 与已执行 accept/reject 动作的一致率；没有已 review 且已决策的样本时显示等待数据，不伪造 gold accuracy。
 Character RAG 会使用已确认 annotations 作为正例，并把项目内 human rejected suggestions 以及 latest LLM review 为 `reject` 的 pending suggestions 的 `tag_id + text` 作为负例，后续生成建议时跳过同样的词面/标签组合；匹配判断会对空白和大小写做归一化，因此英文大小写变体不会重复打扰 review 队列。重新运行 suggestions 时只清理未 review 的 pending suggestions，已带 LLM review 的 pending suggestions 会保留，避免丢失复核信号。
 候选 span 文本会根据 token offsets 还原英文词间空格，因此 `carbon emissions` 这类英文短语种子可以 exact match；中文连续字符仍按无空格词面匹配。导出的 suggestion text、evidence text 和 char offsets 保留原始文本，方便回放和审计。

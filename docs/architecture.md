@@ -112,13 +112,14 @@ backend/app/
     exports.py
     suggestion_decisions.py
     suggestions.py
+    tags.py
 ```
 
 Backend 当前边界：
 
 - `api/*` 只做 routing、validation error mapping 和 response model 绑定。
 - `schemas.py` 集中维护 Pydantic request / response contracts。
-- `storage.py` 是当前 API 兼容 facade；SQLite migration 在 `db/`，event outbox/replay 在 `events/`，annotation / suggestion generation / suggestion decision / audit / export workflow 已开始迁入 `services/`。
+- `storage.py` 是当前 API 兼容 facade；SQLite migration 在 `db/`，event outbox/replay 在 `events/`，annotation / suggestion generation / suggestion decision / tag schema / audit / export workflow 已开始迁入 `services/`。
 - `rag.py` 实现低算力 Character RAG：lexical exact、contains、char-ngram、casefold + whitespace normalization。
 - `llm.py` 使用 OpenAI-compatible `/chat/completions`，用于 suggestion LLM review，并在错误信息中 redact API key。
 - `rebuild.py` 支持从 `events.jsonl` 重建 SQLite 的 CLI / service 能力，并复用 `events/replay.py` 的可重放事件校验与 apply 逻辑；API 先提供 non-destructive preview。
@@ -255,7 +256,7 @@ healthcheck: GET /api/health
 
 短期优先级：
 
-- 继续把 `storage.py` 按 repository/service 拆分：tags、documents、reset 和 annotation import 仍可继续迁出，减少 facade 膨胀。
+- 继续把 `storage.py` 按 repository/service 拆分：documents、reset、runtime settings 和 annotation import 仍可继续迁出，减少 facade 膨胀。
 - 为 `import-annotations-jsonl` 增加前端入口和测试覆盖，形成 Prodigy round-trip workflow。
 - 给 OpenAPI schema 生成 TypeScript types，替代长期手写 `src/types/domain.ts`。
 - 将 health / audit / rebuild preview 做成更明确的 diagnostics panel，方便部署后快速定位 JSONL 或 LLM 配置问题。

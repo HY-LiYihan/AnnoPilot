@@ -5,5 +5,6 @@ from .audit import AuditService
 from .exports import ExportService
 from .suggestion_decisions import SuggestionDecisionService
 from .suggestions import SuggestionService
+from .tags import TagService
 
-__all__ = ["AnnotationService", "AuditService", "ExportService", "SuggestionDecisionService", "SuggestionService"]
+__all__ = ["AnnotationService", "AuditService", "ExportService", "SuggestionDecisionService", "SuggestionService", "TagService"]
