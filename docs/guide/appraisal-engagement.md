@@ -1,0 +1,45 @@
+# Appraisal Engagement 标注样例
+
+AnnoPilot 当前可以直接承载 appraisal theory 里的 **Engagement** 系统标注：用 project-level span labels 表达 label schema，用 Character RAG lexical examples 生成候选，再通过人工 accept/reject、LLM review、JSONL audit 和 Prodigy export 完成闭环。
+
+## 样例文件
+
+仓库内置两份可直接导入的样例：
+
+```text
+samples/appraisal-engagement-tag-schema.json
+samples/appraisal-engagement-cn-en.txt
+```
+
+`appraisal-engagement-tag-schema.json` 使用 `annopilot.tag_schema.v1`，覆盖：
+
+| Label | 用途 |
+| --- | --- |
+| `Monogloss 单声宣称` | 没有显性打开对话空间的直接断言，通常由人工标整句或关键断言 |
+| `Entertain 可能化` | may / 可能 / 似乎 等推测或可能性线索 |
+| `Attribute Acknowledge 归因承认` | said / according to / 表示 / 指出 等中性归因 |
+| `Attribute Distance 归因疏离` | allegedly / claim / 据称 / 声称 等疏离归因 |
+| `Proclaim Endorse 认同背书` | shows / demonstrates / 表明 / 证明 等证据背书 |
+| `Proclaim Pronounce 强化宣称` | clearly / undoubtedly / 显然 / 毫无疑问 等强化表达 |
+| `Proclaim Concur 共识承认` | of course / admittedly / 诚然 / 的确 等共同立场表达 |
+| `Disclaim Deny 否认` | not / cannot / 不是 / 不能 等否定线索 |
+| `Disclaim Counter 转折反驳` | but / however / 但是 / 然而 等转折反驳线索 |
+
+## 建议工作流
+
+1. 左侧导入 `samples/appraisal-engagement-tag-schema.json`。
+2. 中间导入 `samples/appraisal-engagement-cn-en.txt`。
+3. 运行当前句或全文 suggestions，建议先用较高 `min_confidence` 检查 exact lexical hits。
+4. 人工 accept/reject suggestions：accept 会生成 `source=accepted_suggestion` annotation；reject 会成为同 label 的 negative example，下一轮 Character RAG 会避开同一错误 span。
+5. 完成句子后用右侧 `Export Prodigy` 或 `Export Prodigy Spans` 导出，可直接得到 Prodigy-compatible JSONL。
+
+## Goldsmith 对齐
+
+这里采用的是轻量版 Goldsmith 思路，而不是把 Rosetta 的完整 prompt-training runner 搬入 Web runtime：
+
+- **Gold seed**：label schema 中的 bilingual lexical examples 是最小 gold-like seed。
+- **Score review**：suggestion confidence、LLM review recommendation 和人工 accept/reject 共同形成 review signal。
+- **Boundary feedback**：rejected suggestions 作为 negative examples，降低重复误报。
+- **Auditability**：SQLite 保存 runtime state，`events.jsonl` 保存可审计 durable event；manifest 会记录 export hash、run provenance 和 audit summary。
+
+这个版本符合当前 1GB 内存目标：不引入向量库、队列或重型 optimizer；等标注流稳定后，再把 Rosetta 里的 prompt optimization / contrastive retrieval 作为离线 pipeline 接入。

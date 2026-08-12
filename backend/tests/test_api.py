@@ -1093,6 +1093,85 @@ def test_import_tag_schema_merges_non_destructively(tmp_path: Path) -> None:
         assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
 
+def test_appraisal_engagement_samples_generate_and_export_prodigy(tmp_path: Path) -> None:
+    sample_root = Path(__file__).resolve().parents[2] / "samples"
+    schema = json.loads((sample_root / "appraisal-engagement-tag-schema.json").read_text(encoding="utf-8"))
+    source_text = (sample_root / "appraisal-engagement-cn-en.txt").read_text(encoding="utf-8")
+
+    with TestClient(
+        create_app(
+            AnnotationStorage(
+                database_path=tmp_path / "runtime" / "annopilot.sqlite",
+                data_root=tmp_path / "projects",
+            )
+        )
+    ) as client:
+        schema_response = client.post("/api/projects/default/tags/schema/import", json=schema)
+        assert schema_response.status_code == 200
+        imported_schema = schema_response.json()
+        assert imported_schema["created"] == 9
+        assert [tag["id"] for tag in imported_schema["tags"]] == [tag["id"] for tag in schema["tags"]]
+
+        import_response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("appraisal-engagement-cn-en.txt", source_text, "text/plain")},
+        )
+        assert import_response.status_code == 200
+        document_id = import_response.json()["document_id"]
+
+        suggestion_response = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 10, "min_confidence": 0.98},
+        )
+        assert suggestion_response.status_code == 200
+        suggestion_payload = suggestion_response.json()
+        suggestions = suggestion_payload["suggestions"]
+        assert suggestion_payload["source_counts"] == {"lexical_exact": len(suggestions)}
+
+        suggestions_by_text = {(suggestion["text"], suggestion["tag_id"]) for suggestion in suggestions}
+        expected_hits = {
+            ("said", "engagement_attribute_acknowledge"),
+            ("may", "engagement_entertain"),
+            ("but", "engagement_disclaim_counter"),
+            ("does not", "engagement_disclaim_deny"),
+            ("According to", "engagement_attribute_acknowledge"),
+            ("shows", "engagement_proclaim_endorse"),
+            ("clearly", "engagement_proclaim_pronounce"),
+            ("allegedly", "engagement_attribute_distance"),
+            ("yet", "engagement_disclaim_counter"),
+            ("Of course", "engagement_proclaim_concur"),
+            ("表示", "engagement_attribute_acknowledge"),
+            ("可能", "engagement_entertain"),
+            ("但", "engagement_disclaim_counter"),
+            ("不能", "engagement_disclaim_deny"),
+            ("显然", "engagement_proclaim_pronounce"),
+            ("据称", "engagement_attribute_distance"),
+            ("然而", "engagement_disclaim_counter"),
+            ("诚然", "engagement_proclaim_concur"),
+        }
+        assert expected_hits.issubset(suggestions_by_text)
+
+        auto_accept_response = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/auto-accept",
+            json={"min_confidence": 0.98},
+        )
+        assert auto_accept_response.status_code == 200
+        accepted = auto_accept_response.json()
+        assert accepted["accepted"] >= len(expected_hits)
+
+        prodigy_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl")
+        assert prodigy_response.status_code == 200
+        prodigy_lines = [json.loads(line) for line in prodigy_response.text.splitlines()]
+        exported_spans = [span for line in prodigy_lines for span in line["spans"]]
+        exported_labels = {span["label"] for span in exported_spans}
+        assert "Entertain 可能化" in exported_labels
+        assert "Attribute Acknowledge 归因承认" in exported_labels
+        assert "Disclaim Counter 转折反驳" in exported_labels
+        assert "Disclaim Deny 否认" in exported_labels
+        assert any(line["_view_id"] == "ner_manual" for line in prodigy_lines)
+        assert any(source["source"] == "accepted_suggestion" for line in prodigy_lines for source in line["meta"]["annotation_sources"])
+
+
 def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
     with TestClient(
         create_app(

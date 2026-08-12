@@ -24,6 +24,7 @@ export default defineConfig({
           { text: '架构设计', link: '/architecture' },
           { text: '架构决策记录', link: '/decisions/' },
           { text: 'API Surface', link: '/guide/api' },
+          { text: 'Appraisal Engagement 样例', link: '/guide/appraisal-engagement' },
           { text: 'Runtime Storage', link: '/guide/runtime-storage' },
         ],
       },

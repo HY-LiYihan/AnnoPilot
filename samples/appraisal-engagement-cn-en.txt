@@ -1,0 +1,9 @@
+The researcher said the pilot may help teachers, but it does not prove every classroom will improve.
+According to the report, the new interface clearly reduces hesitation and shows where annotators disagree.
+Some reviewers allegedly claimed the method was too simple, yet the audit trail demonstrates each decision.
+Of course, a small gold set cannot solve every edge case; however, rejected suggestions become useful boundary examples.
+
+研究员表示，这个试点可能帮助教师，但它不能证明每个课堂都会改善。
+报告指出，新界面显然减少了犹豫，并显示标注者在哪里存在分歧。
+有些评审据称声称这个方法过于简单，然而审计记录证明每一次决定都有依据。
+诚然，一个小型 gold 样本不能解决所有边界问题；不过，被拒绝的建议会变成有用的反例。
