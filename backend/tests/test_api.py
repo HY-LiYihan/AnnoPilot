@@ -1996,6 +1996,17 @@ def test_review_queue_goldsmith_uses_llm_review_risk_signal(tmp_path: Path) -> N
         assert by_hybrid["items"][0]["id"] == first_sentence["id"]
         assert by_hybrid["items"][0]["review_route"] == "risk"
 
+        review_queue_export = client.get(
+            f"/api/projects/default/documents/{document_id}/export.goldsmith.review-queue.jsonl?order=goldsmith&limit=5"
+        )
+        assert review_queue_export.status_code == 200
+        review_queue_lines = [json.loads(line) for line in review_queue_export.text.splitlines()]
+        assert review_queue_lines[0]["sentence_id"] == first_sentence["id"]
+        assert round(review_queue_lines[0]["lexical_risk_score"], 2) == 0.02
+        assert review_queue_lines[0]["llm_review_risk_score"] == 1.0
+        assert round(review_queue_lines[0]["risk_score"], 2) == 1.02
+        assert review_queue_lines[0]["first_suggestion"]["latest_review"]["recommendation"] == "reject"
+
 
 def test_review_queue_hybrid_reserves_high_confidence_calibration_sample(tmp_path: Path) -> None:
     storage = AnnotationStorage(
