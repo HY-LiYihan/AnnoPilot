@@ -2153,6 +2153,9 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert suggestion["latest_review"]["context_sha256"] == expected_context_sha256
         assert document["metrics"]["accuracy"] is None
         assert document["metrics"]["accuracy_label"] == "Waiting for reviewed accept/reject data"
+        assert document["metrics"]["calibration_count"] == 0
+        assert document["metrics"]["calibration_disagreement_count"] == 0
+        assert document["metrics"]["calibration_error_rate"] is None
         assert document["metrics"]["suggestion_review_counts"] == {"accept": 1, "reject": 0, "uncertain": 0}
         assert document["metrics"]["reviewed_suggestion_count"] == 1
 
@@ -2171,12 +2174,16 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         reviewed_document = client.get(f"/api/projects/default/documents/{document_id}").json()
         assert reviewed_document["metrics"]["accuracy"] == 1.0
         assert reviewed_document["metrics"]["accuracy_label"] == "LLM review agreement (1/1)"
+        assert reviewed_document["metrics"]["calibration_count"] == 1
+        assert reviewed_document["metrics"]["calibration_disagreement_count"] == 0
+        assert reviewed_document["metrics"]["calibration_error_rate"] == 0.0
         assert reviewed_document["metrics"]["suggestion_review_counts"] == {"accept": 1, "reject": 0, "uncertain": 0}
         assert reviewed_document["metrics"]["reviewed_suggestion_count"] == 1
 
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert manifest["metrics"]["suggestion_review_counts"] == {"accept": 1, "reject": 0, "uncertain": 0}
         assert manifest["metrics"]["reviewed_suggestion_count"] == 1
+        assert manifest["metrics"]["calibration_error_rate"] == 0.0
 
         audit = client.get("/api/projects/default/audit").json()
         assert audit["event_types"]["suggestions.generated"] == 1
@@ -2193,6 +2200,36 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert review_event["actor_id"] == "fake-gpt5.5"
         assert review_event["rationale"] == "候选词面和词性标签匹配。"
         assert review_event["context_sha256"] == expected_context_sha256
+
+
+def test_llm_review_calibration_disagreement_is_measured(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage, suggestion_reviewer=FakeSuggestionReviewer())) as client:
+        seed_pos_span_labels(client)
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("story.txt", "清晨，小猫看见金色的叶子。", "text/plain")},
+        )
+        document_id = response.json()["document_id"]
+        suggestion_response = client.post(f"/api/projects/default/documents/{document_id}/suggestions/run")
+        suggestion_id = suggestion_response.json()["suggestions"][0]["id"]
+
+        review_response = client.post(f"/api/projects/default/suggestions/{suggestion_id}/llm-review")
+        assert review_response.status_code == 200
+        assert review_response.json()["recommendation"] == "accept"
+
+        reject_response = client.post(f"/api/projects/default/suggestions/{suggestion_id}/reject")
+        assert reject_response.status_code == 200
+
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        assert document["metrics"]["accuracy"] == 0.0
+        assert document["metrics"]["accuracy_label"] == "LLM review agreement (0/1)"
+        assert document["metrics"]["calibration_count"] == 1
+        assert document["metrics"]["calibration_disagreement_count"] == 1
+        assert document["metrics"]["calibration_error_rate"] == 1.0
 
 
 def test_sentence_llm_review_suggestions_reviews_current_queue(tmp_path: Path) -> None:

@@ -135,6 +135,9 @@ export type Metrics = {
   reviewed_suggestion_count: number
   accuracy: number | null
   accuracy_label: string
+  calibration_count: number
+  calibration_disagreement_count: number
+  calibration_error_rate: number | null
 }
 
 export type AuditSummary = {

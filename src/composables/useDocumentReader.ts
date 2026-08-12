@@ -98,6 +98,9 @@ function emptyMetrics(): Metrics {
     reviewed_suggestion_count: 0,
     accuracy: null,
     accuracy_label: 'Waiting for review data',
+    calibration_count: 0,
+    calibration_disagreement_count: 0,
+    calibration_error_rate: null,
   }
 }
 

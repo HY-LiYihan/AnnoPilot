@@ -95,6 +95,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/apply-llm-re
 - Sentence-level accept/reject 会在一个 SQLite transaction 中批量处理当前句 pending suggestions，UI 的 `A` / `X` 快捷键走这组 endpoint。
 - LLM review 使用 OpenAI-compatible `/chat/completions`，返回 `recommendation`、`confidence`、`rationale` 和 `context_sha256`；sentence-scoped endpoint 会批量评审当前句仍 pending 且未被已有 annotation 覆盖的 suggestions。
 - `apply-llm-review` 支持 document scope 和 sentence scope，会在一个 SQLite transaction 中应用 latest LLM recommendations：`accept` 创建 `accepted_suggestion` annotation，`reject` 更新 suggestion 状态，`uncertain` 或未评审 suggestions 保持 pending。
+- Document metrics 会输出 `calibration_count`、`calibration_disagreement_count` 和 `calibration_error_rate`：只统计已经有 human accept/reject 决策且有 latest LLM review 的 suggestions，用于估计 review routing / judge signal 与人工判断的错配率，不把 LLM judge score 当成真实 accuracy。
 
 ## Runs And Audit
 

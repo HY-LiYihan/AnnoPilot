@@ -268,6 +268,7 @@ class DocumentQueryRepository:
             if (row["status"] == "accepted" and row["recommendation"] == "accept")
             or (row["status"] == "rejected" and row["recommendation"] == "reject")
         )
+        review_disagreements = review_total - review_agreements
         tag_counts = {row["tag_id"]: row["count"] for row in tag_count_rows}
         for tag in tags:
             tag["count"] = tag_counts.get(tag["id"], 0)
@@ -308,6 +309,9 @@ class DocumentQueryRepository:
                     if review_total
                     else "Waiting for reviewed accept/reject data"
                 ),
+                "calibration_count": review_total,
+                "calibration_disagreement_count": review_disagreements,
+                "calibration_error_rate": review_disagreements / review_total if review_total else None,
             },
             "queue": [
                 {

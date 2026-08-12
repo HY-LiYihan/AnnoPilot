@@ -284,6 +284,9 @@ class MetricsResponse(BaseModel):
     reviewed_suggestion_count: int = 0
     accuracy: Optional[float]
     accuracy_label: str
+    calibration_count: int = 0
+    calibration_disagreement_count: int = 0
+    calibration_error_rate: Optional[float] = None
 
 
 class SessionResponse(BaseModel):

@@ -163,6 +163,9 @@ function shortHash(value: string) {
         <small>
           {{ accuracyLabel(metrics.accuracy_label, labels) }}
           <template v-if="reviewSummary(metrics.suggestion_review_counts, labels)"> · {{ labels.reviewMix }} {{ reviewSummary(metrics.suggestion_review_counts, labels) }}</template>
+          <template v-if="metrics.calibration_error_rate !== null">
+            · {{ labels.calibrationError }} {{ Math.round(metrics.calibration_error_rate * 100) }}% ({{ metrics.calibration_disagreement_count }}/{{ metrics.calibration_count }})
+          </template>
         </small>
       </article>
       <article class="metric-card">
