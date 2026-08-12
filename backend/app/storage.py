@@ -12,16 +12,8 @@ from typing import Any, Optional
 from .db.connection import configure_connection, connect_database
 from .db.migrations import migrate_database
 from .events import EventOutbox, clear_project_runtime_rows, event_replay_issue, has_import_snapshot
-from .rag import (
-    CHARACTER_RAG_RETRIEVAL,
-    build_examples,
-    build_match_keys_by_tag,
-    build_negative_examples,
-    generate_candidate_spans,
-    match_normalization_config,
-)
 from .repositories import DocumentQueryRepository, RunQueryRepository, TagQueryRepository
-from .services import AnnotationService, AuditService, ExportService, SuggestionDecisionService
+from .services import AnnotationService, AuditService, ExportService, SuggestionDecisionService, SuggestionService
 from .text_processing import SentenceSpan, normalize_text, split_sentences, tokenize_sentence
 
 
@@ -143,6 +135,20 @@ class AnnotationStorage:
             ranges_overlap=self._ranges_overlap,
             not_found_error=NotFoundError,
             validation_error=ValidationError,
+        )
+        self.suggestion_service = SuggestionService(
+            self.connect,
+            new_id=self._new_id,
+            now=self._now,
+            enqueue_event=self._enqueue_event,
+            flush_event_outbox=self.flush_event_outbox,
+            get_tags=self._get_tags,
+            not_found_error=NotFoundError,
+            validation_error=ValidationError,
+            tag_schema_version=TAG_SCHEMA_VERSION,
+            high_confidence_threshold=HIGH_CONFIDENCE_THRESHOLD,
+            medium_confidence_threshold=MEDIUM_CONFIDENCE_THRESHOLD,
+            suggestion_context_chars=SUGGESTION_CONTEXT_CHARS,
         )
         self.export_service = ExportService(
             get_document=self.get_document,
@@ -871,30 +877,6 @@ class AnnotationStorage:
     def list_runs(self, project_id: str, document_id: Optional[str] = None, limit: int = 10) -> list[dict[str, Any]]:
         return self.run_queries.list_runs(project_id, document_id=document_id, limit=limit)
 
-    @staticmethod
-    def _suggestion_source_counts(suggestions: list[dict[str, Any]]) -> dict[str, int]:
-        counts: dict[str, int] = {}
-        for suggestion in suggestions:
-            source = str(suggestion.get("source") or "unknown")
-            counts[source] = counts.get(source, 0) + 1
-        return dict(sorted(counts.items()))
-
-    @classmethod
-    def _suggestion_confidence_counts(cls, suggestions: list[dict[str, Any]]) -> dict[str, int]:
-        counts: dict[str, int] = {}
-        for suggestion in suggestions:
-            bucket = cls._confidence_bucket(float(suggestion.get("confidence") or 0.0))
-            counts[bucket] = counts.get(bucket, 0) + 1
-        return dict(sorted(counts.items()))
-
-    @staticmethod
-    def _confidence_bucket(confidence: float) -> str:
-        if confidence >= HIGH_CONFIDENCE_THRESHOLD:
-            return "high"
-        if confidence >= MEDIUM_CONFIDENCE_THRESHOLD:
-            return "medium"
-        return "low"
-
     def export_run_provenance(self, project_id: str, run_id: str) -> dict[str, Any]:
         return self.run_queries.export_run_provenance(project_id, run_id)
 
@@ -906,286 +888,13 @@ class AnnotationStorage:
         min_confidence: float = 0.0,
         sentence_id: Optional[str] = None,
     ) -> dict[str, Any]:
-        now = self._now()
-        run_id = self._new_id("run")
-        confidence_floor = max(0.0, min(float(min_confidence), 1.0))
-        suggestion_ids: list[str] = []
-        suggestion_records: list[dict[str, Any]] = []
-        cleared_pending_suggestion_ids: list[str] = []
-        with self.connect() as conn:
-            document = conn.execute(
-                "SELECT id FROM documents WHERE id = ? AND project_id = ?",
-                (document_id, project_id),
-            ).fetchone()
-            if document is None:
-                raise NotFoundError("Document not found.")
-            if sentence_id is not None:
-                sentence = conn.execute(
-                    "SELECT id FROM sentences WHERE id = ? AND document_id = ?",
-                    (sentence_id, document_id),
-                ).fetchone()
-                if sentence is None:
-                    raise NotFoundError("Sentence not found.")
-
-            tags = self._get_tags(conn, project_id)
-            if not tags:
-                raise ValidationError("At least one tag is required before generating suggestions.")
-            tag_schema_sha256 = self._payload_sha256(self._tag_schema_content_payload(tags))
-
-            project_annotations = conn.execute(
-                """
-                SELECT a.tag_id, a.text
-                FROM annotations a
-                JOIN sentences s ON s.id = a.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                WHERE d.project_id = ?
-                """,
-                (project_id,),
-            ).fetchall()
-            examples = build_examples(tags, [self._row_dict(row) for row in project_annotations])
-            example_count = sum(len(values) for values in examples.values())
-            examples_sha256 = self._payload_sha256(examples)
-            examples_match_keys = build_match_keys_by_tag(examples)
-            examples_match_key_count = sum(len(values) for values in examples_match_keys.values())
-            examples_match_keys_sha256 = self._payload_sha256(examples_match_keys)
-
-            project_rejected_suggestions = conn.execute(
-                """
-                SELECT sg.tag_id, sg.text
-                FROM annotation_suggestions sg
-                JOIN sentences s ON s.id = sg.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                WHERE d.project_id = ? AND sg.status = 'rejected'
-                """,
-                (project_id,),
-            ).fetchall()
-            negative_examples = build_negative_examples(tags, [self._row_dict(row) for row in project_rejected_suggestions])
-            negative_example_count = sum(len(values) for values in negative_examples.values())
-            negative_examples_sha256 = self._payload_sha256(negative_examples)
-            negative_examples_match_keys = build_match_keys_by_tag(negative_examples)
-            negative_examples_match_key_count = sum(len(values) for values in negative_examples_match_keys.values())
-            negative_examples_match_keys_sha256 = self._payload_sha256(negative_examples_match_keys)
-            run_config = {
-                "limit_per_sentence": limit_per_sentence,
-                "min_confidence": confidence_floor,
-                "tag_count": len(tags),
-                "tag_schema_version": TAG_SCHEMA_VERSION,
-                "tag_schema_sha256": tag_schema_sha256,
-                "match_normalization": match_normalization_config(),
-                "example_count": example_count,
-                "examples_sha256": examples_sha256,
-                "examples_by_tag": examples,
-                "examples_match_key_count": examples_match_key_count,
-                "examples_match_keys_sha256": examples_match_keys_sha256,
-                "examples_match_keys_by_tag": examples_match_keys,
-                "negative_example_count": negative_example_count,
-                "negative_examples_sha256": negative_examples_sha256,
-                "negative_examples_by_tag": negative_examples,
-                "negative_examples_match_key_count": negative_examples_match_key_count,
-                "negative_examples_match_keys_sha256": negative_examples_match_keys_sha256,
-                "negative_examples_match_keys_by_tag": negative_examples_match_keys,
-                "retrieval": CHARACTER_RAG_RETRIEVAL,
-                "scope": "sentence" if sentence_id else "document",
-                "sentence_id": sentence_id,
-            }
-
-            sentence_filter = "s.document_id = ?"
-            scoped_params: tuple[Any, ...] = (document_id,)
-            pending_filter = "sentence_id IN (SELECT id FROM sentences WHERE document_id = ?)"
-            pending_params: tuple[Any, ...] = (document_id,)
-            if sentence_id is not None:
-                sentence_filter += " AND s.id = ?"
-                scoped_params = (document_id, sentence_id)
-                pending_filter = "sentence_id = ?"
-                pending_params = (sentence_id,)
-
-            sentence_rows = conn.execute(
-                f"""
-                SELECT id, sentence_index, text, start_char, end_char
-                FROM sentences s
-                WHERE {sentence_filter}
-                ORDER BY sentence_index
-                """,
-                scoped_params,
-            ).fetchall()
-            token_rows = conn.execute(
-                f"""
-                SELECT t.id, t.sentence_id, t.token_index, t.text, t.start_char, t.end_char
-                FROM tokens t
-                JOIN sentences s ON s.id = t.sentence_id
-                WHERE {sentence_filter}
-                ORDER BY s.sentence_index, t.token_index
-                """,
-                scoped_params,
-            ).fetchall()
-            annotation_rows = conn.execute(
-                f"""
-                SELECT a.sentence_id, a.start_token_index, a.end_token_index
-                FROM annotations a
-                JOIN sentences s ON s.id = a.sentence_id
-                WHERE {sentence_filter}
-                """,
-                scoped_params,
-            ).fetchall()
-            rejected_rows = conn.execute(
-                f"""
-                SELECT sg.sentence_id, sg.start_token_index, sg.end_token_index
-                FROM annotation_suggestions sg
-                JOIN sentences s ON s.id = sg.sentence_id
-                WHERE {sentence_filter} AND sg.status = 'rejected'
-                """,
-                scoped_params,
-            ).fetchall()
-
-            cleared_pending_suggestion_ids = [
-                row["id"]
-                for row in conn.execute(
-                    """
-                    SELECT id
-                    FROM annotation_suggestions
-                    WHERE status = 'pending'
-                      AND {pending_filter}
-                    ORDER BY created_at, id
-                    """.format(pending_filter=pending_filter),
-                    pending_params,
-                ).fetchall()
-            ]
-
-            conn.execute(
-                f"""
-                DELETE FROM annotation_suggestions
-                WHERE status = 'pending'
-                  AND {pending_filter}
-                """,
-                pending_params,
-            )
-
-            conn.execute(
-                """
-                INSERT INTO annotation_runs (
-                  id, project_id, document_id, recipe, config_json, input_count, suggestion_count, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-                """,
-                (
-                    run_id,
-                    project_id,
-                    document_id,
-                    "character_rag",
-                    json.dumps(run_config, ensure_ascii=False),
-                    len(sentence_rows),
-                    now,
-                ),
-            )
-
-            tokens_by_sentence: dict[str, list[dict[str, Any]]] = {}
-            for row in token_rows:
-                tokens_by_sentence.setdefault(row["sentence_id"], []).append(self._row_dict(row, exclude={"sentence_id"}))
-
-            blocked_by_sentence: dict[str, list[tuple[int, int]]] = {}
-            for row in list(annotation_rows) + list(rejected_rows):
-                blocked_by_sentence.setdefault(row["sentence_id"], []).append((row["start_token_index"], row["end_token_index"]))
-
-            for sentence in sentence_rows:
-                candidates = generate_candidate_spans(
-                    tokens_by_sentence.get(sentence["id"], []),
-                    examples,
-                    blocked_by_sentence.get(sentence["id"], []),
-                    limit_per_sentence,
-                    confidence_floor,
-                    negative_examples,
-                )
-                for candidate in candidates:
-                    suggestion_id = self._new_id("sug")
-                    suggestion_ids.append(suggestion_id)
-                    context = self._suggestion_context(
-                        sentence["text"],
-                        sentence["start_char"],
-                        candidate.start_char,
-                        candidate.end_char,
-                    )
-                    suggestion_record = {
-                        "id": suggestion_id,
-                        "run_id": run_id,
-                        "sentence_id": sentence["id"],
-                        "tag_id": candidate.tag_id,
-                        "start_token_index": candidate.start_token_index,
-                        "end_token_index": candidate.end_token_index,
-                        "start_char": candidate.start_char,
-                        "end_char": candidate.end_char,
-                        "text": candidate.text,
-                        "confidence": candidate.confidence,
-                        "source": candidate.source,
-                        "evidence_text": candidate.evidence_text,
-                        "match_key": candidate.match_key,
-                        "evidence_match_key": candidate.evidence_match_key,
-                        "context_before": context["context_before"],
-                        "context_after": context["context_after"],
-                        "status": "pending",
-                        "created_at": now,
-                    }
-                    suggestion_records.append(suggestion_record)
-                    conn.execute(
-                        """
-                        INSERT INTO annotation_suggestions (
-                          id, run_id, sentence_id, tag_id, start_token_index, end_token_index,
-                          start_char, end_char, text, confidence, source, evidence_text, match_key, evidence_match_key,
-                          context_before, context_after, status, created_at
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-                        """,
-                        (
-                            suggestion_record["id"],
-                            suggestion_record["run_id"],
-                            suggestion_record["sentence_id"],
-                            suggestion_record["tag_id"],
-                            suggestion_record["start_token_index"],
-                            suggestion_record["end_token_index"],
-                            suggestion_record["start_char"],
-                            suggestion_record["end_char"],
-                            suggestion_record["text"],
-                            suggestion_record["confidence"],
-                            suggestion_record["source"],
-                            suggestion_record["evidence_text"],
-                            suggestion_record["match_key"],
-                            suggestion_record["evidence_match_key"],
-                            suggestion_record["context_before"],
-                            suggestion_record["context_after"],
-                            now,
-                        ),
-                    )
-
-            source_counts = self._suggestion_source_counts(suggestion_records)
-            confidence_counts = self._suggestion_confidence_counts(suggestion_records)
-            conn.execute("UPDATE annotation_runs SET suggestion_count = ? WHERE id = ?", (len(suggestion_ids), run_id))
-
-            self._enqueue_event(
-                conn,
-                project_id,
-                {
-                    "type": "suggestions.generated",
-                    "document_id": document_id,
-                    "sentence_id": sentence_id,
-                    "run_id": run_id,
-                    "recipe": "character_rag",
-                    "input_count": len(sentence_rows),
-                    "suggestion_count": len(suggestion_ids),
-                    "source_counts": source_counts,
-                    "confidence_counts": confidence_counts,
-                    "config": run_config,
-                    "cleared_pending_suggestion_ids": cleared_pending_suggestion_ids,
-                    "suggestions": suggestion_records,
-                },
-            )
-
-        self.flush_event_outbox(project_id)
-        return {
-            "run_id": run_id,
-            "suggestions_created": len(suggestion_ids),
-            "source_counts": source_counts,
-            "confidence_counts": confidence_counts,
-            "suggestions": self.get_suggestions(project_id, suggestion_ids),
-        }
+        return self.suggestion_service.generate_suggestions(
+            project_id,
+            document_id,
+            limit_per_sentence,
+            min_confidence,
+            sentence_id=sentence_id,
+        )
 
     def accept_suggestion(self, project_id: str, suggestion_id: str) -> list[dict[str, Any]]:
         return self.suggestion_decisions.accept_suggestion(project_id, suggestion_id)
@@ -1229,61 +938,7 @@ class AnnotationStorage:
         return self.suggestion_decisions.auto_reject_document_suggestions(project_id, document_id)
 
     def get_suggestion_review_context(self, project_id: str, suggestion_id: str) -> dict[str, Any]:
-        with self.connect() as conn:
-            row = conn.execute(
-                """
-                SELECT sg.id, sg.tag_id, tags.name AS tag_name, sg.text AS span_text,
-                       sg.start_token_index, sg.end_token_index, sg.confidence AS lexical_confidence,
-                       sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after,
-                       s.id AS sentence_id, s.sentence_index, s.text AS sentence_text,
-                       d.id AS document_id, d.filename
-                FROM annotation_suggestions sg
-                JOIN sentences s ON s.id = sg.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                JOIN tags ON tags.id = sg.tag_id AND tags.project_id = d.project_id
-                WHERE sg.id = ? AND d.project_id = ? AND sg.status = 'pending'
-                """,
-                (suggestion_id, project_id),
-            ).fetchone()
-            if row is None:
-                raise NotFoundError("Pending suggestion not found.")
-            tags = self._get_tags(conn, project_id)
-            annotations = conn.execute(
-                """
-                SELECT a.tag_id, tags.name AS tag_name, a.text
-                FROM annotations a
-                JOIN tags ON tags.id = a.tag_id AND tags.project_id = ?
-                WHERE a.sentence_id = ?
-                ORDER BY a.start_token_index
-                """,
-                (project_id, row["sentence_id"]),
-            ).fetchall()
-        return {
-            "project_id": project_id,
-            "document_id": row["document_id"],
-            "filename": row["filename"],
-            "sentence_id": row["sentence_id"],
-            "sentence_index": row["sentence_index"],
-            "sentence_text": row["sentence_text"],
-            "suggestion": {
-                "id": row["id"],
-                "text": row["span_text"],
-                "tag_id": row["tag_id"],
-                "tag_name": row["tag_name"],
-                "start_token_index": row["start_token_index"],
-                "end_token_index": row["end_token_index"],
-                "lexical_confidence": row["lexical_confidence"],
-                "source": row["source"],
-                "evidence_text": row["evidence_text"],
-                "match_key": row["match_key"],
-                "evidence_match_key": row["evidence_match_key"],
-                "context_before": row["context_before"],
-                "context_after": row["context_after"],
-                "span_context": f"{row['context_before'] or ''}[{row['span_text']}]{row['context_after'] or ''}",
-            },
-            "tags": [{"id": tag["id"], "name": tag["name"]} for tag in tags],
-            "existing_sentence_annotations": [self._row_dict(annotation) for annotation in annotations],
-        }
+        return self.suggestion_service.get_suggestion_review_context(project_id, suggestion_id)
 
     def record_suggestion_review(
         self,
@@ -1292,77 +947,10 @@ class AnnotationStorage:
         review: dict[str, Any],
         context_sha256: str | None = None,
     ) -> dict[str, Any]:
-        suggestion = self._get_suggestion_row(project_id, suggestion_id)
-        review_id = self._new_id("rev")
-        now = self._now()
-        with self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO annotation_suggestion_reviews (
-                  id, suggestion_id, model, recommendation, confidence, rationale, context_sha256, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    review_id,
-                    suggestion_id,
-                    review["model"],
-                    review["recommendation"],
-                    review["confidence"],
-                    review["rationale"],
-                    context_sha256,
-                    now,
-                ),
-            )
-            self._enqueue_event(
-                conn,
-                project_id,
-                {
-                    "type": "suggestion.llm_reviewed",
-                    "suggestion_id": suggestion_id,
-                    "sentence_id": suggestion["sentence_id"],
-                    "review_id": review_id,
-                    "model": review["model"],
-                    "recommendation": review["recommendation"],
-                    "confidence": review["confidence"],
-                    "rationale": review["rationale"],
-                    "context_sha256": context_sha256,
-                },
-            )
-        self.flush_event_outbox(project_id)
-        return {"suggestion_id": suggestion_id, **review, "context_sha256": context_sha256, "created_at": now}
+        return self.suggestion_service.record_suggestion_review(project_id, suggestion_id, review, context_sha256=context_sha256)
 
     def get_suggestions(self, project_id: str, suggestion_ids: list[str]) -> list[dict[str, Any]]:
-        if not suggestion_ids:
-            return []
-        placeholders = ", ".join("?" for _ in suggestion_ids)
-        with self.connect() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT sg.id, sg.run_id, sg.sentence_id, sg.tag_id, tags.name AS tag_name, tags.color AS tag_color,
-                       sg.start_token_index, sg.end_token_index, sg.start_char, sg.end_char, sg.text,
-                       sg.confidence, sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after, sg.status, sg.created_at,
-                       rev.model AS review_model, rev.recommendation AS review_recommendation,
-                       rev.confidence AS review_confidence, rev.rationale AS review_rationale,
-                       rev.context_sha256 AS review_context_sha256,
-                       rev.created_at AS review_created_at
-                FROM annotation_suggestions sg
-                JOIN sentences s ON s.id = sg.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                JOIN tags ON tags.id = sg.tag_id AND tags.project_id = d.project_id
-                LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
-                    SELECT latest.id
-                    FROM annotation_suggestion_reviews latest
-                    WHERE latest.suggestion_id = sg.id
-                    ORDER BY latest.created_at DESC, latest.id DESC
-                    LIMIT 1
-                )
-                WHERE d.project_id = ? AND sg.id IN ({placeholders})
-                ORDER BY s.sentence_index, sg.start_token_index
-                """,
-                (project_id, *suggestion_ids),
-            ).fetchall()
-        return [self._suggestion_row_dict(row) for row in rows]
+        return self.suggestion_service.get_suggestions(project_id, suggestion_ids)
 
     def get_tags(self, project_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
@@ -2045,30 +1633,6 @@ class AnnotationStorage:
             )
         return tags
 
-    def _get_suggestion_row(self, project_id: str, suggestion_id: str) -> sqlite3.Row:
-        with self.connect() as conn:
-            suggestion = conn.execute(
-                """
-                SELECT sg.id, sg.sentence_id, sg.tag_id, sg.start_token_index, sg.end_token_index, sg.status
-                FROM annotation_suggestions sg
-                JOIN sentences s ON s.id = sg.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                WHERE sg.id = ? AND d.project_id = ?
-                """,
-                (suggestion_id, project_id),
-            ).fetchone()
-        if suggestion is None:
-            raise NotFoundError("Suggestion not found.")
-        return suggestion
-
-    @staticmethod
-    def _suggestion_context(sentence_text: str, sentence_start_char: int, start_char: int, end_char: int) -> dict[str, str]:
-        local_start = max(0, min(len(sentence_text), start_char - sentence_start_char))
-        local_end = max(local_start, min(len(sentence_text), end_char - sentence_start_char))
-        before = sentence_text[max(0, local_start - SUGGESTION_CONTEXT_CHARS) : local_start]
-        after = sentence_text[local_end : min(len(sentence_text), local_end + SUGGESTION_CONTEXT_CHARS)]
-        return {"context_before": before, "context_after": after}
-
     @staticmethod
     def _tag_schema_payload(project_id: str, tags: list[dict[str, Any]]) -> dict[str, Any]:
         return {**AnnotationStorage._tag_schema_content_payload(tags), "project_id": project_id}
@@ -2266,29 +1830,6 @@ class AnnotationStorage:
             "token_count": token_count,
             "sentences": sentence_records,
         }
-
-    def _suggestion_row_dict(self, row: sqlite3.Row, exclude: set[str] | None = None) -> dict[str, Any]:
-        review_keys = {
-            "review_model",
-            "review_recommendation",
-            "review_confidence",
-            "review_rationale",
-            "review_context_sha256",
-            "review_created_at",
-        }
-        data = self._row_dict(row, exclude=(exclude or set()) | review_keys)
-        if row["review_model"] is not None:
-            data["latest_review"] = {
-                "model": row["review_model"],
-                "recommendation": row["review_recommendation"],
-                "confidence": row["review_confidence"],
-                "rationale": row["review_rationale"],
-                "context_sha256": row["review_context_sha256"],
-                "created_at": row["review_created_at"],
-            }
-        else:
-            data["latest_review"] = None
-        return data
 
     @staticmethod
     def _new_id(prefix: str) -> str:

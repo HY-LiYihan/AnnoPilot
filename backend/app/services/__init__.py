@@ -4,5 +4,6 @@ from .annotations import AnnotationService
 from .audit import AuditService
 from .exports import ExportService
 from .suggestion_decisions import SuggestionDecisionService
+from .suggestions import SuggestionService
 
-__all__ = ["AnnotationService", "AuditService", "ExportService", "SuggestionDecisionService"]
+__all__ = ["AnnotationService", "AuditService", "ExportService", "SuggestionDecisionService", "SuggestionService"]

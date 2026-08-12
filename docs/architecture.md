@@ -95,13 +95,30 @@ backend/app/
     runs.py
     suggestions.py
     tags.py
+  db/
+    connection.py
+    migrations.py
+    schema.py
+  events/
+    outbox.py
+    replay.py
+  repositories/
+    documents.py
+    runs.py
+    tags.py
+  services/
+    annotations.py
+    audit.py
+    exports.py
+    suggestion_decisions.py
+    suggestions.py
 ```
 
 Backend 当前边界：
 
 - `api/*` 只做 routing、validation error mapping 和 response model 绑定。
 - `schemas.py` 集中维护 Pydantic request / response contracts。
-- `storage.py` 是当前 API 兼容 facade；SQLite migration 在 `db/`，event outbox/replay 在 `events/`，annotation / suggestion decision / audit / export workflow 逐步迁入 `services/`。
+- `storage.py` 是当前 API 兼容 facade；SQLite migration 在 `db/`，event outbox/replay 在 `events/`，annotation / suggestion generation / suggestion decision / audit / export workflow 已开始迁入 `services/`。
 - `rag.py` 实现低算力 Character RAG：lexical exact、contains、char-ngram、casefold + whitespace normalization。
 - `llm.py` 使用 OpenAI-compatible `/chat/completions`，用于 suggestion LLM review，并在错误信息中 redact API key。
 - `rebuild.py` 支持从 `events.jsonl` 重建 SQLite 的 CLI / service 能力，并复用 `events/replay.py` 的可重放事件校验与 apply 逻辑；API 先提供 non-destructive preview。
@@ -168,15 +185,15 @@ annopilot.run_provenance.v1
 ### Character RAG Suggestions
 
 1. UI 可针对当前 sentence 或整个 document 触发 suggestions run。
-2. Backend 从 tag examples、已确认 annotations 和 rejected suggestions 构建正负例。
-3. `rag.py` 生成候选 span，保存 `annotation_runs` 和 `annotation_suggestions`。
+2. `services/suggestions.py` 从 tag examples、已确认 annotations 和 rejected suggestions 构建正负例。
+3. `rag.py` 生成候选 span，service 保存 `annotation_runs` 和 `annotation_suggestions`。
 4. Run config 记录 tag schema hash、examples hash、negative examples hash、match keys 和 retrieval 规则。
 5. UI 可单条 accept/reject、当前句批量处理、全文 auto-accept / auto-reject，或一键运行 Character RAG 并自动接受高置信 span。
 
 ### LLM Review
 
 1. UI 对 pending suggestion 发起 LLM review。
-2. Backend 构造包含 sentence、candidate span、tag list、existing annotations 和 `span_context` 的结构化 context。
+2. `services/suggestions.py` 构造包含 sentence、candidate span、tag list、existing annotations 和 `span_context` 的结构化 context。
 3. OpenAI-compatible provider 返回 `accept`、`reject` 或 `uncertain` recommendation。
 4. Backend 保存 review row 和 `suggestion.llm_reviewed` event，并记录 `context_sha256`。
 
@@ -238,7 +255,7 @@ healthcheck: GET /api/health
 
 短期优先级：
 
-- 把 `storage.py` 按 repository/service 拆分：tags、documents、annotations、suggestions、exports、audit/rebuild，减少单文件膨胀。
+- 继续把 `storage.py` 按 repository/service 拆分：tags、documents、reset 和 annotation import 仍可继续迁出，减少 facade 膨胀。
 - 为 `import-annotations-jsonl` 增加前端入口和测试覆盖，形成 Prodigy round-trip workflow。
 - 给 OpenAPI schema 生成 TypeScript types，替代长期手写 `src/types/domain.ts`。
 - 将 health / audit / rebuild preview 做成更明确的 diagnostics panel，方便部署后快速定位 JSONL 或 LLM 配置问题。

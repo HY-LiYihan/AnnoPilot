@@ -24,3 +24,9 @@ API routers 当前比较薄，调用 `AnnotationStorage` 的方法名也已经�
 - 好处：新功能可以优先进入明确 service/repository，不再继续扩大 `storage.py`。
 - 代价：过渡期会存在 facade 代理和少量重复 helper，需要定期清理。
 - 约束：拆分不能改变 JSONL event schema、export shape、run provenance hash 或 API response shape，除非单独提出新 ADR。
+
+## Implementation Notes
+
+- `events/outbox.py` 负责 event outbox enqueue / JSONL flush，`events/replay.py` 负责 rebuild preview 的事件校验和重放。
+- `services/suggestion_decisions.py` 负责 suggestion accept/reject、sentence batch decision、review apply 和 document auto decision 的事务边界。
+- `services/suggestions.py` 负责 Character RAG suggestion generation、LLM review context、review event 记录和 suggestion read model 查询；`AnnotationStorage` 仅保留兼容代理方法。
