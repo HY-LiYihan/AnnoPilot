@@ -314,6 +314,40 @@ class SentencesPageResponse(BaseModel):
     has_more: bool
 
 
+class SamplePresetResponse(BaseModel):
+    id: str
+    title: str
+    description: str
+    filename: str
+    language_pair: str
+    tag_count: int
+    default_limit_per_sentence: int
+    default_min_confidence: float
+
+
+class SamplePresetListResponse(BaseModel):
+    presets: list[SamplePresetResponse]
+
+
+class LoadSamplePresetRequest(BaseModel):
+    generate_suggestions: bool = True
+    limit_per_sentence: Optional[int] = Field(default=None, ge=1, le=20)
+    min_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+
+class LoadSamplePresetResponse(BaseModel):
+    preset: SamplePresetResponse
+    document_id: str
+    filename: str
+    sentence_count: int
+    token_count: int
+    tags: list[TagResponse]
+    suggestions_created: int = 0
+    suggestion_run_id: Optional[str] = None
+    source_counts: dict[str, int] = Field(default_factory=dict)
+    confidence_counts: dict[str, int] = Field(default_factory=dict)
+
+
 class CreateAnnotationRequest(BaseModel):
     tag_id: str
     start_token_index: int = Field(ge=0)

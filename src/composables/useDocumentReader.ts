@@ -9,8 +9,10 @@ import {
   fetchDocumentSentences,
   fetchDocumentSummary,
   fetchReviewQueue,
+  fetchSamplePresets,
   importAnnotationsJsonl,
   importTxt,
+  loadSamplePreset as loadSamplePresetApi,
   manifestExportUrl,
   mergeTxt,
   prodigyExportUrl,
@@ -50,6 +52,7 @@ import {
   type Metrics,
   type RebuildPreview,
   type ReviewQueueItem,
+  type SamplePreset,
   type SentenceDef,
   type SentenceQueueItem,
   type SessionState,
@@ -98,6 +101,7 @@ function emptyMetrics(): Metrics {
 
 export function useDocumentReader() {
   const tags = ref<TagDef[]>(fallbackTags)
+  const samplePresets = ref<SamplePreset[]>([])
   const documents = ref<DocumentListItem[]>([])
   const documentMeta = ref<DocumentMeta | null>(null)
   const activeSession = ref<SessionState | null>(null)
@@ -150,6 +154,7 @@ export function useDocumentReader() {
   onMounted(async () => {
     window.addEventListener('keydown', handleKeydown)
     await loadDocumentList()
+    await loadSamplePresets()
     const activeDocumentId = window.localStorage.getItem(ACTIVE_DOCUMENT_KEY)
     if (activeDocumentId) {
       await loadDocument(activeDocumentId)
@@ -219,6 +224,37 @@ export function useDocumentReader() {
       documents.value = payload.documents
     } catch {
       documents.value = []
+    }
+  }
+
+  async function loadSamplePresets() {
+    try {
+      const payload = await fetchSamplePresets(PROJECT_ID)
+      samplePresets.value = payload.presets
+    } catch {
+      samplePresets.value = []
+    }
+  }
+
+  async function loadBuiltinSamplePreset(presetId: string) {
+    if (!presetId || isUploading.value || isSuggesting.value) return
+    isUploading.value = true
+    isSuggesting.value = true
+    readerError.value = ''
+    lastAnnotationImport.value = null
+    lastUndoAction.value = null
+    try {
+      const loaded = await loadSamplePresetApi(PROJECT_ID, presetId)
+      tags.value = loaded.tags
+      selectedTagId.value = loaded.tags[0]?.id ?? selectedTagId.value
+      selection.clearSelection()
+      window.localStorage.setItem(ACTIVE_DOCUMENT_KEY, loaded.document_id)
+      await loadDocument(loaded.document_id)
+    } catch (error) {
+      readerError.value = error instanceof Error ? error.message : 'Could not load sample preset.'
+    } finally {
+      isUploading.value = false
+      isSuggesting.value = false
     }
   }
 
@@ -1293,6 +1329,7 @@ export function useDocumentReader() {
 
   return {
     tags,
+    samplePresets,
     documents,
     documentMeta,
     activeSession,
@@ -1331,6 +1368,7 @@ export function useDocumentReader() {
     pendingSelection: selection.pendingSelection,
     pendingSelectionText: selection.pendingSelectionText,
     handleImport,
+    loadBuiltinSamplePreset,
     switchDocument,
     setCurrentSentence,
     jumpToNextReviewSentence,

@@ -4,8 +4,10 @@ import type {
   DocumentSummaryPayload,
   ImportAnnotationsResponse,
   ImportTxtResponse,
+  LoadSamplePresetResponse,
   ProjectResetResponse,
   ReviewQueuePayload,
+  SamplePresetListPayload,
   SentencesPagePayload,
 } from '../types/domain'
 import { parseJsonResponse, responseMessage } from './http'
@@ -45,6 +47,20 @@ export async function resetProject(projectId: string): Promise<ProjectResetRespo
     method: 'POST',
   })
   return parseJsonResponse<ProjectResetResponse>(response)
+}
+
+export async function fetchSamplePresets(projectId: string): Promise<SamplePresetListPayload> {
+  const response = await fetch(`/api/projects/${projectId}/sample-presets`)
+  return parseJsonResponse<SamplePresetListPayload>(response)
+}
+
+export async function loadSamplePreset(projectId: string, presetId: string): Promise<LoadSamplePresetResponse> {
+  const response = await fetch(`/api/projects/${projectId}/sample-presets/${presetId}/load`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ generate_suggestions: true }),
+  })
+  return parseJsonResponse<LoadSamplePresetResponse>(response)
 }
 
 export async function fetchDocument(projectId: string, documentId: string): Promise<DocumentPayload> {

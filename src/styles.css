@@ -400,7 +400,8 @@ h2 {
 }
 
 .import-action-button,
-.primary-import-button {
+.primary-import-button,
+.sample-preset-button {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -435,6 +436,21 @@ h2 {
   background: #00685b;
   box-shadow: 0 16px 42px rgba(0, 64, 56, 0.16);
   font-size: 1rem;
+}
+
+.sample-preset-button {
+  min-width: min(260px, 100%);
+  min-height: 44px;
+  padding: 0 20px;
+  border: 1px solid rgba(0, 104, 91, 0.28);
+  color: #00685b;
+  background: #f3faf6;
+  font-size: 0.88rem;
+}
+
+.sample-preset-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
 }
 
 .import-action-button input,

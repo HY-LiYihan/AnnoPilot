@@ -1172,6 +1172,54 @@ def test_appraisal_engagement_samples_generate_and_export_prodigy(tmp_path: Path
         assert any(source["source"] == "accepted_suggestion" for line in prodigy_lines for source in line["meta"]["annotation_sources"])
 
 
+def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None:
+    with TestClient(
+        create_app(
+            AnnotationStorage(
+                database_path=tmp_path / "runtime" / "annopilot.sqlite",
+                data_root=tmp_path / "projects",
+            )
+        )
+    ) as client:
+        presets_response = client.get("/api/projects/default/sample-presets")
+        assert presets_response.status_code == 200
+        presets = presets_response.json()["presets"]
+        assert [preset["id"] for preset in presets] == ["appraisal-engagement-cn-en"]
+        assert presets[0]["tag_count"] == 9
+
+        load_response = client.post("/api/projects/default/sample-presets/appraisal-engagement-cn-en/load")
+        assert load_response.status_code == 200
+        loaded = load_response.json()
+        document_id = loaded["document_id"]
+        assert loaded["filename"] == "appraisal-engagement-cn-en.txt"
+        assert loaded["sentence_count"] >= 8
+        assert loaded["token_count"] > 0
+        assert len(loaded["tags"]) == 9
+        assert loaded["suggestion_run_id"].startswith("run_")
+        assert loaded["suggestions_created"] >= 20
+        assert loaded["source_counts"] == {"lexical_exact": loaded["suggestions_created"]}
+
+        summary_response = client.get(f"/api/projects/default/documents/{document_id}/summary")
+        assert summary_response.status_code == 200
+        summary = summary_response.json()
+        assert summary["metrics"]["suggestion_count"] == loaded["suggestions_created"]
+        assert [tag["id"] for tag in summary["tags"]] == [tag["id"] for tag in loaded["tags"]]
+
+        auto_accept_response = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/auto-accept",
+            json={"min_confidence": 0.98},
+        )
+        assert auto_accept_response.status_code == 200
+        assert auto_accept_response.json()["accepted"] >= 20
+
+        prodigy_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl")
+        assert prodigy_response.status_code == 200
+        prodigy_lines = [json.loads(line) for line in prodigy_response.text.splitlines()]
+        exported_labels = {span["label"] for line in prodigy_lines for span in line["spans"]}
+        assert "Entertain 可能化" in exported_labels
+        assert "Disclaim Counter 转折反驳" in exported_labels
+
+
 def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
     with TestClient(
         create_app(

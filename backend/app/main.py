@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import annotations, audit, documents, exports, health, runs, settings, suggestions, tags
+from .api import annotations, audit, documents, exports, health, presets, runs, settings, suggestions, tags
 from .storage import AnnotationStorage
 
 
@@ -50,6 +50,7 @@ def create_app(storage: AnnotationStorage | None = None, suggestion_reviewer=Non
     app.include_router(health.router)
     app.include_router(settings.router)
     app.include_router(audit.router)
+    app.include_router(presets.router)
     app.include_router(documents.router)
     app.include_router(runs.router)
     app.include_router(annotations.router)

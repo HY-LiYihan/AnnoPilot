@@ -252,6 +252,34 @@ export type ReviewQueuePayload = {
   total: number
 }
 
+export type SamplePreset = {
+  id: string
+  title: string
+  description: string
+  filename: string
+  language_pair: string
+  tag_count: number
+  default_limit_per_sentence: number
+  default_min_confidence: number
+}
+
+export type SamplePresetListPayload = {
+  presets: SamplePreset[]
+}
+
+export type LoadSamplePresetResponse = {
+  preset: SamplePreset
+  document_id: string
+  filename: string
+  sentence_count: number
+  token_count: number
+  tags: TagDef[]
+  suggestions_created: number
+  suggestion_run_id: string | null
+  source_counts: Record<string, number>
+  confidence_counts: Record<string, number>
+}
+
 export type ImportTxtResponse = {
   document_id: string
   filename: string

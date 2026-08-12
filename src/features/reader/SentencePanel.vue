@@ -7,6 +7,7 @@ import type {
   DocumentListItem,
   DocumentMeta,
   DragSelection,
+  SamplePreset,
   SentenceDef,
   SuggestionDef,
   SuggestionReview,
@@ -21,6 +22,7 @@ const DOCUMENT_OPTION_FILENAME_LIMIT = 28
 
 const props = defineProps<{
   labels: UiLabels['reader']
+  samplePresets: SamplePreset[]
   documentMeta: DocumentMeta | null
   documents: DocumentListItem[]
   currentSentence: SentenceDef | null
@@ -57,8 +59,11 @@ const renderedSentences = computed(() =>
     .sort((left, right) => left.index - right.index),
 )
 
+const primarySamplePreset = computed(() => props.samplePresets[0] ?? null)
+
 const emit = defineEmits<{
   import: [file: File, mode: TxtImportMode]
+  'load-sample-preset': [presetId: string]
   'document-change': [documentId: string]
   'set-sentence-element': [sentenceId: string, element: unknown]
   'sentence-click': [sentenceIndex: number]
@@ -310,6 +315,16 @@ function predicatePositionClasses(
         {{ isUploading ? labels.importingTxt : labels.importTxt }}
         <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="handleFileInput($event, 'replace')" />
       </label>
+      <button
+        v-if="primarySamplePreset"
+        type="button"
+        class="sample-preset-button"
+        :disabled="isUploading || isSuggesting"
+        :title="primarySamplePreset.description"
+        @click="emit('load-sample-preset', primarySamplePreset.id)"
+      >
+        {{ isUploading || isSuggesting ? labels.loadingSample : labels.loadEngagementSample }}
+      </button>
       <p>{{ labels.dropTxt }}</p>
     </article>
 

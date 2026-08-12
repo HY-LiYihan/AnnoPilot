@@ -97,6 +97,7 @@ onMounted(async () => {
 
 const {
   tags,
+  samplePresets,
   documents,
   documentMeta,
   sentences,
@@ -134,6 +135,7 @@ const {
   pendingSelection,
   pendingSelectionText,
   handleImport,
+  loadBuiltinSamplePreset,
   switchDocument,
   setCurrentSentence,
   jumpToNextReviewSentence,
@@ -301,6 +303,7 @@ async function confirmProjectReset() {
 
       <SentencePanel
         :labels="labels.reader"
+        :sample-presets="samplePresets"
         :document-meta="documentMeta"
         :documents="documents"
         :current-sentence="currentSentence"
@@ -330,6 +333,7 @@ async function confirmProjectReset() {
         :token-prefix="tokenPrefix"
         :token-style="tokenStyle"
         @import="handleImport"
+        @load-sample-preset="loadBuiltinSamplePreset"
         @document-change="switchDocument"
         @set-sentence-element="setSentenceElement"
         @sentence-click="onSentenceClick"

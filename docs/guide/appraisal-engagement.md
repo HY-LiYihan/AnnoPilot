@@ -27,11 +27,10 @@ samples/appraisal-engagement-cn-en.txt
 
 ## 建议工作流
 
-1. 左侧导入 `samples/appraisal-engagement-tag-schema.json`。
-2. 中间导入 `samples/appraisal-engagement-cn-en.txt`。
-3. 运行当前句或全文 suggestions，建议先用较高 `min_confidence` 检查 exact lexical hits。
-4. 人工 accept/reject suggestions：accept 会生成 `source=accepted_suggestion` annotation；reject 会成为同 label 的 negative example，下一轮 Character RAG 会避开同一错误 span。
-5. 完成句子后用右侧 `Export Prodigy` 或 `Export Prodigy Spans` 导出，可直接得到 Prodigy-compatible JSONL。
+1. 在空白阅读器中点击 `加载 Engagement 样例`，系统会自动导入内置 schema、双语 TXT，并运行一次高置信 suggestions。
+2. 如果想手动复现，也可以左侧导入 `samples/appraisal-engagement-tag-schema.json`，再在中间导入 `samples/appraisal-engagement-cn-en.txt`。
+3. 人工 accept/reject suggestions：accept 会生成 `source=accepted_suggestion` annotation；reject 会成为同 label 的 negative example，下一轮 Character RAG 会避开同一错误 span。
+4. 完成句子后用右侧 `Export Prodigy` 或 `Export Prodigy Spans` 导出，可直接得到 Prodigy-compatible JSONL。
 
 ## Goldsmith 对齐
 
