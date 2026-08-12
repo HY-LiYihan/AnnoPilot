@@ -132,6 +132,18 @@ Of course, one export cannot prove corpus quality, yet the Prodigy file shows ev
 """
 
 
+APPRAISAL_ENGAGEMENT_CUSTOMER_SUPPORT_TEXT = """Customer support said the refund may arrive today, but the app does not clearly show the pending case.
+According to the chat transcript, the agent reported that the label issue was fixed; however, users claimed the fix was not visible.
+Some reviewers allegedly claimed the queue was confusing, yet the dashboard demonstrates which spans need review.
+Of course, the workflow cannot solve every dispute; nevertheless, it proves accepted spans can be exported.
+
+客服表示，退款可能今天到账，但应用并不能显然显示待处理工单。
+聊天记录指出，坐席称标签问题已经修复；然而，用户声称修复并非可见。
+一些复核者据称声称队列令人困惑，不过，仪表盘证明哪些 span 需要复核。
+当然，这个流程不能解决所有争议；诚然，它显示被接受的 span 可以导出。
+"""
+
+
 @dataclass(frozen=True)
 class SamplePreset:
     id: str
@@ -191,6 +203,15 @@ BUILTIN_SAMPLE_PRESETS = {
         description="面向产品反馈、标注平台复核和 Prodigy 导出的中英 engagement 线索，适合测试 mixed review workflow。",
         filename="appraisal-engagement-platform-review-cn-en.txt",
         text=APPRAISAL_ENGAGEMENT_PLATFORM_REVIEW_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-customer-support-cn-en": SamplePreset(
+        id="appraisal-engagement-customer-support-cn-en",
+        title="Engagement 客服反馈样例",
+        description="面向客服记录、用户反馈和产品支持复盘的中英 engagement 线索，适合练习 reported voice、denial、countering 和 export-ready spans。",
+        filename="appraisal-engagement-customer-support-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_CUSTOMER_SUPPORT_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
     )

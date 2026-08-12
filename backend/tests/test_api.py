@@ -1191,6 +1191,7 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
             "appraisal-engagement-news-policy-cn-en",
             "appraisal-engagement-academic-method-cn-en",
             "appraisal-engagement-platform-review-cn-en",
+            "appraisal-engagement-customer-support-cn-en",
         ]
         assert [preset["id"] for preset in presets] == expected_preset_ids
         assert all(preset["tag_count"] == 9 for preset in presets)
@@ -1248,6 +1249,7 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         assert [tag["id"] for tag in summary["tags"]] == [tag["id"] for tag in loaded["tags"]]
 
         assert loaded_by_id["appraisal-engagement-platform-review-cn-en"]["suggestions_created"] >= 20
+        assert loaded_by_id["appraisal-engagement-customer-support-cn-en"]["suggestions_created"] >= 20
 
 
 def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:

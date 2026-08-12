@@ -1,0 +1,9 @@
+Customer support said the refund may arrive today, but the app does not clearly show the pending case.
+According to the chat transcript, the agent reported that the label issue was fixed; however, users claimed the fix was not visible.
+Some reviewers allegedly claimed the queue was confusing, yet the dashboard demonstrates which spans need review.
+Of course, the workflow cannot solve every dispute; nevertheless, it proves accepted spans can be exported.
+
+客服表示，退款可能今天到账，但应用并不能显然显示待处理工单。
+聊天记录指出，坐席称标签问题已经修复；然而，用户声称修复并非可见。
+一些复核者据称声称队列令人困惑，不过，仪表盘证明哪些 span 需要复核。
+当然，这个流程不能解决所有争议；诚然，它显示被接受的 span 可以导出。
