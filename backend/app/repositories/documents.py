@@ -492,8 +492,10 @@ class DocumentQueryRepository:
             ).fetchone()["count"]
             sentence_rows = conn.execute(
                 f"""
-                SELECT s.id, s.sentence_index, s.text, COUNT(DISTINCT sg.id) AS suggestion_count,
-                       MIN(sg.confidence) AS priority_score
+                SELECT s.id, s.sentence_index, s.text,
+                       COUNT(DISTINCT sg.id) AS suggestion_count,
+                       MIN(sg.confidence) AS min_confidence,
+                       ((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) AS risk_score
                 FROM sentences s
                 JOIN annotation_suggestions sg ON sg.sentence_id = s.id
                 WHERE s.document_id = ? AND s.completed = 0 AND sg.status = 'pending'
@@ -556,7 +558,9 @@ class DocumentQueryRepository:
                     "index": row["sentence_index"],
                     "text": row["text"],
                     "suggestion_count": row["suggestion_count"],
-                    "priority_score": float(row["priority_score"] or 0),
+                    "priority_score": float(row["min_confidence"] or 0),
+                    "min_confidence": float(row["min_confidence"] or 0),
+                    "risk_score": float(row["risk_score"] or 0),
                     "first_suggestion": first_suggestion_by_sentence.get(row["id"]),
                 }
                 for row in sentence_rows

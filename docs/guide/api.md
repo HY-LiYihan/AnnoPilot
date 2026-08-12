@@ -30,7 +30,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/complete
 - `documents` 返回最近 runtime documents 的轻量索引，包含 progress、annotation count 和 pending suggestion count，供 frontend 切换已导入文档。
 - `summary` 返回 document meta、tags、metrics、全局 sentence queue 和当前 runtime session cursor，不返回完整 tokens；metrics 会包含 suggestion 的 `suggestion_status_counts`、`suggestion_review_counts` / `reviewed_suggestion_count`，以及 pending suggestion 的 `suggestion_source_counts` / `suggestion_confidence_counts`，用于快速判断当前待审队列质量、LLM 评审分布和已处理建议分布。
 - `sentences` 返回分页 sentence window，当前 API limit 上限为 200。
-- `review-queue` 返回未完成且存在 pending suggestions 的句子列表，以及每句第一条候选，供 UI 快速跳转待审任务；`order=uncertain` 会按最低 Character RAG confidence 优先排序，`order=goldsmith` 会按低置信度和句内候选密度的综合风险优先排序。
+- `review-queue` 返回未完成且存在 pending suggestions 的句子列表，以及每句第一条候选，供 UI 快速跳转待审任务；`order=uncertain` 会按最低 Character RAG confidence 优先排序，`order=goldsmith` 会按低置信度和句内候选密度的综合风险优先排序。队列 item 同时返回 `min_confidence` 与 `risk_score`，其中 `risk_score=(1-min_confidence)×suggestion_count`；旧字段 `priority_score` 保持为 `min_confidence` 以兼容已有调用。
 - `annotation-imports` 从 `events.jsonl` 读取最近的 JSONL annotation import history；frontend 用它在刷新页面后恢复最近导入摘要。
 - `session/cursor` 保存默认人工会话的当前句位置，用于刷新后恢复标注阅读器状态；该状态保存在 SQLite runtime，不写入 JSONL audit log。
 - `complete` 写入 `completed` 和 Prodigy-compatible `answer`，当前支持 `accept`、`ignore`、`reject`，以及 `completed=false` reopen 回 `pending`。

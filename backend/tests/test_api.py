@@ -1752,7 +1752,10 @@ def test_review_queue_can_prioritize_goldsmith_risk_density(tmp_path: Path) -> N
         by_goldsmith = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith").json()
         assert [item["id"] for item in by_goldsmith["items"]] == [second_sentence["id"], first_sentence["id"]]
         assert by_goldsmith["items"][0]["suggestion_count"] == 2
+        assert by_goldsmith["items"][0]["min_confidence"] == 0.74
         assert by_goldsmith["items"][0]["priority_score"] == 0.74
+        assert round(by_goldsmith["items"][0]["risk_score"], 2) == 0.52
+        assert by_goldsmith["items"][0]["risk_score"] > by_goldsmith["items"][1]["risk_score"]
 
 
 def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:

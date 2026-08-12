@@ -97,6 +97,8 @@ export type ReviewQueueItem = {
   text: string
   suggestion_count: number
   priority_score: number
+  min_confidence: number
+  risk_score: number
   first_suggestion: SuggestionDef | null
 }
 

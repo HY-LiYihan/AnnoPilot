@@ -259,6 +259,8 @@ class ReviewQueueItemResponse(BaseModel):
     text: str
     suggestion_count: int
     priority_score: float
+    min_confidence: float
+    risk_score: float
     first_suggestion: Optional[SuggestionResponse] = None
 
 

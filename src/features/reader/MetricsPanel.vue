@@ -112,10 +112,12 @@ function accuracyLabel(value: string, labels: UiLabels['metrics']) {
   return value === 'Waiting for review data' ? labels.waitingReviewData : value
 }
 
-function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
+function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics'], order: ReviewQueueOrder) {
   const suggestion = item.first_suggestion
-  const confidence = `${Math.round(item.priority_score * 100)}%`
-  return suggestion ? `${suggestion.tag_name}: ${suggestion.text} · ${confidence}` : labels.queuePreviewFallback(item.suggestion_count)
+  const score = order === 'goldsmith'
+    ? `${labels.riskScore} ${item.risk_score.toFixed(2)}`
+    : `${Math.round(item.min_confidence * 100)}%`
+  return suggestion ? `${suggestion.tag_name}: ${suggestion.text} · ${score}` : labels.queuePreviewFallback(item.suggestion_count)
 }
 
 function shortHash(value: string) {
@@ -286,7 +288,7 @@ function shortHash(value: string) {
         >
           <span>
             <strong>#{{ item.index + 1 }} · {{ labels.suggestionsCount(item.suggestion_count) }}</strong>
-            <small>{{ queuePreviewText(item, labels) }}</small>
+            <small>{{ queuePreviewText(item, labels, reviewQueueOrder) }}</small>
           </span>
           <em>{{ labels.go }}</em>
         </button>
