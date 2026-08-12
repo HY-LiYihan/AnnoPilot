@@ -31,6 +31,8 @@ class ExportService:
         run_provenance_schema_version: str,
         goldsmith_review_queue_schema_version: str,
         goldsmith_human_choices_schema_version: str,
+        goldsmith_hard_examples_schema_version: str,
+        medium_confidence_threshold: float,
     ) -> None:
         self.get_document = get_document
         self.get_review_queue = get_review_queue
@@ -51,6 +53,8 @@ class ExportService:
         self.run_provenance_schema_version = run_provenance_schema_version
         self.goldsmith_review_queue_schema_version = goldsmith_review_queue_schema_version
         self.goldsmith_human_choices_schema_version = goldsmith_human_choices_schema_version
+        self.goldsmith_hard_examples_schema_version = goldsmith_hard_examples_schema_version
+        self.medium_confidence_threshold = medium_confidence_threshold
 
     def export_document_lines(self, project_id: str, document_id: str) -> list[str]:
         document = self.get_document(project_id, document_id)
@@ -114,6 +118,7 @@ class ExportService:
         prodigy_spans_lines = self.export_prodigy_spans_document_lines(project_id, document_id)
         goldsmith_queue_lines = self.export_goldsmith_review_queue_lines(project_id, document_id, order="hybrid", limit=100)
         goldsmith_choices_lines = self.export_goldsmith_human_choices_lines(project_id, document_id)
+        goldsmith_hard_example_lines = self.export_goldsmith_hard_examples_lines(project_id, document_id)
         event_lines = self.export_event_lines(project_id)
         audit_summary = self.audit_project(project_id)
         tag_schema_payload = self.export_tag_schema(project_id)
@@ -186,6 +191,11 @@ class ExportService:
                     schema_version=self.goldsmith_human_choices_schema_version,
                     lines=goldsmith_choices_lines,
                 ),
+                "goldsmith_hard_examples_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.hard-examples.jsonl",
+                    schema_version=self.goldsmith_hard_examples_schema_version,
+                    lines=goldsmith_hard_example_lines,
+                ),
             },
         }
         manifest["content_sha256"] = self._payload_sha256(self._manifest_content_payload(manifest))
@@ -223,6 +233,53 @@ class ExportService:
                     "source": "annopilot",
                     "artifact": "human_review_queue.jsonl",
                     "total_queue_items": queue["total"],
+                },
+            }
+            lines.append(json.dumps(line, ensure_ascii=False) + "\n")
+        return lines
+
+    def export_goldsmith_hard_examples_lines(self, project_id: str, document_id: str) -> list[str]:
+        choices = self.get_goldsmith_human_choices(project_id, document_id)
+        generated_at = self.now()
+        lines = []
+        rank = 0
+        for choice in choices:
+            reasons = self._hard_example_reasons(choice)
+            if not reasons:
+                continue
+            rank += 1
+            line = {
+                "schema_version": self.goldsmith_hard_examples_schema_version,
+                "record_type": "hard_example",
+                "generated_at": generated_at,
+                "project_id": project_id,
+                "document_id": document_id,
+                "rank": rank,
+                "sentence_id": choice["sentence_id"],
+                "sentence_index": choice["sentence_index"],
+                "text": choice["sentence_text"],
+                "suggestion_id": choice["id"],
+                "run_id": choice.get("run_id"),
+                "hard_example_reasons": reasons,
+                "failure_note": self._hard_example_failure_note(choice, reasons),
+                "human_decision": choice["human_decision"],
+                "disagreement": choice["disagreement"],
+                "span": {
+                    "label": choice["tag_name"],
+                    "label_id": choice["tag_id"],
+                    "text": choice["text"],
+                    "start": choice["start_char"],
+                    "end": choice["end_char"],
+                    "token_start": choice["start_token_index"],
+                    "token_end": choice["end_token_index"],
+                },
+                "suggestion": self._export_goldsmith_suggestion(choice),
+                "latest_review": choice.get("latest_review"),
+                "meta": {
+                    "source": "annopilot",
+                    "artifact": "hard_examples.jsonl",
+                    "match_key": choice.get("match_key"),
+                    "evidence_match_key": choice.get("evidence_match_key"),
                 },
             }
             lines.append(json.dumps(line, ensure_ascii=False) + "\n")
@@ -370,6 +427,35 @@ class ExportService:
             "context_after": suggestion.get("context_after"),
             "latest_review": suggestion.get("latest_review"),
         }
+
+    def _hard_example_reasons(self, choice: dict[str, Any]) -> list[str]:
+        reasons: list[str] = []
+        latest_review = choice.get("latest_review") or {}
+        if choice.get("disagreement"):
+            reasons.append("llm_human_disagreement")
+        if choice.get("human_decision") == "reject":
+            reasons.append("human_rejected_suggestion")
+        if float(choice.get("confidence") or 0.0) < self.medium_confidence_threshold:
+            reasons.append("low_character_rag_confidence")
+        if latest_review.get("recommendation") == "uncertain":
+            reasons.append("llm_uncertain")
+        return reasons
+
+    @staticmethod
+    def _hard_example_failure_note(choice: dict[str, Any], reasons: list[str]) -> str:
+        notes = []
+        latest_review = choice.get("latest_review") or {}
+        if "llm_human_disagreement" in reasons:
+            notes.append(
+                f"LLM recommended {latest_review.get('recommendation')} but human chose {choice.get('human_decision')}; inspect guideline boundary."
+            )
+        if "human_rejected_suggestion" in reasons:
+            notes.append("Human rejected this suggestion; keep it as a negative example for the same label/text boundary.")
+        if "low_character_rag_confidence" in reasons:
+            notes.append("Character RAG confidence was below the medium threshold; review lexical seed quality and span boundary.")
+        if "llm_uncertain" in reasons:
+            notes.append("LLM marked the case uncertain; clarify label definition or add bilingual examples.")
+        return " ".join(notes) or "Hard example selected for guideline calibration."
 
     @staticmethod
     def _export_token(token: dict[str, Any]) -> dict[str, Any]:

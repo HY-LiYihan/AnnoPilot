@@ -138,6 +138,10 @@ export function goldsmithHumanChoicesExportUrl(projectId: string, documentId: st
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.human-choices.jsonl`
 }
 
+export function goldsmithHardExamplesExportUrl(projectId: string, documentId: string) {
+  return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.hard-examples.jsonl`
+}
+
 export function manifestExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.manifest.json`
 }

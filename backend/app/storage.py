@@ -33,6 +33,7 @@ TAG_SCHEMA_VERSION = "annopilot.tag_schema.v1"
 RUN_PROVENANCE_SCHEMA_VERSION = "annopilot.run_provenance.v1"
 GOLDSMITH_REVIEW_QUEUE_SCHEMA_VERSION = "annopilot.goldsmith_review_queue.v1"
 GOLDSMITH_HUMAN_CHOICES_SCHEMA_VERSION = "annopilot.goldsmith_human_choices.v1"
+GOLDSMITH_HARD_EXAMPLES_SCHEMA_VERSION = "annopilot.goldsmith_hard_examples.v1"
 HIGH_CONFIDENCE_THRESHOLD = 0.9
 MEDIUM_CONFIDENCE_THRESHOLD = 0.75
 DEFAULT_TAGS: list[dict[str, Any]] = []
@@ -170,6 +171,8 @@ class AnnotationStorage:
             run_provenance_schema_version=RUN_PROVENANCE_SCHEMA_VERSION,
             goldsmith_review_queue_schema_version=GOLDSMITH_REVIEW_QUEUE_SCHEMA_VERSION,
             goldsmith_human_choices_schema_version=GOLDSMITH_HUMAN_CHOICES_SCHEMA_VERSION,
+            goldsmith_hard_examples_schema_version=GOLDSMITH_HARD_EXAMPLES_SCHEMA_VERSION,
+            medium_confidence_threshold=MEDIUM_CONFIDENCE_THRESHOLD,
         )
 
     def initialize(self) -> None:
@@ -422,6 +425,9 @@ class AnnotationStorage:
 
     def export_goldsmith_human_choices_lines(self, project_id: str, document_id: str) -> list[str]:
         return self.export_service.export_goldsmith_human_choices_lines(project_id, document_id)
+
+    def export_goldsmith_hard_examples_lines(self, project_id: str, document_id: str) -> list[str]:
+        return self.export_service.export_goldsmith_hard_examples_lines(project_id, document_id)
 
     def export_tag_schema(self, project_id: str) -> dict[str, Any]:
         tags = self.get_tags(project_id)

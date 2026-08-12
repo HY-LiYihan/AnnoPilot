@@ -2296,6 +2296,22 @@ def test_llm_review_calibration_disagreement_is_measured(tmp_path: Path) -> None
         assert document["metrics"]["calibration_disagreement_count"] == 1
         assert document["metrics"]["calibration_error_rate"] == 1.0
 
+        hard_examples_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.hard-examples.jsonl")
+        assert hard_examples_response.status_code == 200
+        hard_examples = [json.loads(line) for line in hard_examples_response.text.splitlines()]
+        assert len(hard_examples) == 1
+        assert hard_examples[0]["schema_version"] == "annopilot.goldsmith_hard_examples.v1"
+        assert hard_examples[0]["record_type"] == "hard_example"
+        assert hard_examples[0]["suggestion_id"] == suggestion_id
+        assert hard_examples[0]["human_decision"] == "reject"
+        assert hard_examples[0]["disagreement"] is True
+        assert hard_examples[0]["hard_example_reasons"] == ["llm_human_disagreement", "human_rejected_suggestion"]
+        assert "negative example" in hard_examples[0]["failure_note"]
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert manifest["artifacts"]["goldsmith_hard_examples_jsonl"]["schema_version"] == "annopilot.goldsmith_hard_examples.v1"
+        assert manifest["artifacts"]["goldsmith_hard_examples_jsonl"]["line_count"] == 1
+
 
 def test_review_efficiency_curves_measure_error_discovery_by_queue_order(tmp_path: Path) -> None:
     storage = AnnotationStorage(
