@@ -59,8 +59,6 @@ const renderedSentences = computed(() =>
     .sort((left, right) => left.index - right.index),
 )
 
-const primarySamplePreset = computed(() => props.samplePresets[0] ?? null)
-
 const emit = defineEmits<{
   import: [file: File, mode: TxtImportMode]
   'load-sample-preset': [presetId: string]
@@ -166,6 +164,10 @@ function documentOptionText(document: DocumentListItem, labels: UiLabels['reader
 
 function documentTitleText(document: DocumentMeta | null, fallback: string) {
   return document ? truncateFilename(document.filename, DOCUMENT_TITLE_FILENAME_LIMIT) : fallback
+}
+
+function samplePresetButtonText(preset: SamplePreset, labels: UiLabels['reader']) {
+  return labels.loadSamplePreset(truncateFilename(preset.title, 34))
 }
 
 const swipeStart = ref<{ x: number; y: number; pointerId: number } | null>(null)
@@ -315,16 +317,20 @@ function predicatePositionClasses(
         {{ isUploading ? labels.importingTxt : labels.importTxt }}
         <input type="file" accept=".txt,text/plain" :disabled="isUploading" @change="handleFileInput($event, 'replace')" />
       </label>
-      <button
-        v-if="primarySamplePreset"
-        type="button"
-        class="sample-preset-button"
-        :disabled="isUploading || isSuggesting"
-        :title="primarySamplePreset.description"
-        @click="emit('load-sample-preset', primarySamplePreset.id)"
-      >
-        {{ isUploading || isSuggesting ? labels.loadingSample : labels.loadEngagementSample }}
-      </button>
+      <div v-if="samplePresets.length" class="sample-preset-list" :aria-label="labels.samplePresetsAria">
+        <span>{{ labels.samplePresetsTitle }}</span>
+        <button
+          v-for="preset in samplePresets"
+          :key="preset.id"
+          type="button"
+          class="sample-preset-button"
+          :disabled="isUploading || isSuggesting"
+          :title="preset.description"
+          @click="emit('load-sample-preset', preset.id)"
+        >
+          {{ isUploading || isSuggesting ? labels.loadingSample : samplePresetButtonText(preset, labels) }}
+        </button>
+      </div>
       <p>{{ labels.dropTxt }}</p>
     </article>
 

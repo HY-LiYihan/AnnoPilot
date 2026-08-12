@@ -156,8 +156,12 @@ export function useDocumentReader() {
     await loadDocumentList()
     await loadSamplePresets()
     const activeDocumentId = window.localStorage.getItem(ACTIVE_DOCUMENT_KEY)
-    if (activeDocumentId) {
+    if (activeDocumentId && documents.value.some((document) => document.id === activeDocumentId)) {
       await loadDocument(activeDocumentId)
+    } else if (activeDocumentId) {
+      window.localStorage.removeItem(ACTIVE_DOCUMENT_KEY)
+      await loadProjectTags()
+      await refreshAuditSummary()
     } else if (documents.value.length) {
       await loadDocument(documents.value[0].id)
     } else {

@@ -1,0 +1,9 @@
+The authors argue that mixed annotation improves reliability, although the baseline does not include expert adjudication.
+Prior work suggests that uncertainty sampling may reduce review cost, but the evidence remains limited across languages.
+The ablation results clearly show that rejected spans become useful negative examples for the next retrieval pass.
+Some participants reportedly felt the label names were too abstract; nevertheless, the guideline examples helped them converge.
+
+作者认为，混合标注可以提高可靠性，尽管基线并未包含专家仲裁。
+已有研究表明，不确定性抽样可能降低复核成本，但跨语言证据仍然有限。
+消融结果清楚显示，被拒绝的 span 会成为下一轮检索中有用的负例。
+一些参与者据称觉得标签名称过于抽象；不过，准则示例帮助他们逐渐达成一致。

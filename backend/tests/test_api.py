@@ -1184,18 +1184,31 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         presets_response = client.get("/api/projects/default/sample-presets")
         assert presets_response.status_code == 200
         presets = presets_response.json()["presets"]
-        assert [preset["id"] for preset in presets] == ["appraisal-engagement-cn-en"]
-        assert presets[0]["tag_count"] == 9
+        expected_preset_ids = [
+            "appraisal-engagement-cn-en",
+            "appraisal-engagement-news-policy-cn-en",
+            "appraisal-engagement-academic-method-cn-en",
+        ]
+        assert [preset["id"] for preset in presets] == expected_preset_ids
+        assert all(preset["tag_count"] == 9 for preset in presets)
 
-        load_response = client.post("/api/projects/default/sample-presets/appraisal-engagement-cn-en/load")
-        assert load_response.status_code == 200
-        loaded = load_response.json()
+        loaded_by_id = {}
+        for preset_id in expected_preset_ids:
+            load_response = client.post(f"/api/projects/default/sample-presets/{preset_id}/load")
+            assert load_response.status_code == 200
+            loaded_preset = load_response.json()
+            loaded_by_id[preset_id] = loaded_preset
+            assert loaded_preset["filename"].endswith(".txt")
+            assert loaded_preset["sentence_count"] >= 8
+            assert loaded_preset["token_count"] > 0
+            assert len(loaded_preset["tags"]) == 9
+            assert loaded_preset["suggestion_run_id"].startswith("run_")
+            assert loaded_preset["suggestions_created"] > 0
+            assert sum(loaded_preset["source_counts"].values()) == loaded_preset["suggestions_created"]
+
+        loaded = loaded_by_id["appraisal-engagement-cn-en"]
         document_id = loaded["document_id"]
         assert loaded["filename"] == "appraisal-engagement-cn-en.txt"
-        assert loaded["sentence_count"] >= 8
-        assert loaded["token_count"] > 0
-        assert len(loaded["tags"]) == 9
-        assert loaded["suggestion_run_id"].startswith("run_")
         assert loaded["suggestions_created"] >= 20
         assert loaded["source_counts"] == {"lexical_exact": loaded["suggestions_created"]}
 

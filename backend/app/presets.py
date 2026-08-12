@@ -96,6 +96,30 @@ Of course, a small gold set cannot solve every edge case; however, rejected sugg
 """
 
 
+APPRAISAL_ENGAGEMENT_NEWS_POLICY_TEXT = """City officials said the transit pilot may shorten commutes, but residents noted that late-night routes are still unreliable.
+According to the budget office, the new plan clearly protects essential services and shows where emergency funds were used.
+Opposition leaders claimed the figures were inflated; however, the published audit does not support that allegation.
+Of course, faster buses will not solve every housing problem, yet the mayor argues they can reduce daily pressure on workers.
+
+市政府表示，交通试点可能缩短通勤时间，但居民指出，夜间线路仍然不可靠。
+预算办公室称，新方案显然保护了基本服务，并显示应急资金被用在何处。
+反对派声称这些数字被夸大；然而，公开审计并不能支持这种说法。
+当然，更快的公交不能解决所有住房问题，不过市长认为它可以减轻工人的日常压力。
+"""
+
+
+APPRAISAL_ENGAGEMENT_ACADEMIC_METHOD_TEXT = """The authors argue that mixed annotation improves reliability, although the baseline does not include expert adjudication.
+Prior work suggests that uncertainty sampling may reduce review cost, but the evidence remains limited across languages.
+The ablation results clearly show that rejected spans become useful negative examples for the next retrieval pass.
+Some participants reportedly felt the label names were too abstract; nevertheless, the guideline examples helped them converge.
+
+作者认为，混合标注可以提高可靠性，尽管基线并未包含专家仲裁。
+已有研究表明，不确定性抽样可能降低复核成本，但跨语言证据仍然有限。
+消融结果清楚显示，被拒绝的 span 会成为下一轮检索中有用的负例。
+一些参与者据称觉得标签名称过于抽象；不过，准则示例帮助他们逐渐达成一致。
+"""
+
+
 @dataclass(frozen=True)
 class SamplePreset:
     id: str
@@ -128,6 +152,24 @@ BUILTIN_SAMPLE_PRESETS = {
         description="内置 engagement label schema、双语测试文本和高置信 lexical suggestions，用于快速模拟人工标注任务。",
         filename="appraisal-engagement-cn-en.txt",
         text=APPRAISAL_ENGAGEMENT_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-news-policy-cn-en": SamplePreset(
+        id="appraisal-engagement-news-policy-cn-en",
+        title="Engagement 新闻/政策样例",
+        description="面向新闻报道、政策争议和公共叙事的中英 engagement 线索，适合练习 attribute、disclaim 和 proclaim 的边界。",
+        filename="appraisal-engagement-news-policy-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_NEWS_POLICY_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-academic-method-cn-en": SamplePreset(
+        id="appraisal-engagement-academic-method-cn-en",
+        title="Engagement 学术/方法样例",
+        description="面向论文方法、实验结果和研究讨论的中英 engagement 线索，适合练习 evidence、uncertainty 和 countering。",
+        filename="appraisal-engagement-academic-method-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_ACADEMIC_METHOD_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
     )
