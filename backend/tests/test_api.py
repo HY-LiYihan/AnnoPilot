@@ -16,6 +16,7 @@ class FakeSuggestionReviewer:
         assert f"[{context['suggestion']['text']}]" in context["suggestion"]["span_context"]
         assert context["review_guidance"]["schema_version"] == "annopilot.suggestion_review_context.v1"
         assert context["tag_schema"]["record_type"] == "tag_schema_context"
+        assert context["boundary_feedback"]["schema_version"] == "annopilot.boundary_feedback.v1"
         assert "tag_description" in context["suggestion"]
         assert "tag_examples" in context["suggestion"]
         return {
@@ -1280,6 +1281,52 @@ def test_appraisal_engagement_review_context_includes_guidelines(tmp_path: Path)
     assert context["suggestion"]["tag_description"] == suggested_tag["description"]
     assert context["suggestion"]["tag_examples"] == suggested_tag["examples"]
     assert context["suggestion"]["tag_examples"]
+
+
+def test_suggestion_review_context_includes_same_label_boundary_feedback(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage, suggestion_reviewer=FakeSuggestionReviewer())) as client:
+        tag = client.post("/api/projects/default/tags", json={"name": "Concept", "examples": ["Alpha"]}).json()["tag"]
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("alpha.txt", "Alpha beta. Alpha gamma.", "text/plain")},
+        )
+        document_id = response.json()["document_id"]
+        suggestion_response = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 5, "min_confidence": 0.98},
+        )
+        suggestions = [suggestion for suggestion in suggestion_response.json()["suggestions"] if suggestion["tag_id"] == tag["id"]]
+        assert len(suggestions) >= 2
+        rejected_suggestion = suggestions[0]
+        target_suggestion = suggestions[1]
+
+        review_response = client.post(f"/api/projects/default/suggestions/{rejected_suggestion['id']}/llm-review")
+        assert review_response.status_code == 200
+        assert review_response.json()["recommendation"] == "accept"
+        reject_response = client.post(f"/api/projects/default/suggestions/{rejected_suggestion['id']}/reject")
+        assert reject_response.status_code == 200
+
+        context = storage.get_suggestion_review_context("default", target_suggestion["id"])
+
+    feedback = context["boundary_feedback"]
+    assert feedback["schema_version"] == "annopilot.boundary_feedback.v1"
+    assert feedback["record_type"] == "boundary_feedback"
+    assert feedback["target_tag_id"] == tag["id"]
+    assert feedback["negative_example_count"] == 1
+    assert feedback["hard_example_count"] == 1
+    assert feedback["negative_examples"][0]["suggestion_id"] == rejected_suggestion["id"]
+    assert feedback["negative_examples"][0]["human_decision"] == "reject"
+    assert feedback["negative_examples"][0]["latest_review"]["recommendation"] == "accept"
+    assert feedback["negative_examples"][0]["hard_example_reasons"] == [
+        "llm_human_disagreement",
+        "human_rejected_suggestion",
+    ]
+    assert feedback["hard_examples"][0]["suggestion_id"] == rejected_suggestion["id"]
+    assert f"[{rejected_suggestion['text']}]" in feedback["hard_examples"][0]["span_context"]
 
 
 def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:

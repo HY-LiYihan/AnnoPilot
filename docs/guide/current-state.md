@@ -31,7 +31,7 @@ AnnoPilot 现在同时维护两个 surface：
 - 支持移动端横向滑动切换上一句/下一句；token 上的拖选标注不会触发滑动切句。
 - 支持只为当前句生成 Character RAG suggestions，也支持全文 suggestions run、批量接受 / 拒绝和 LLM review。
 - Suggestion row 会展示匹配方法、标签、置信度、token/char range、evidence text 和原文上下文窗口，方便人工 review 时判断是否接受。
-- LLM review context 会包含 tag description/examples、candidate tag definition、已有句内 annotations 和 Engagement-specific boundary guidance；`context_sha256` 用于审计当次复核依据。
+- LLM review context 会包含 tag description/examples、candidate tag definition、已有句内 annotations、同标签 boundary feedback 和 Engagement-specific boundary guidance；`context_sha256` 用于审计当次复核依据。
 - 当前句第一条 suggestion 会标成 `Y/N target`，键盘 `Y` 接受单条、`N` 拒绝单条；`A` / `X` 仍用于当前句批量接受 / 拒绝。
 - 当前句 `A` / `X` 走 sentence-scoped batch endpoint，在一个 SQLite transaction 中处理该句所有 pending suggestions，避免前端逐条循环写入。
 - 支持独立 review queue API 和右侧 review queue 列表，可按原文位置、稳定随机 baseline、低 confidence、Goldsmith risk 或 hybrid calibration 排序；summary metrics 会直接展示建议状态、LLM 评审推荐分布、待审建议来源、置信度分布和 human-calibrated error discovery 曲线；处理完当前句建议后会自动跳到下一句待确认，保留 `R` 快捷键手动跳转。

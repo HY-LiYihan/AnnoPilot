@@ -30,7 +30,7 @@ class OpenAICompatibleSuggestionReviewer:
                         "You review character-match annotation suggestions. "
                         "Return strict JSON only with recommendation, confidence, and rationale. "
                         "recommendation must be one of accept, reject, uncertain. "
-                        "Use tag descriptions, examples, existing annotations, and review_guidance when provided. "
+                        "Use tag descriptions, examples, existing annotations, boundary_feedback, and review_guidance when provided. "
                         "Do not invent labels outside the provided tag set."
                     ),
                 },

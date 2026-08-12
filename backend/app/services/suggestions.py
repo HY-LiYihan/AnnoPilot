@@ -17,7 +17,9 @@ from ..rag import (
 
 
 REVIEW_CONTEXT_SCHEMA_VERSION = "annopilot.suggestion_review_context.v1"
+BOUNDARY_FEEDBACK_SCHEMA_VERSION = "annopilot.boundary_feedback.v1"
 MAX_REVIEW_CONTEXT_EXAMPLES = 12
+MAX_BOUNDARY_FEEDBACK_EXAMPLES = 8
 
 
 class SuggestionService:
@@ -363,6 +365,7 @@ class SuggestionService:
             tags = self.get_tags(conn, project_id)
             review_tags = [self._review_tag_context(tag) for tag in tags]
             candidate_tag = next((tag for tag in review_tags if tag["id"] == row["tag_id"]), None)
+            boundary_feedback = self._boundary_feedback(conn, project_id, row["tag_id"], suggestion_id)
             annotations = conn.execute(
                 """
                 SELECT a.tag_id, tags.name AS tag_name, a.text
@@ -387,6 +390,7 @@ class SuggestionService:
                 "tag_count": len(review_tags),
                 "tags": review_tags,
             },
+            "boundary_feedback": boundary_feedback,
             "suggestion": {
                 "id": row["id"],
                 "text": row["span_text"],
@@ -407,6 +411,64 @@ class SuggestionService:
             },
             "tags": review_tags,
             "existing_sentence_annotations": [self._row_dict(annotation) for annotation in annotations],
+        }
+
+    def _boundary_feedback(
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        target_tag_id: str,
+        current_suggestion_id: str,
+    ) -> dict[str, Any]:
+        rows = conn.execute(
+            """
+            SELECT sg.id, sg.run_id, sg.sentence_id, s.sentence_index, s.text AS sentence_text,
+                   sg.tag_id, tags.name AS tag_name, sg.start_token_index, sg.end_token_index,
+                   sg.start_char, sg.end_char, sg.text, sg.confidence, sg.source, sg.evidence_text,
+                   sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after,
+                   sg.status, sg.created_at,
+                   rev.model AS review_model, rev.recommendation AS review_recommendation,
+                   rev.confidence AS review_confidence, rev.rationale AS review_rationale,
+                   rev.context_sha256 AS review_context_sha256,
+                   rev.created_at AS review_created_at
+            FROM annotation_suggestions sg
+            JOIN sentences s ON s.id = sg.sentence_id
+            JOIN documents d ON d.id = s.document_id
+            JOIN tags ON tags.id = sg.tag_id AND tags.project_id = d.project_id
+            LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
+                SELECT latest.id
+                FROM annotation_suggestion_reviews latest
+                WHERE latest.suggestion_id = sg.id
+                ORDER BY latest.created_at DESC, latest.id DESC
+                LIMIT 1
+            )
+            WHERE d.project_id = ?
+              AND sg.tag_id = ?
+              AND sg.id != ?
+              AND sg.status IN ('accepted', 'rejected')
+            ORDER BY sg.created_at DESC, sg.id DESC
+            LIMIT ?
+            """,
+            (project_id, target_tag_id, current_suggestion_id, MAX_BOUNDARY_FEEDBACK_EXAMPLES * 2),
+        ).fetchall()
+
+        negative_examples = []
+        hard_examples = []
+        for row in rows:
+            example = self._boundary_feedback_example(row)
+            if row["status"] == "rejected" and len(negative_examples) < MAX_BOUNDARY_FEEDBACK_EXAMPLES:
+                negative_examples.append(example)
+            if example["hard_example_reasons"] and len(hard_examples) < MAX_BOUNDARY_FEEDBACK_EXAMPLES:
+                hard_examples.append(example)
+
+        return {
+            "schema_version": BOUNDARY_FEEDBACK_SCHEMA_VERSION,
+            "record_type": "boundary_feedback",
+            "target_tag_id": target_tag_id,
+            "negative_example_count": len(negative_examples),
+            "hard_example_count": len(hard_examples),
+            "negative_examples": negative_examples,
+            "hard_examples": hard_examples,
         }
 
     def record_suggestion_review(
@@ -555,6 +617,56 @@ class SuggestionService:
                 ],
             }
         return guidance
+
+    def _boundary_feedback_example(self, row: sqlite3.Row) -> dict[str, Any]:
+        latest_review = self._latest_review_from_row(row)
+        human_decision = "accept" if row["status"] == "accepted" else "reject"
+        reasons = self._boundary_feedback_reasons(row, latest_review)
+        return {
+            "suggestion_id": row["id"],
+            "run_id": row["run_id"],
+            "sentence_id": row["sentence_id"],
+            "sentence_index": row["sentence_index"],
+            "text": row["text"],
+            "sentence_text": row["sentence_text"],
+            "tag_id": row["tag_id"],
+            "tag_name": row["tag_name"],
+            "human_decision": human_decision,
+            "status": row["status"],
+            "confidence": row["confidence"],
+            "match_key": row["match_key"],
+            "evidence_text": row["evidence_text"],
+            "span_context": f"{row['context_before'] or ''}[{row['text']}]{row['context_after'] or ''}",
+            "latest_review": latest_review,
+            "hard_example_reasons": reasons,
+        }
+
+    def _boundary_feedback_reasons(self, row: sqlite3.Row, latest_review: dict[str, Any] | None) -> list[str]:
+        reasons: list[str] = []
+        human_decision = "accept" if row["status"] == "accepted" else "reject"
+        review_recommendation = latest_review.get("recommendation") if latest_review else None
+        if review_recommendation in {"accept", "reject"} and review_recommendation != human_decision:
+            reasons.append("llm_human_disagreement")
+        if row["status"] == "rejected":
+            reasons.append("human_rejected_suggestion")
+        if float(row["confidence"] or 0.0) < self.medium_confidence_threshold:
+            reasons.append("low_character_rag_confidence")
+        if review_recommendation == "uncertain":
+            reasons.append("llm_uncertain")
+        return reasons
+
+    @staticmethod
+    def _latest_review_from_row(row: sqlite3.Row) -> dict[str, Any] | None:
+        if row["review_model"] is None:
+            return None
+        return {
+            "model": row["review_model"],
+            "recommendation": row["review_recommendation"],
+            "confidence": row["review_confidence"],
+            "rationale": row["review_rationale"],
+            "context_sha256": row["review_context_sha256"],
+            "created_at": row["review_created_at"],
+        }
 
     @staticmethod
     def _is_appraisal_engagement_schema(tags: list[dict[str, Any]]) -> bool:
