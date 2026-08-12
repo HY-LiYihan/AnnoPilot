@@ -101,6 +101,7 @@ function emptyMetrics(): Metrics {
     calibration_count: 0,
     calibration_disagreement_count: 0,
     calibration_error_rate: null,
+    review_efficiency_curves: {},
   }
 }
 

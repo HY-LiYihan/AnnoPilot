@@ -105,6 +105,27 @@ export type ReviewQueueItem = {
 
 export type ReviewQueueOrder = 'position' | 'random' | 'uncertain' | 'goldsmith' | 'hybrid'
 
+export type ReviewEfficiencyPoint = {
+  rank: number
+  suggestion_id: string
+  sentence_id: string
+  sentence_index: number
+  cumulative_reviewed: number
+  cumulative_disagreements: number
+  disagreement: boolean
+  route: string
+}
+
+export type ReviewEfficiencyCurve = {
+  order: string
+  reviewed_count: number
+  disagreement_count: number
+  early_reviewed_count: number
+  early_disagreement_count: number
+  first_disagreement_rank: number | null
+  points: ReviewEfficiencyPoint[]
+}
+
 export type DocumentMeta = {
   id: string
   filename: string
@@ -138,6 +159,7 @@ export type Metrics = {
   calibration_count: number
   calibration_disagreement_count: number
   calibration_error_rate: number | null
+  review_efficiency_curves: Record<string, ReviewEfficiencyCurve>
 }
 
 export type AuditSummary = {

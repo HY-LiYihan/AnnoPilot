@@ -96,6 +96,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/apply-llm-re
 - LLM review 使用 OpenAI-compatible `/chat/completions`，返回 `recommendation`、`confidence`、`rationale` 和 `context_sha256`；sentence-scoped endpoint 会批量评审当前句仍 pending 且未被已有 annotation 覆盖的 suggestions。
 - `apply-llm-review` 支持 document scope 和 sentence scope，会在一个 SQLite transaction 中应用 latest LLM recommendations：`accept` 创建 `accepted_suggestion` annotation，`reject` 更新 suggestion 状态，`uncertain` 或未评审 suggestions 保持 pending。
 - Document metrics 会输出 `calibration_count`、`calibration_disagreement_count` 和 `calibration_error_rate`：只统计已经有 human accept/reject 决策且有 latest LLM review 的 suggestions，用于估计 review routing / judge signal 与人工判断的错配率，不把 LLM judge score 当成真实 accuracy。
+- Document metrics 还会输出 `review_efficiency_curves`，按 `position`、`random`、`uncertain`、`goldsmith` 和 `hybrid` 回放已校准 suggestions 的累计错配发现曲线。每条 curve 包含总 review/disagreement 数、前 5 条发现错配数、首次发现错配 rank，以及最多前 20 个累计点，用来比较 Goldsmith risk routing 是否比 random baseline 更早发现人工错配。
 
 ## Runs And Audit
 

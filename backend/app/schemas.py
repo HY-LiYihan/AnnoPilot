@@ -270,6 +270,27 @@ class ReviewQueueResponse(BaseModel):
     total: int
 
 
+class ReviewEfficiencyPointResponse(BaseModel):
+    rank: int
+    suggestion_id: str
+    sentence_id: str
+    sentence_index: int
+    cumulative_reviewed: int
+    cumulative_disagreements: int
+    disagreement: bool
+    route: str
+
+
+class ReviewEfficiencyCurveResponse(BaseModel):
+    order: str
+    reviewed_count: int
+    disagreement_count: int
+    early_reviewed_count: int
+    early_disagreement_count: int
+    first_disagreement_rank: Optional[int] = None
+    points: list[ReviewEfficiencyPointResponse] = Field(default_factory=list)
+
+
 class MetricsResponse(BaseModel):
     sentence_count: int
     completed_count: int
@@ -287,6 +308,7 @@ class MetricsResponse(BaseModel):
     calibration_count: int = 0
     calibration_disagreement_count: int = 0
     calibration_error_rate: Optional[float] = None
+    review_efficiency_curves: dict[str, ReviewEfficiencyCurveResponse] = Field(default_factory=dict)
 
 
 class SessionResponse(BaseModel):

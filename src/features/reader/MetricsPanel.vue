@@ -77,6 +77,23 @@ function reviewSummary(counts: Record<string, number> | undefined, labels: UiLab
   return reviewCounts.map(([recommendation, count]) => `${reviewLabels[recommendation] ?? recommendation} ${count}`).join(' · ')
 }
 
+function efficiencySummary(metrics: Metrics, labels: UiLabels['metrics']) {
+  const curves = metrics.review_efficiency_curves ?? {}
+  const orderLabels: Array<[string, string]> = [
+    ['random', labels.random],
+    ['goldsmith', labels.goldsmith],
+    ['hybrid', labels.hybrid],
+  ]
+  const parts = orderLabels
+    .map(([order, label]) => {
+      const curve = curves[order]
+      if (!curve?.early_reviewed_count) return ''
+      return `${label} ${curve.early_disagreement_count}/${curve.early_reviewed_count}`
+    })
+    .filter(Boolean)
+  return parts.length ? `${labels.errorDiscovery}: ${parts.join(' · ')}` : ''
+}
+
 function confidenceSummary(counts: Record<string, number> | undefined, labels: UiLabels['metrics']) {
   const confidenceCounts = Object.entries(counts ?? {})
     .filter(([, count]) => count > 0)
@@ -165,6 +182,9 @@ function shortHash(value: string) {
           <template v-if="reviewSummary(metrics.suggestion_review_counts, labels)"> · {{ labels.reviewMix }} {{ reviewSummary(metrics.suggestion_review_counts, labels) }}</template>
           <template v-if="metrics.calibration_error_rate !== null">
             · {{ labels.calibrationError }} {{ Math.round(metrics.calibration_error_rate * 100) }}% ({{ metrics.calibration_disagreement_count }}/{{ metrics.calibration_count }})
+          </template>
+          <template v-if="efficiencySummary(metrics, labels)">
+            · {{ efficiencySummary(metrics, labels) }}
           </template>
         </small>
       </article>

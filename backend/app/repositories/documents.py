@@ -253,6 +253,7 @@ class DocumentQueryRepository:
                 """,
                 (document_id,),
             ).fetchall()
+            review_efficiency_curves = self._review_efficiency_curves(conn, project_id, document_id)
             tags = self.tags.list_tags(conn, project_id)
             session = self._get_session(conn, project_id, document_id)
 
@@ -312,6 +313,7 @@ class DocumentQueryRepository:
                 "calibration_count": review_total,
                 "calibration_disagreement_count": review_disagreements,
                 "calibration_error_rate": review_disagreements / review_total if review_total else None,
+                "review_efficiency_curves": review_efficiency_curves,
             },
             "queue": [
                 {
@@ -632,6 +634,149 @@ class DocumentQueryRepository:
         selected = selected[:limit]
         routes = {row["id"]: ("calibration" if row["id"] in calibration_ids else "risk") for row in selected}
         return selected, routes
+
+    def _review_efficiency_curves(self, conn: sqlite3.Connection, project_id: str, document_id: str) -> dict[str, dict[str, Any]]:
+        rows = conn.execute(
+            """
+            SELECT sg.id, sg.sentence_id, s.sentence_index, sg.start_token_index, sg.end_token_index,
+                   sg.confidence, sg.status, rev.recommendation
+            FROM annotation_suggestions sg
+            JOIN sentences s ON s.id = sg.sentence_id
+            JOIN documents d ON d.id = s.document_id
+            JOIN annotation_suggestion_reviews rev ON rev.id = (
+                SELECT latest.id
+                FROM annotation_suggestion_reviews latest
+                WHERE latest.suggestion_id = sg.id
+                ORDER BY latest.created_at DESC, latest.id DESC
+                LIMIT 1
+            )
+            WHERE d.id = ? AND d.project_id = ?
+              AND sg.status IN ('accepted', 'rejected')
+              AND rev.recommendation IN ('accept', 'reject')
+            ORDER BY s.sentence_index, sg.start_token_index, sg.id
+            """,
+            (document_id, project_id),
+        ).fetchall()
+        if not rows:
+            return {}
+
+        items = []
+        sentence_stats: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            human_decision = "accept" if row["status"] == "accepted" else "reject"
+            item = {
+                "suggestion_id": row["id"],
+                "sentence_id": row["sentence_id"],
+                "sentence_index": int(row["sentence_index"]),
+                "start_token_index": int(row["start_token_index"]),
+                "end_token_index": int(row["end_token_index"]),
+                "confidence": float(row["confidence"] or 0.0),
+                "human_decision": human_decision,
+                "review_recommendation": row["recommendation"],
+                "disagreement": human_decision != row["recommendation"],
+            }
+            items.append(item)
+            stats = sentence_stats.setdefault(
+                row["sentence_id"],
+                {
+                    "suggestion_count": 0,
+                    "min_confidence": float(row["confidence"] or 0.0),
+                },
+            )
+            stats["suggestion_count"] += 1
+            stats["min_confidence"] = min(float(stats["min_confidence"]), float(row["confidence"] or 0.0))
+
+        for item in items:
+            stats = sentence_stats[item["sentence_id"]]
+            item["sentence_suggestion_count"] = int(stats["suggestion_count"])
+            item["sentence_min_confidence"] = float(stats["min_confidence"])
+            item["risk_score"] = (1.0 - item["sentence_min_confidence"]) * item["sentence_suggestion_count"]
+
+        return {
+            order: self._review_efficiency_curve(order, self._order_review_efficiency_items(items, order))
+            for order in ("position", "random", "uncertain", "goldsmith", "hybrid")
+        }
+
+    def _order_review_efficiency_items(self, items: list[dict[str, Any]], order: str) -> list[dict[str, Any]]:
+        if order == "random":
+            return sorted(items, key=lambda item: (item["suggestion_id"][-12:], item["sentence_index"], item["start_token_index"], item["suggestion_id"]))
+        if order == "uncertain":
+            return sorted(items, key=lambda item: (item["confidence"], item["sentence_index"], item["start_token_index"], item["suggestion_id"]))
+        if order == "goldsmith":
+            return sorted(items, key=self._review_efficiency_risk_key)
+        if order == "hybrid":
+            return self._hybrid_review_efficiency_items(items)
+        return sorted(items, key=lambda item: (item["sentence_index"], item["start_token_index"], item["suggestion_id"]))
+
+    def _hybrid_review_efficiency_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        limit = len(items)
+        if limit <= 0:
+            return []
+        calibration_limit = max(1, limit // 5) if limit >= 5 else 0
+        calibration_rows = sorted(
+            [item for item in items if item["confidence"] >= HIGH_CONFIDENCE_THRESHOLD],
+            key=lambda item: (-item["confidence"], item["sentence_index"], item["start_token_index"], item["suggestion_id"]),
+        )[:calibration_limit]
+        calibration_ids = {item["suggestion_id"] for item in calibration_rows}
+        risk_pool = [item for item in sorted(items, key=self._review_efficiency_risk_key) if item["suggestion_id"] not in calibration_ids]
+        risk_slots = max(limit - len(calibration_rows), 0)
+        selected = [{**item, "review_route": "risk"} for item in risk_pool[:risk_slots]]
+        for index, item in enumerate(calibration_rows):
+            insert_at = min((index + 1) * 4, len(selected))
+            selected.insert(insert_at, {**item, "review_route": "calibration"})
+        for item in risk_pool[risk_slots:]:
+            if len(selected) >= limit:
+                break
+            selected.append({**item, "review_route": "risk"})
+        return selected[:limit]
+
+    @staticmethod
+    def _review_efficiency_risk_key(item: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            -float(item["risk_score"]),
+            -int(item["sentence_suggestion_count"]),
+            float(item["sentence_min_confidence"]),
+            item["sentence_index"],
+            float(item["confidence"]),
+            item["start_token_index"],
+            item["suggestion_id"],
+        )
+
+    @staticmethod
+    def _review_efficiency_curve(order: str, ordered_items: list[dict[str, Any]]) -> dict[str, Any]:
+        cumulative_disagreements = 0
+        first_disagreement_rank = None
+        points = []
+        point_limit = 20
+        for rank, item in enumerate(ordered_items, start=1):
+            if item["disagreement"]:
+                cumulative_disagreements += 1
+                if first_disagreement_rank is None:
+                    first_disagreement_rank = rank
+            if rank <= point_limit:
+                points.append(
+                    {
+                        "rank": rank,
+                        "suggestion_id": item["suggestion_id"],
+                        "sentence_id": item["sentence_id"],
+                        "sentence_index": item["sentence_index"],
+                        "cumulative_reviewed": rank,
+                        "cumulative_disagreements": cumulative_disagreements,
+                        "disagreement": item["disagreement"],
+                        "route": item.get("review_route") or ("risk" if order in {"goldsmith", "hybrid"} else order),
+                    }
+                )
+        reviewed_count = len(ordered_items)
+        early_reviewed_count = min(5, reviewed_count)
+        return {
+            "order": order,
+            "reviewed_count": reviewed_count,
+            "disagreement_count": cumulative_disagreements,
+            "early_reviewed_count": early_reviewed_count,
+            "early_disagreement_count": sum(1 for item in ordered_items[:early_reviewed_count] if item["disagreement"]),
+            "first_disagreement_rank": first_disagreement_rank,
+            "points": points,
+        }
 
     @staticmethod
     def _get_session(conn: sqlite3.Connection, project_id: str, document_id: str) -> dict[str, Any]:

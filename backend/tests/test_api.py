@@ -2238,6 +2238,119 @@ def test_llm_review_calibration_disagreement_is_measured(tmp_path: Path) -> None
         assert document["metrics"]["calibration_error_rate"] == 1.0
 
 
+def test_review_efficiency_curves_measure_error_discovery_by_queue_order(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        tag = client.post("/api/projects/default/tags", json={"name": "Engagement", "examples": ["Alpha"]}).json()["tag"]
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={
+                "file": (
+                    "efficiency.txt",
+                    "Alpha one. Bravo two. Charlie three. Delta four. Echo five. Foxtrot six.",
+                    "text/plain",
+                )
+            },
+        ).json()
+        document_id = imported["document_id"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=6").json()
+        assert len(page["sentences"]) == 6
+
+        now = storage._now()
+        specs = [
+            ("sug_efficiency_aaa", 0, 0.98, "accept", "accepted"),
+            ("sug_efficiency_bbb", 1, 0.96, "accept", "accepted"),
+            ("sug_efficiency_ccc", 2, 0.95, "reject", "rejected"),
+            ("sug_efficiency_ddd", 3, 0.70, "accept", "rejected"),
+            ("sug_efficiency_eee", 4, 0.75, "reject", "accepted"),
+            ("sug_efficiency_fff", 5, 0.80, "accept", "rejected"),
+        ]
+        with storage.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO annotation_runs (id, project_id, document_id, recipe, config_json, input_count, suggestion_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("run_efficiency", "default", document_id, "controlled", "{}", len(specs), len(specs), now),
+            )
+            for suggestion_id, sentence_offset, confidence, recommendation, status in specs:
+                sentence = page["sentences"][sentence_offset]
+                token = sentence["tokens"][0]
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestions (
+                      id, run_id, sentence_id, tag_id, start_token_index, end_token_index,
+                      start_char, end_char, text, confidence, source, evidence_text, match_key, evidence_match_key,
+                      context_before, context_after, status, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        suggestion_id,
+                        "run_efficiency",
+                        sentence["id"],
+                        tag["id"],
+                        token["token_index"],
+                        token["token_index"],
+                        token["start_char"],
+                        token["end_char"],
+                        token["text"],
+                        confidence,
+                        "lexical_exact",
+                        token["text"],
+                        token["text"].casefold(),
+                        token["text"].casefold(),
+                        "",
+                        "",
+                        status,
+                        now,
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestion_reviews (
+                      id, suggestion_id, model, recommendation, confidence, rationale, context_sha256, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        f"rev_{suggestion_id}",
+                        suggestion_id,
+                        "fake-gpt5.5",
+                        recommendation,
+                        0.91,
+                        "controlled calibration fixture",
+                        hashlib.sha256(suggestion_id.encode("utf-8")).hexdigest(),
+                        now,
+                    ),
+                )
+
+        metrics = client.get(f"/api/projects/default/documents/{document_id}/summary").json()["metrics"]
+        assert metrics["calibration_count"] == 6
+        assert metrics["calibration_disagreement_count"] == 3
+        assert metrics["calibration_error_rate"] == 0.5
+
+        curves = metrics["review_efficiency_curves"]
+        assert set(curves) == {"position", "random", "uncertain", "goldsmith", "hybrid"}
+        assert curves["random"]["first_disagreement_rank"] == 4
+        assert curves["random"]["early_disagreement_count"] == 2
+        assert curves["goldsmith"]["first_disagreement_rank"] == 1
+        assert curves["goldsmith"]["early_disagreement_count"] == 3
+        assert curves["hybrid"]["early_disagreement_count"] == 3
+        assert [point["suggestion_id"] for point in curves["goldsmith"]["points"][:3]] == [
+            "sug_efficiency_ddd",
+            "sug_efficiency_eee",
+            "sug_efficiency_fff",
+        ]
+        assert curves["goldsmith"]["points"][1]["cumulative_disagreements"] == 2
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert manifest["metrics"]["review_efficiency_curves"]["goldsmith"]["early_disagreement_count"] == 3
+
+
 def test_sentence_llm_review_suggestions_reviews_current_queue(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",
