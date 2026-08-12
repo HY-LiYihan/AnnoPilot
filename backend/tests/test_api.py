@@ -1170,6 +1170,8 @@ def test_appraisal_engagement_samples_generate_and_export_prodigy(tmp_path: Path
         assert "Disclaim Deny 否认" in exported_labels
         assert any(line["_view_id"] == "ner_manual" for line in prodigy_lines)
         assert any(source["source"] == "accepted_suggestion" for line in prodigy_lines for source in line["meta"]["annotation_sources"])
+        assert all(line["answer"] == "accept" for line in prodigy_lines if line["spans"])
+        assert all(line["meta"]["answer"] == "pending" for line in prodigy_lines if line["spans"])
 
 
 def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None:
@@ -1223,6 +1225,8 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
             assert "Disclaim Counter 转折反驳" in exported_labels
             assert any(line["_view_id"] == "ner_manual" for line in prodigy_lines)
             assert any(source["source"] == "accepted_suggestion" for line in prodigy_lines for source in line["meta"]["annotation_sources"])
+            assert all(line["answer"] == "accept" for line in prodigy_lines if line["spans"])
+            assert all(line["meta"]["answer"] == "pending" for line in prodigy_lines if line["spans"])
 
             prodigy_spans_response = client.get(f"/api/projects/default/documents/{loaded_preset['document_id']}/export.prodigy.spans.jsonl")
             assert prodigy_spans_response.status_code == 200
@@ -1437,6 +1441,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         annotated_prodigy_lines = [line for line in prodigy_lines if line["meta"]["annotation_sources"]]
         assert annotated_prodigy_lines[0]["_session_id"] == f"annopilot-default-{document_id}-character-rag"
         assert annotated_prodigy_lines[0]["_annotator_id"] == "annopilot-character-rag"
+        assert annotated_prodigy_lines[0]["answer"] == "accept"
+        assert annotated_prodigy_lines[0]["meta"]["answer"] == "pending"
         prodigy_sources = [source for line in prodigy_lines for source in line["meta"]["annotation_sources"]]
         assert prodigy_sources[0]["annotation_id"] == accepted_annotation["id"]
         assert prodigy_sources[0]["source"] == "accepted_suggestion"
@@ -1891,6 +1897,12 @@ def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:
         assert len(annotations) == len(suggestions)
         assert all(annotation["source"] == "accepted_suggestion" for annotation in annotations)
         assert document["metrics"]["suggestion_count"] == 0
+
+        prodigy_lines = [json.loads(line) for line in client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl").text.splitlines()]
+        annotated_prodigy_lines = [line for line in prodigy_lines if line["spans"]]
+        assert annotated_prodigy_lines
+        assert all(line["answer"] == "accept" for line in annotated_prodigy_lines)
+        assert all(line["meta"]["answer"] == "pending" for line in annotated_prodigy_lines)
 
         events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
         assert sum(1 for event in events if event["type"] == "annotation.created") == len(suggestions)

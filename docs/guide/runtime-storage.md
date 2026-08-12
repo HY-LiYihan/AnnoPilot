@@ -279,7 +279,7 @@ _task_hash
 meta
 ```
 
-这些 `_...` 字段与 Prodigy task metadata 兼容，用于稳定去重、session tracing 和 annotator/source audit；`meta.session_id` 与 `meta.annotator_id` 同步保留一份非下划线 provenance，方便非 Prodigy 消费方读取。
+这些 `_...` 字段与 Prodigy task metadata 兼容，用于稳定去重、session tracing 和 annotator/source audit；`meta.session_id` 与 `meta.annotator_id` 同步保留一份非下划线 provenance，方便非 Prodigy 消费方读取。Prodigy export 会把已经含有 annotations 的 pending sentence 顶层 `answer` 映射为 `accept`，确保自动接受的 Character RAG spans 能直接作为有效标注使用；runtime `meta.answer` 仍保留原始句子状态，方便区分“已标注”和“人工完成”。
 
 Document summary / manifest 的 `metrics` 包含 `answer_counts`，用于直接区分 `accept`、`reject`、`ignore` 和 `pending` 句子数量；同时包含 suggestion 的 pending / accepted / rejected 状态分布、LLM review 的 accept / reject / uncertain 推荐分布，以及 live pending suggestion 的来源分布和置信度分布，供 UI 和导出 manifest 判断当前复核队列质量。Product UI 当前用 `Enter` / `Space` / `J` / `E` 分别写入 accept、ignore、reject 和 reopen-to-pending。
 

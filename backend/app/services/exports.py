@@ -331,6 +331,8 @@ class ExportService:
     @staticmethod
     def _export_prodigy_answer(sentence: dict[str, Any]) -> str:
         answer = sentence.get("answer") or ("accept" if sentence.get("completed") else "pending")
+        if answer == "pending" and sentence.get("annotations"):
+            return "accept"
         return "ignore" if answer == "pending" else answer
 
     @classmethod
