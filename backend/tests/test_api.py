@@ -38,6 +38,17 @@ class RejectingSuggestionReviewer:
         }
 
 
+class UncertainSuggestionReviewer:
+    def review(self, context: dict) -> dict:
+        assert context["suggestion"]["text"]
+        return {
+            "model": "fake-gpt5.5",
+            "recommendation": "uncertain",
+            "confidence": 0.62,
+            "rationale": "候选可能是边界样例，需要人工校准。",
+        }
+
+
 class CyclingSuggestionReviewer:
     def __init__(self) -> None:
         self.index = 0
@@ -1381,6 +1392,48 @@ def test_suggestion_review_context_includes_pending_llm_rejected_boundary_feedba
     assert feedback["negative_examples"][0]["latest_review"]["recommendation"] == "reject"
     assert feedback["negative_examples"][0]["hard_example_reasons"] == ["llm_rejected_pending_suggestion"]
     assert feedback["hard_examples"][0]["suggestion_id"] == llm_rejected_suggestion["id"]
+
+
+def test_suggestion_review_context_includes_pending_llm_uncertain_as_hard_example_only(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage, suggestion_reviewer=UncertainSuggestionReviewer())) as client:
+        tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "Engagement Cue", "description": "Potential cue needing boundary calibration.", "examples": ["Alpha"]},
+        ).json()["tag"]
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("llm-uncertain-boundary.txt", "Alpha beta. Alpha gamma.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        run = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 5, "min_confidence": 0.98},
+        ).json()
+        suggestions = [suggestion for suggestion in run["suggestions"] if suggestion["tag_id"] == tag["id"]]
+        assert len(suggestions) >= 2
+        uncertain_suggestion = suggestions[0]
+        target_suggestion = suggestions[1]
+
+        review_response = client.post(f"/api/projects/default/suggestions/{uncertain_suggestion['id']}/llm-review")
+        assert review_response.status_code == 200
+        assert review_response.json()["recommendation"] == "uncertain"
+
+        context = storage.get_suggestion_review_context("default", target_suggestion["id"])
+
+    feedback = context["boundary_feedback"]
+    assert feedback["schema_version"] == "annopilot.boundary_feedback.v1"
+    assert feedback["target_tag_id"] == tag["id"]
+    assert feedback["negative_example_count"] == 0
+    assert feedback["hard_example_count"] == 1
+    assert feedback["hard_examples"][0]["suggestion_id"] == uncertain_suggestion["id"]
+    assert feedback["hard_examples"][0]["status"] == "pending"
+    assert feedback["hard_examples"][0]["human_decision"] is None
+    assert feedback["hard_examples"][0]["latest_review"]["recommendation"] == "uncertain"
+    assert feedback["hard_examples"][0]["hard_example_reasons"] == ["llm_uncertain"]
 
 
 def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:

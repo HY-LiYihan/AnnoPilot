@@ -487,7 +487,7 @@ class SuggestionService:
               AND sg.id != ?
               AND (
                 sg.status IN ('accepted', 'rejected')
-                OR (sg.status = 'pending' AND rev.recommendation = 'reject')
+                OR (sg.status = 'pending' AND rev.recommendation IN ('reject', 'uncertain'))
               )
             ORDER BY sg.created_at DESC, sg.id DESC
             LIMIT ?
