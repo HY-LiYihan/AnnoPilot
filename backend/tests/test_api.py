@@ -1570,6 +1570,14 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert "[" in candidate_runs[0]["runtime_annotation"]["annotation_markup"]
         assert candidate_runs[0]["model_confidence"] >= 0.98
         assert candidate_runs[0]["meta"]["rosetta_reference"] == "candidate_runs.jsonl"
+        assert candidate_runs[0]["meta"]["rosetta_route"] in {"high", "medium", "low"}
+        assert 0 <= candidate_runs[0]["meta"]["uncertainty_score"] <= 1
+        assert candidate_runs[0]["meta"]["candidate_score"]["suggestion_id"] == candidate_runs[0]["candidate_id"]
+        assert candidate_runs[0]["meta"]["candidate_score"]["span_f1_to_consensus"] >= 0
+        assert candidate_runs[0]["meta"]["consistency"]["diagnostic_scope"] == "visible_pending_suggestions"
+        assert candidate_runs[0]["meta"]["consistency"]["scoring_mode"] == "character_rag_llm_review_proxy"
+        assert candidate_runs[0]["meta"]["consistency"]["candidate_count"] >= 1
+        assert candidate_runs[0]["meta"]["consistency"]["review_route"] in {"high_confidence_sample", "light_review", "expert_review"}
 
         accepted = client.post(f"/api/projects/default/suggestions/{suggestions[0]['id']}/accept")
         assert accepted.status_code == 200

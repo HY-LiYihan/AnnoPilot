@@ -465,10 +465,20 @@ class ExportService:
         generated_at = self.now()
         lines = []
         for sentence in document["sentences"]:
+            suggestions = sentence.get("suggestions", [])
+            if not suggestions:
+                continue
+            consistency_score = self._goldsmith_consistency_score(suggestions)
+            rosetta_route = self._rosetta_consistency_route(consistency_score)
+            candidate_scores = {
+                candidate_score["suggestion_id"]: candidate_score
+                for candidate_score in consistency_score["candidate_scores"]
+            }
             tokens = [self._export_prodigy_token(token, sentence["text"], sentence["start_char"]) for token in sentence["tokens"]]
-            for index, suggestion in enumerate(sentence.get("suggestions", []), start=1):
+            for index, suggestion in enumerate(suggestions, start=1):
                 local_start = int(suggestion["start_char"]) - int(sentence["start_char"])
                 local_end = int(suggestion["end_char"]) - int(sentence["start_char"])
+                candidate_score = candidate_scores.get(suggestion["id"], {})
                 span = {
                     "id": f"T{index}",
                     "start": local_start,
@@ -515,6 +525,26 @@ class ExportService:
                         "match_key": suggestion.get("match_key"),
                         "evidence_match_key": suggestion.get("evidence_match_key"),
                         "latest_review": latest_review or None,
+                        "rosetta_route": rosetta_route,
+                        "uncertainty_score": self._candidate_uncertainty_score(suggestion, candidate_score),
+                        "candidate_score": candidate_score,
+                        "consistency": {
+                            "diagnostic_scope": "visible_pending_suggestions",
+                            "scoring_mode": "character_rag_llm_review_proxy",
+                            "score": consistency_score["score"],
+                            "agreement": consistency_score["agreement"],
+                            "exact_match_rate": consistency_score["exact_match_rate"],
+                            "avg_confidence": consistency_score["avg_confidence"],
+                            "avg_rule_risk": consistency_score["avg_rule_risk"],
+                            "overlap_conflict_rate": consistency_score["overlap_conflict_rate"],
+                            "review_risk": consistency_score["review_risk"],
+                            "review_route": consistency_score["review_route"],
+                            "route_reason": consistency_score["route_reason"],
+                            "candidate_count": len(suggestions),
+                            "reviewed_candidate_count": consistency_score["reviewed_candidate_count"],
+                            "review_counts": consistency_score["review_counts"],
+                            "consensus_signature": consistency_score["consensus_signature"],
+                        },
                     },
                 }
                 lines.append(json.dumps(line, ensure_ascii=False) + "\n")
@@ -651,6 +681,29 @@ class ExportService:
             "high_confidence_sample": "High confidence with no overlap conflict or negative LLM review signal; sample for audit.",
         }
         return reasons[route]
+
+    @staticmethod
+    def _rosetta_consistency_route(score: dict[str, Any]) -> str:
+        confidence_ok = score["avg_confidence"] >= 0.7
+        if (
+            score["agreement"] >= 0.95
+            and score["exact_match_rate"] >= 0.8
+            and confidence_ok
+            and score["review_risk"] == 0
+            and score["overlap_conflict_rate"] == 0
+        ):
+            return "high"
+        if score["agreement"] >= 0.6 and score["score"] >= 0.6:
+            return "medium"
+        return "low"
+
+    @classmethod
+    def _candidate_uncertainty_score(cls, suggestion: dict[str, Any], candidate_score: dict[str, Any]) -> float:
+        span_f1 = float(candidate_score.get("span_f1_to_consensus", 1.0))
+        confidence = float(suggestion.get("confidence") or 0.0)
+        review_risk = float(candidate_score.get("review_risk", cls._review_recommendation_risk((suggestion.get("latest_review") or {}).get("recommendation"))))
+        uncertainty = ((1.0 - span_f1) * 0.5) + ((1.0 - confidence) * 0.3) + (review_risk * 0.2)
+        return round(max(0.0, min(1.0, uncertainty)), 4)
 
     @staticmethod
     def _inline_span_markup(text: str, start: int, end: int, label: str) -> str:
