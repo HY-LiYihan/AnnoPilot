@@ -1420,6 +1420,27 @@ def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(
         assert any(run["meta"]["consistency"]["overlap_conflict_rate"] > 0 for run in candidate_runs)
         assert all(run["schema_version"] == "rosetta.prodigy_candidate.v1" for run in candidate_runs)
 
+        review_tasks_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.review-tasks.jsonl")
+        assert review_tasks_response.status_code == 200
+        assert review_tasks_response.headers["content-disposition"] == f'attachment; filename="{document_id}.goldsmith.review-tasks.jsonl"'
+        review_tasks = [json.loads(line) for line in review_tasks_response.text.splitlines()]
+        assert review_tasks
+        assert review_tasks[0]["schema_version"] == "annopilot.goldsmith_review_tasks.v1"
+        assert review_tasks[0]["record_type"] == "human_review_task"
+        assert review_tasks[0]["manual_option_id"] == "__manual__"
+        assert review_tasks[0]["route"] in {"low", "medium"}
+        assert review_tasks[0]["priority"] >= 50
+        assert review_tasks[0]["candidate_count"] == len(review_tasks[0]["options"])
+        assert review_tasks[0]["options"][0]["option_id"] == "A"
+        assert review_tasks[0]["options"][0]["candidate_id"]
+        assert "[" in review_tasks[0]["options"][0]["annotation_markup"]
+        assert review_tasks[0]["consistency"]["rosetta_route"] == review_tasks[0]["route"]
+        assert review_tasks[0]["meta"]["rosetta_reference"] == "human_review_queue.jsonl"
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert manifest["artifacts"]["goldsmith_review_tasks_jsonl"]["schema_version"] == "annopilot.goldsmith_review_tasks.v1"
+        assert manifest["artifacts"]["goldsmith_review_tasks_jsonl"]["line_count"] == len(review_tasks)
+
         events_response = client.get("/api/projects/default/events.jsonl")
         assert events_response.status_code == 200
         events = [json.loads(line) for line in events_response.text.splitlines()]

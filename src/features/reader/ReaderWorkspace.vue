@@ -197,6 +197,7 @@ const {
   exportGoldsmithConsistencyScoresJsonl,
   exportGoldsmithCandidateRunsJsonl,
   exportGoldsmithRiskReasonsJsonl,
+  exportGoldsmithReviewTasksJsonl,
   verifyRebuildPreview,
   resetProjectData,
 } = useDocumentReader()
@@ -417,6 +418,7 @@ async function confirmProjectReset() {
         @export-goldsmith-consistency-scores="exportGoldsmithConsistencyScoresJsonl"
         @export-goldsmith-candidate-runs="exportGoldsmithCandidateRunsJsonl"
         @export-goldsmith-risk-reasons="exportGoldsmithRiskReasonsJsonl"
+        @export-goldsmith-review-tasks="exportGoldsmithReviewTasksJsonl"
         @verify-rebuild="verifyRebuildPreview"
         @reset-project="confirmProjectReset"
       />

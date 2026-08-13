@@ -8,6 +8,7 @@ import {
   goldsmithHardExamplesExportUrl,
   goldsmithHumanChoicesExportUrl,
   goldsmithRiskReasonsExportUrl,
+  goldsmithReviewTasksExportUrl,
   goldsmithReviewQueueExportUrl,
   manifestExportUrl,
   prodigyBundleExportUrl,
@@ -97,6 +98,10 @@ export function useReaderExports(options: ReaderExportOptions) {
     withDocument(goldsmithRiskReasonsExportUrl)
   }
 
+  function exportGoldsmithReviewTasksJsonl() {
+    withDocument(goldsmithReviewTasksExportUrl)
+  }
+
   return {
     exportEventsJsonl,
     exportGoldsmithBoundaryFeedbackJsonl,
@@ -105,6 +110,7 @@ export function useReaderExports(options: ReaderExportOptions) {
     exportGoldsmithHardExamplesJsonl,
     exportGoldsmithHumanChoicesJsonl,
     exportGoldsmithRiskReasonsJsonl,
+    exportGoldsmithReviewTasksJsonl,
     exportGoldsmithReviewQueueJsonl,
     exportJsonl,
     exportManifestJson,

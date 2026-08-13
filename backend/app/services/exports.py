@@ -39,6 +39,7 @@ class ExportService:
         goldsmith_consistency_scores_schema_version: str,
         goldsmith_candidate_runs_schema_version: str,
         goldsmith_risk_reasons_schema_version: str,
+        goldsmith_review_tasks_schema_version: str,
         medium_confidence_threshold: float,
     ) -> None:
         self.get_document = get_document
@@ -66,6 +67,7 @@ class ExportService:
         self.goldsmith_consistency_scores_schema_version = goldsmith_consistency_scores_schema_version
         self.goldsmith_candidate_runs_schema_version = goldsmith_candidate_runs_schema_version
         self.goldsmith_risk_reasons_schema_version = goldsmith_risk_reasons_schema_version
+        self.goldsmith_review_tasks_schema_version = goldsmith_review_tasks_schema_version
         self.medium_confidence_threshold = medium_confidence_threshold
 
     def export_document_lines(self, project_id: str, document_id: str) -> list[str]:
@@ -176,6 +178,7 @@ class ExportService:
             "goldsmith_consistency_scores_jsonl": "".join(context["goldsmith_consistency_score_lines"]),
             "goldsmith_candidate_runs_jsonl": "".join(context["goldsmith_candidate_run_lines"]),
             "goldsmith_risk_reasons_jsonl": "".join(context["goldsmith_risk_reason_lines"]),
+            "goldsmith_review_tasks_jsonl": "".join(context["goldsmith_review_task_lines"]),
         }
         bundle_files: dict[str, str] = {
             "README.txt": self._prodigy_bundle_readme(project_id, document_id, manifest),
@@ -202,6 +205,7 @@ class ExportService:
         goldsmith_boundary_feedback_lines = self.export_goldsmith_boundary_feedback_lines(project_id, document_id)
         goldsmith_consistency_score_lines = self.export_goldsmith_consistency_scores_lines(project_id, document_id)
         goldsmith_candidate_run_lines = self.export_goldsmith_candidate_runs_lines(project_id, document_id)
+        goldsmith_review_task_lines = self.export_goldsmith_review_task_lines(project_id, document_id)
         goldsmith_risk_reason_lines = self._build_goldsmith_risk_reason_lines(
             project_id=project_id,
             document_id=document_id,
@@ -319,6 +323,11 @@ class ExportService:
                     schema_version=self.goldsmith_risk_reasons_schema_version,
                     lines=goldsmith_risk_reason_lines,
                 ),
+                "goldsmith_review_tasks_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.review-tasks.jsonl",
+                    schema_version=self.goldsmith_review_tasks_schema_version,
+                    lines=goldsmith_review_task_lines,
+                ),
             },
         }
         manifest["content_sha256"] = self._payload_sha256(self._manifest_content_payload(manifest))
@@ -335,6 +344,7 @@ class ExportService:
             "goldsmith_consistency_score_lines": goldsmith_consistency_score_lines,
             "goldsmith_candidate_run_lines": goldsmith_candidate_run_lines,
             "goldsmith_risk_reason_lines": goldsmith_risk_reason_lines,
+            "goldsmith_review_task_lines": goldsmith_review_task_lines,
             "event_lines": event_lines,
             "tag_schema_line": tag_schema_line,
             "run_provenance_lines": run_provenance_lines,
@@ -677,6 +687,112 @@ class ExportService:
                 }
                 lines.append(json.dumps(line, ensure_ascii=False) + "\n")
         return lines
+
+    def export_goldsmith_review_task_lines(self, project_id: str, document_id: str) -> list[str]:
+        document = self.get_document(project_id, document_id)
+        generated_at = self.now()
+        tasks = []
+        for sentence in document["sentences"]:
+            suggestions = sentence.get("suggestions", [])
+            if not suggestions:
+                continue
+            consistency_score = self._goldsmith_consistency_score(suggestions)
+            route = consistency_score["rosetta_route"]
+            if route == "high":
+                continue
+            options = [
+                self._goldsmith_review_option(index, sentence, suggestion, consistency_score)
+                for index, suggestion in enumerate(suggestions)
+            ]
+            priority = self._goldsmith_review_task_priority(route, consistency_score["uncertainty_score"])
+            tasks.append(
+                {
+                    "schema_version": self.goldsmith_review_tasks_schema_version,
+                    "record_type": "human_review_task",
+                    "generated_at": generated_at,
+                    "project_id": project_id,
+                    "document_id": document_id,
+                    "sample_id": sentence["id"],
+                    "sentence_id": sentence["id"],
+                    "sentence_index": sentence["index"],
+                    "route": route,
+                    "priority": priority,
+                    "prompt": self._goldsmith_review_prompt(sentence, consistency_score),
+                    "text": sentence["text"],
+                    "candidate_count": len(options),
+                    "manual_option_id": "__manual__",
+                    "options": options,
+                    "consistency": {
+                        "diagnostic_scope": "visible_pending_suggestions",
+                        "scoring_mode": "character_rag_llm_review_proxy",
+                        "score": consistency_score["score"],
+                        "pairwise_span_f1": consistency_score["pairwise_span_f1"],
+                        "exact_match_rate": consistency_score["exact_match_rate"],
+                        "average_model_confidence": consistency_score["average_model_confidence"],
+                        "uncertainty_score": consistency_score["uncertainty_score"],
+                        "overlap_conflict_rate": consistency_score["overlap_conflict_rate"],
+                        "review_risk": consistency_score["review_risk"],
+                        "rosetta_route": route,
+                        "review_route": consistency_score["review_route"],
+                        "candidate_scores": consistency_score["candidate_scores"],
+                    },
+                    "meta": {
+                        "source": "annopilot",
+                        "artifact": "review_tasks.jsonl",
+                        "rosetta_reference": "human_review_queue.jsonl",
+                        "manual_option_note": "Choose __manual__ when every candidate span or label is wrong and the sentence needs direct editing.",
+                    },
+                }
+            )
+        tasks.sort(key=lambda task: (-int(task["priority"]), int(task["sentence_index"]), str(task["sentence_id"])))
+        return [json.dumps({**task, "rank": rank}, ensure_ascii=False) + "\n" for rank, task in enumerate(tasks, start=1)]
+
+    def _goldsmith_review_option(
+        self,
+        index: int,
+        sentence: dict[str, Any],
+        suggestion: dict[str, Any],
+        consistency_score: dict[str, Any],
+    ) -> dict[str, Any]:
+        candidate_scores = {
+            candidate_score["suggestion_id"]: candidate_score
+            for candidate_score in consistency_score["candidate_scores"]
+        }
+        local_start = int(suggestion["start_char"]) - int(sentence["start_char"])
+        local_end = int(suggestion["end_char"]) - int(sentence["start_char"])
+        candidate_score = candidate_scores.get(suggestion["id"], {})
+        return {
+            "option_id": chr(ord("A") + index),
+            "candidate_id": suggestion["id"],
+            "annotation_markup": self._inline_span_markup(sentence["text"], local_start, local_end, suggestion["tag_name"]),
+            "explanation": self._candidate_explanation(suggestion),
+            "model_confidence": suggestion["confidence"],
+            "risk_reason_codes": suggestion.get("risk_reason_codes") or self._suggestion_risk_reason_codes(suggestion),
+            "span": {
+                "label": suggestion["tag_name"],
+                "label_id": suggestion["tag_id"],
+                "text": suggestion["text"],
+                "start": local_start,
+                "end": local_end,
+                "token_start": suggestion["start_token_index"],
+                "token_end": suggestion["end_token_index"],
+            },
+            "candidate_score": candidate_score,
+            "latest_review": suggestion.get("latest_review"),
+        }
+
+    @staticmethod
+    def _goldsmith_review_task_priority(route: str, uncertainty_score: float) -> int:
+        base = {"low": 100, "medium": 50, "high": 10}.get(route, 0)
+        return base + int(round(float(uncertainty_score or 0.0) * 10))
+
+    @staticmethod
+    def _goldsmith_review_prompt(sentence: dict[str, Any], consistency_score: dict[str, Any]) -> str:
+        return (
+            "请选择最接近正确 Engagement 标注的候选；如果都不对，请选择手动修正。 "
+            f"句子 #{int(sentence['index']) + 1}，route={consistency_score['rosetta_route']}，"
+            f"span-F1={consistency_score['pairwise_span_f1']}，exact={consistency_score['exact_match_rate']}。"
+        )
 
     def export_goldsmith_risk_reason_lines(self, project_id: str, document_id: str) -> list[str]:
         document = self.get_document(project_id, document_id)

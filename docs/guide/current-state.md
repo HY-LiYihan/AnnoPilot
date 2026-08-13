@@ -101,6 +101,7 @@ GET    /api/projects/{project_id}/documents/{document_id}/export.goldsmith.bound
 GET    /api/projects/{project_id}/documents/{document_id}/export.goldsmith.consistency-scores.jsonl
 GET    /api/projects/{project_id}/documents/{document_id}/export.goldsmith.candidate-runs.jsonl
 GET    /api/projects/{project_id}/documents/{document_id}/export.goldsmith.risk-reasons.jsonl
+GET    /api/projects/{project_id}/documents/{document_id}/export.goldsmith.review-tasks.jsonl
 GET    /api/projects/{project_id}/documents/{document_id}/export.manifest.json
 GET    /api/projects/{project_id}/events.jsonl
 GET    /api/projects/{project_id}/tags/schema.json

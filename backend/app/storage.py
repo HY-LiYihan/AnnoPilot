@@ -49,6 +49,7 @@ GOLDSMITH_BOUNDARY_FEEDBACK_SCHEMA_VERSION = "annopilot.goldsmith_boundary_feedb
 GOLDSMITH_CONSISTENCY_SCORES_SCHEMA_VERSION = "annopilot.goldsmith_consistency_scores.v1"
 GOLDSMITH_CANDIDATE_RUNS_SCHEMA_VERSION = "rosetta.prodigy_candidate.v1"
 GOLDSMITH_RISK_REASONS_SCHEMA_VERSION = "annopilot.goldsmith_risk_reasons.v1"
+GOLDSMITH_REVIEW_TASKS_SCHEMA_VERSION = "annopilot.goldsmith_review_tasks.v1"
 HIGH_CONFIDENCE_THRESHOLD = 0.9
 MEDIUM_CONFIDENCE_THRESHOLD = 0.75
 DEFAULT_TAGS: list[dict[str, Any]] = []
@@ -243,6 +244,7 @@ class AnnotationStorage:
             goldsmith_consistency_scores_schema_version=GOLDSMITH_CONSISTENCY_SCORES_SCHEMA_VERSION,
             goldsmith_candidate_runs_schema_version=GOLDSMITH_CANDIDATE_RUNS_SCHEMA_VERSION,
             goldsmith_risk_reasons_schema_version=GOLDSMITH_RISK_REASONS_SCHEMA_VERSION,
+            goldsmith_review_tasks_schema_version=GOLDSMITH_REVIEW_TASKS_SCHEMA_VERSION,
             medium_confidence_threshold=MEDIUM_CONFIDENCE_THRESHOLD,
         )
 
@@ -390,6 +392,9 @@ class AnnotationStorage:
 
     def export_goldsmith_risk_reason_lines(self, project_id: str, document_id: str) -> list[str]:
         return self.export_service.export_goldsmith_risk_reason_lines(project_id, document_id)
+
+    def export_goldsmith_review_task_lines(self, project_id: str, document_id: str) -> list[str]:
+        return self.export_service.export_goldsmith_review_task_lines(project_id, document_id)
 
     def export_tag_schema(self, project_id: str) -> dict[str, Any]:
         return self.tag_service.export_tag_schema(project_id)

@@ -35,6 +35,7 @@ const emit = defineEmits<{
   'export-goldsmith-consistency-scores': []
   'export-goldsmith-candidate-runs': []
   'export-goldsmith-risk-reasons': []
+  'export-goldsmith-review-tasks': []
   'import-annotations': [file: File]
   'reset-project': []
   'review-sentence': [sentenceIndex: number]
@@ -576,6 +577,11 @@ function shortHash(value: string) {
 
     <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-goldsmith-risk-reasons')">
       {{ labels.exportRiskReasons }}
+      <Download :size="18" aria-hidden="true" />
+    </button>
+
+    <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-goldsmith-review-tasks')">
+      {{ labels.exportReviewTasks }}
       <Download :size="18" aria-hidden="true" />
     </button>
 
