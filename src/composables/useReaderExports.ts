@@ -9,6 +9,7 @@ import {
   goldsmithHumanChoicesExportUrl,
   goldsmithReviewQueueExportUrl,
   manifestExportUrl,
+  prodigyBundleExportUrl,
   prodigyExportUrl,
   prodigyLabelsExportUrl,
   prodigySpansExportUrl,
@@ -35,6 +36,10 @@ export function useReaderExports(options: ReaderExportOptions) {
 
   function exportProdigyJsonl() {
     withDocument(prodigyExportUrl)
+  }
+
+  function exportProdigyBundleZip() {
+    withDocument(prodigyBundleExportUrl)
   }
 
   function exportProdigySpansJsonl() {
@@ -97,6 +102,7 @@ export function useReaderExports(options: ReaderExportOptions) {
     exportGoldsmithReviewQueueJsonl,
     exportJsonl,
     exportManifestJson,
+    exportProdigyBundleZip,
     exportProdigyLabelsJson,
     exportProdigyJsonl,
     exportProdigySpansJsonl,

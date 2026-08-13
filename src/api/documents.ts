@@ -129,6 +129,10 @@ export function prodigySpansExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.prodigy.spans.jsonl`
 }
 
+export function prodigyBundleExportUrl(projectId: string, documentId: string) {
+  return `/api/projects/${projectId}/documents/${documentId}/export.prodigy.bundle.zip`
+}
+
 export function prodigyLabelsExportUrl(projectId: string) {
   return `/api/projects/${projectId}/tags/prodigy-labels.json`
 }

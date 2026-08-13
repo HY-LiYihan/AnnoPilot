@@ -1,6 +1,8 @@
 import hashlib
 import json
+from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
 
@@ -318,6 +320,31 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert manifest["artifacts"]["tag_schema_json"]["schema_version"] == "annopilot.tag_schema.v1"
         assert manifest["artifacts"]["tag_schema_json"]["line_count"] == 1
         assert manifest["artifacts"]["tag_schema_json"]["content_sha256"] == tag_schema["content_sha256"]
+
+        bundle_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.bundle.zip")
+        assert bundle_response.status_code == 200
+        assert bundle_response.headers["content-disposition"] == f'attachment; filename="{document_id}.prodigy.bundle.zip"'
+        assert bundle_response.headers["content-type"] == "application/zip"
+        with ZipFile(BytesIO(bundle_response.content)) as archive:
+            bundle_names = set(archive.namelist())
+            artifact_names = {artifact["filename"] for artifact in manifest["artifacts"].values()}
+            assert {
+                "README.txt",
+                f"{document_id}.manifest.json",
+                *artifact_names,
+            } <= bundle_names
+            bundled_artifacts = {
+                name: archive.read(name).decode("utf-8")
+                for name in artifact_names
+            }
+            bundled_manifest = json.loads(archive.read(f"{document_id}.manifest.json").decode("utf-8"))
+            bundled_readme = archive.read("README.txt").decode("utf-8")
+
+        assert "AnnoPilot Prodigy Export Bundle" in bundled_readme
+        assert bundled_manifest["content_sha256"] == manifest["content_sha256"]
+        for artifact in bundled_manifest["artifacts"].values():
+            bundled_content = bundled_artifacts[artifact["filename"]]
+            assert artifact["sha256"] == hashlib.sha256(bundled_content.encode("utf-8")).hexdigest()
         second_manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert second_manifest["content_sha256"] == manifest["content_sha256"]
 

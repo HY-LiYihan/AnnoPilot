@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from io import BytesIO
 from collections.abc import Callable
 from typing import Any
+from zipfile import ZIP_DEFLATED, ZipFile
 
 
 class ExportService:
@@ -152,6 +154,39 @@ class ExportService:
         return payload
 
     def export_manifest(self, project_id: str, document_id: str) -> dict[str, Any]:
+        return self._build_export_manifest_context(project_id, document_id)["manifest"]
+
+    def export_prodigy_bundle_bytes(self, project_id: str, document_id: str) -> bytes:
+        context = self._build_export_manifest_context(project_id, document_id)
+        manifest = context["manifest"]
+        artifacts = manifest["artifacts"]
+        artifact_contents = {
+            "tasks_jsonl": "".join(context["task_lines"]),
+            "prodigy_jsonl": "".join(context["prodigy_lines"]),
+            "prodigy_spans_jsonl": "".join(context["prodigy_spans_lines"]),
+            "prodigy_labels_json": context["prodigy_labels_line"],
+            "events_jsonl": "".join(context["event_lines"]),
+            "tag_schema_json": context["tag_schema_line"],
+            "goldsmith_review_queue_jsonl": "".join(context["goldsmith_queue_lines"]),
+            "goldsmith_human_choices_jsonl": "".join(context["goldsmith_choices_lines"]),
+            "goldsmith_hard_examples_jsonl": "".join(context["goldsmith_hard_example_lines"]),
+            "goldsmith_boundary_feedback_jsonl": "".join(context["goldsmith_boundary_feedback_lines"]),
+            "goldsmith_consistency_scores_jsonl": "".join(context["goldsmith_consistency_score_lines"]),
+            "goldsmith_candidate_runs_jsonl": "".join(context["goldsmith_candidate_run_lines"]),
+        }
+        bundle_files: dict[str, str] = {
+            "README.txt": self._prodigy_bundle_readme(project_id, document_id, manifest),
+            f"{document_id}.manifest.json": json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        }
+        bundle_files.update({artifacts[key]["filename"]: content for key, content in artifact_contents.items()})
+        bundle_files.update(context["run_provenance_lines"])
+        buffer = BytesIO()
+        with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
+            for filename, content in bundle_files.items():
+                archive.writestr(filename, content.encode("utf-8"))
+        return buffer.getvalue()
+
+    def _build_export_manifest_context(self, project_id: str, document_id: str) -> dict[str, Any]:
         document = self.get_document(project_id, document_id)
         task_lines = self.export_document_lines(project_id, document_id)
         prodigy_lines = self.export_prodigy_document_lines(project_id, document_id)
@@ -171,12 +206,16 @@ class ExportService:
         runs = self.list_runs(project_id, document_id=document_id, limit=50)
         annotation_imports = self.list_annotation_imports(project_id, document_id=document_id, limit=50)["imports"]
         run_provenance_artifacts: dict[str, dict[str, Any]] = {}
+        run_provenance_lines: dict[str, str] = {}
         for run in runs:
             payload = self.export_run_provenance(project_id, run["id"])
+            filename = f"{run['id']}.provenance.json"
+            line = json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n"
+            run_provenance_lines[filename] = line
             run_provenance_artifacts[run["id"]] = self._artifact_summary(
-                filename=f"{run['id']}.provenance.json",
+                filename=filename,
                 schema_version=self.run_provenance_schema_version,
-                lines=[json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n"],
+                lines=[line],
                 content_sha256=payload["content_sha256"],
             )
         source_counts: dict[str, int] = {}
@@ -266,7 +305,22 @@ class ExportService:
             },
         }
         manifest["content_sha256"] = self._payload_sha256(self._manifest_content_payload(manifest))
-        return manifest
+        return {
+            "manifest": manifest,
+            "task_lines": task_lines,
+            "prodigy_lines": prodigy_lines,
+            "prodigy_spans_lines": prodigy_spans_lines,
+            "prodigy_labels_line": prodigy_labels_line,
+            "goldsmith_queue_lines": goldsmith_queue_lines,
+            "goldsmith_choices_lines": goldsmith_choices_lines,
+            "goldsmith_hard_example_lines": goldsmith_hard_example_lines,
+            "goldsmith_boundary_feedback_lines": goldsmith_boundary_feedback_lines,
+            "goldsmith_consistency_score_lines": goldsmith_consistency_score_lines,
+            "goldsmith_candidate_run_lines": goldsmith_candidate_run_lines,
+            "event_lines": event_lines,
+            "tag_schema_line": tag_schema_line,
+            "run_provenance_lines": run_provenance_lines,
+        }
 
     def export_goldsmith_review_queue_lines(
         self,
@@ -1148,6 +1202,30 @@ class ExportService:
                 "spans_manual": self.prodigy_spans_export_schema_version,
             },
         }
+
+    @staticmethod
+    def _prodigy_bundle_readme(project_id: str, document_id: str, manifest: dict[str, Any]) -> str:
+        readiness = manifest.get("prodigy_readiness", {})
+        labels_artifact = manifest.get("artifacts", {}).get("prodigy_labels_json", {})
+        return "\n".join(
+            [
+                "AnnoPilot Prodigy Export Bundle",
+                "================================",
+                f"Project: {project_id}",
+                f"Document: {document_id}",
+                f"Manifest content_sha256: {manifest.get('content_sha256', '')}",
+                f"Prodigy readiness: {readiness.get('status', 'unknown')}",
+                f"Pending suggestions: {readiness.get('pending_suggestion_count', 'unknown')}",
+                f"Labels: {labels_artifact.get('filename', '')}",
+                "",
+                "Recommended Prodigy entrypoints:",
+                f"- {document_id}.prodigy.jsonl for ner.manual-style review.",
+                f"- {document_id}.prodigy.spans.jsonl for spans.manual-style review.",
+                "- The Prodigy labels JSON contains label definitions and command templates.",
+                "- The manifest file records artifact hashes, readiness blockers, and audit state.",
+                "",
+            ]
+        )
 
     @staticmethod
     def _export_prodigy_answer(sentence: dict[str, Any]) -> str:

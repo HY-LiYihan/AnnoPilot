@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from ..schemas import ExportManifestResponse, ProdigyLabelsExportResponse, TagSchemaExportResponse
 from ..storage import AnnotationStorage, NotFoundError, ValidationError
@@ -65,6 +65,20 @@ def export_manifest(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     headers = {"Content-Disposition": f'attachment; filename="{document_id}.manifest.json"'}
     return JSONResponse(manifest, headers=headers)
+
+
+@router.get("/documents/{document_id}/export.prodigy.bundle.zip")
+def export_prodigy_bundle(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> Response:
+    try:
+        bundle = storage.export_prodigy_bundle_bytes(project_id, document_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.prodigy.bundle.zip"'}
+    return Response(content=bundle, media_type="application/zip", headers=headers)
 
 
 @router.get("/documents/{document_id}/export.goldsmith.review-queue.jsonl")

@@ -359,6 +359,9 @@ class AnnotationStorage:
     def export_manifest(self, project_id: str, document_id: str) -> dict[str, Any]:
         return self.export_service.export_manifest(project_id, document_id)
 
+    def export_prodigy_bundle_bytes(self, project_id: str, document_id: str) -> bytes:
+        return self.export_service.export_prodigy_bundle_bytes(project_id, document_id)
+
     def export_goldsmith_review_queue_lines(
         self,
         project_id: str,

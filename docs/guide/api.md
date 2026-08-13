@@ -119,6 +119,7 @@ POST /api/projects/{project_id}/rebuild/preview
 GET /api/projects/{project_id}/documents/{document_id}/export.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.prodigy.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.prodigy.spans.jsonl
+GET /api/projects/{project_id}/documents/{document_id}/export.prodigy.bundle.zip
 GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.review-queue.jsonl?order=hybrid&limit=100
 GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.human-choices.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.hard-examples.jsonl
@@ -132,7 +133,7 @@ GET /api/projects/{project_id}/tags/prodigy-labels.json
 ```
 
 - Task JSONL 使用 `annopilot.task.v1`，按 sentence 输出 tokens、spans、annotations、suggestions、answer、meta，并包含 Prodigy-style `_input_hash`、`_task_hash`、`_session_id`、`_annotator_id` 和 `_view_id`。
-- Prodigy JSONL 使用 `prodigy.ner_manual.compat.v1`，保持 `_view_id=ner_manual`、`_session_id`、`_annotator_id`、`_input_hash` 和 `_task_hash`；包含 annotations 但尚未人工 complete 的句子会以顶层 `answer=accept` 导出，原始 runtime answer 保留在 `meta.answer`。每条 record 的 `meta.tag_schema` 会带上当前 label schema hash、label definitions、examples、shortcut 和颜色，便于导入 Prodigy 后仍能复核 Engagement 标签含义。`tags/prodigy-labels.json` 会额外导出纯 label list、CSV label argument 和 `ner.manual` / `spans.manual` command templates，方便把 JSONL 直接交给外部 Prodigy 流程。
+- Prodigy JSONL 使用 `prodigy.ner_manual.compat.v1`，保持 `_view_id=ner_manual`、`_session_id`、`_annotator_id`、`_input_hash` 和 `_task_hash`；包含 annotations 但尚未人工 complete 的句子会以顶层 `answer=accept` 导出，原始 runtime answer 保留在 `meta.answer`。每条 record 的 `meta.tag_schema` 会带上当前 label schema hash、label definitions、examples、shortcut 和颜色，便于导入 Prodigy 后仍能复核 Engagement 标签含义。`tags/prodigy-labels.json` 会额外导出纯 label list、CSV label argument 和 `ner.manual` / `spans.manual` command templates，方便把 JSONL 直接交给外部 Prodigy 流程。`export.prodigy.bundle.zip` 会把 Prodigy JSONL、Spans JSONL、labels config、tag schema、Goldsmith review queue、README 和 manifest 打成一个交付包，manifest 里的 artifact hashes 与 zip 内文件保持一致。
 - Goldsmith review queue JSONL 使用 `annopilot.goldsmith_review_queue.v1`，按当前 `order` 导出待人工复核句子、rank、lexical / LLM / candidate conflict / 综合 risk score、route 和首条 suggestion，可作为 Rosetta 风格 `human_review_queue.jsonl`。
 - Goldsmith human choices JSONL 使用 `annopilot.goldsmith_human_choices.v1`，导出已被人工 accept/reject 的 suggestions、latest LLM review、是否错配和 span payload，可作为 Rosetta 风格 `human_choices.jsonl`。
 - Goldsmith hard examples JSONL 使用 `annopilot.goldsmith_hard_examples.v1`，从 human choices 中筛出人工拒绝、LLM/人工分歧、低置信或 LLM uncertain 样本，并附 `failure_note` 作为 Rosetta hard-example / boundary-feedback 输入。

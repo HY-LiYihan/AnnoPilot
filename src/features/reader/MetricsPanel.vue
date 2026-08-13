@@ -21,6 +21,7 @@ defineProps<{
 const emit = defineEmits<{
   export: []
   'export-prodigy': []
+  'export-prodigy-bundle': []
   'export-prodigy-spans': []
   'export-prodigy-labels': []
   'export-manifest': []
@@ -208,6 +209,11 @@ function shortHash(value: string) {
     </div>
 
     <div class="stats-quick-actions" :aria-label="labels.aria">
+      <button class="export-button secondary compact" :disabled="!documentMeta" @click="emit('export-prodigy-bundle')">
+        {{ labels.exportProdigyBundle }}
+        <Download :size="17" aria-hidden="true" />
+      </button>
+
       <button class="export-button secondary compact" :disabled="!documentMeta" @click="emit('export-prodigy')">
         {{ labels.exportProdigy }}
         <Download :size="17" aria-hidden="true" />
