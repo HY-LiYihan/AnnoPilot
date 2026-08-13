@@ -45,6 +45,8 @@ const props = defineProps<{
   suggestionMinConfidence: number
   suggestionReviews: Record<string, SuggestionReview>
   reviewingSuggestionId: string
+  activeSuggestionTargetId: string
+  activeSuggestionPosition: number
   annotationForToken: (sentence: SentenceDef, tokenIndex: number) => AnnotationDef | undefined
   suggestionForToken: (sentence: SentenceDef, tokenIndex: number) => SuggestionDef | undefined
   isTokenInDrag: (sentence: SentenceDef, tokenIndex: number) => boolean
@@ -75,6 +77,7 @@ const emit = defineEmits<{
   'auto-annotate-document': []
   'accept-suggestion': [suggestion: SuggestionDef]
   'reject-suggestion': [suggestion: SuggestionDef]
+  'suggestion-target': [suggestion: SuggestionDef]
   'accept-current-suggestions': []
   'auto-accept-document-suggestions': []
   'reject-current-suggestions': []
@@ -241,6 +244,16 @@ function tokenSpanClasses(sentence: SentenceDef, tokenIndex: number) {
   return {}
 }
 
+function isSuggestionTargetForToken(sentence: SentenceDef, tokenIndex: number) {
+  const suggestion = props.activeSuggestions.find((item) => item.id === props.activeSuggestionTargetId)
+  return Boolean(
+    suggestion &&
+      suggestion.sentence_id === sentence.id &&
+      suggestion.start_token_index <= tokenIndex &&
+      suggestion.end_token_index >= tokenIndex,
+  )
+}
+
 function rangePositionClasses(startTokenIndex: number, endTokenIndex: number, tokenIndex: number) {
   const isStart = tokenIndex === startTokenIndex
   const isEnd = tokenIndex === endTokenIndex
@@ -376,6 +389,7 @@ function predicatePositionClasses(
                 {
                   annotated: annotationForToken(sentence, token.token_index),
                   suggested: suggestionForToken(sentence, token.token_index),
+                  targeted: isSuggestionTargetForToken(sentence, token.token_index),
                   selecting: isTokenInDrag(sentence, token.token_index),
                   pending: isTokenPending(sentence, token.token_index),
                 },
@@ -498,8 +512,9 @@ function predicatePositionClasses(
           v-for="(suggestion, suggestionIndex) in activeSuggestions"
           :key="suggestion.id"
           class="suggestion-row"
-          :class="{ 'keyboard-target': suggestionIndex === 0 }"
+          :class="{ 'keyboard-target': suggestion.id === activeSuggestionTargetId }"
           :style="{ '--token-color': suggestion.tag_color }"
+          @click="emit('suggestion-target', suggestion)"
         >
           <span>
             <strong>{{ suggestion.text }}</strong>
@@ -509,7 +524,9 @@ function predicatePositionClasses(
               <em>{{ Math.round(suggestion.confidence * 100) }}%</em>
               <em>{{ suggestionRangeLabel(suggestion, labels) }}</em>
               <em v-if="suggestion.run_id">{{ suggestion.run_id.slice(0, 10) }}</em>
-              <em v-if="suggestionIndex === 0" class="keyboard-target-badge">{{ labels.keyboardTarget }}</em>
+              <em v-if="suggestion.id === activeSuggestionTargetId" class="keyboard-target-badge">
+                {{ labels.keyboardTarget(activeSuggestionPosition, activeSuggestions.length) }}
+              </em>
             </small>
             <small v-if="suggestion.evidence_text" class="evidence-copy">
               <em>{{ labels.evidence }}</em>
@@ -535,14 +552,14 @@ function predicatePositionClasses(
               type="button"
               :disabled="isSaving || !!reviewingSuggestionId"
               :title="labels.reviewTitle"
-              @click="emit('review-suggestion', suggestion)"
+              @click.stop="emit('review-suggestion', suggestion)"
             >
               <Sparkles :size="15" aria-hidden="true" />
             </button>
-            <button type="button" :disabled="isSaving" :title="labels.acceptTitle" @click="emit('accept-suggestion', suggestion)">
+            <button type="button" :disabled="isSaving" :title="labels.acceptTitle" @click.stop="emit('accept-suggestion', suggestion)">
               <Check :size="15" aria-hidden="true" />
             </button>
-            <button type="button" :disabled="isSaving" :title="labels.rejectTitle" @click="emit('reject-suggestion', suggestion)">
+            <button type="button" :disabled="isSaving" :title="labels.rejectTitle" @click.stop="emit('reject-suggestion', suggestion)">
               <X :size="15" aria-hidden="true" />
             </button>
           </div>

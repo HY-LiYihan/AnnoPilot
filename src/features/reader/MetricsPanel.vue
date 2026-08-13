@@ -257,6 +257,7 @@ function shortHash(value: string) {
         <span><kbd>Space / I</kbd><em>{{ labels.ignoreSentence }}</em></span>
         <span><kbd>J</kbd><em>{{ labels.rejectSentence }}</em></span>
         <span><kbd>E</kbd><em>{{ labels.reopenSentence }}</em></span>
+        <span><kbd>Tab</kbd><em>{{ labels.cycleSuggestion }}</em></span>
         <span><kbd>Y / N</kbd><em>{{ labels.firstSuggestion }}</em></span>
         <span><kbd>A</kbd><em>{{ labels.acceptSuggestions }}</em></span>
         <span><kbd>X</kbd><em>{{ labels.rejectSuggestions }}</em></span>

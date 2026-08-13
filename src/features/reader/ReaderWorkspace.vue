@@ -120,6 +120,8 @@ const {
   reviewQueueOrder,
   suggestionReviews,
   reviewingSuggestionId,
+  activeSuggestionTargetId,
+  activeSuggestionPosition,
   lastAnnotationImport,
   currentSentence,
   progressPercent,
@@ -160,6 +162,7 @@ const {
   undoLastSpanAction,
   acceptSuggestedSpan,
   rejectSuggestedSpan,
+  setActiveSuggestionTarget,
   acceptCurrentSentenceSuggestions,
   autoAnnotateDocument,
   autoAcceptDocumentSuggestions,
@@ -332,6 +335,8 @@ async function confirmProjectReset() {
         :suggestion-min-confidence="suggestionMinConfidence"
         :suggestion-reviews="suggestionReviews"
         :reviewing-suggestion-id="reviewingSuggestionId"
+        :active-suggestion-target-id="activeSuggestionTargetId"
+        :active-suggestion-position="activeSuggestionPosition"
         :annotation-for-token="annotationForToken"
         :suggestion-for-token="suggestionForToken"
         :is-token-in-drag="isTokenInDrag"
@@ -353,6 +358,7 @@ async function confirmProjectReset() {
         @auto-annotate-document="autoAnnotateDocument"
         @accept-suggestion="acceptSuggestedSpan"
         @reject-suggestion="rejectSuggestedSpan"
+        @suggestion-target="setActiveSuggestionTarget"
         @accept-current-suggestions="acceptCurrentSentenceSuggestions"
         @auto-accept-document-suggestions="autoAcceptDocumentSuggestions"
         @reject-current-suggestions="rejectCurrentSentenceSuggestions"

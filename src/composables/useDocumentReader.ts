@@ -141,6 +141,7 @@ export function useDocumentReader() {
   const reviewingSuggestionId = ref('')
   const lastAnnotationImport = ref<AnnotationImportSummary | null>(null)
   const lastUndoAction = ref<UndoableSpanAction | null>(null)
+  const activeSuggestionId = ref('')
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
   let interactiveRefreshSerial = 0
 
@@ -152,6 +153,12 @@ export function useDocumentReader() {
   const reviewSummary = computed(() => `${metrics.value.suggestion_count} 待确认`)
   const activeAnnotations = computed(() => currentSentence.value?.annotations ?? [])
   const activeSuggestions = computed(() => currentSentence.value?.suggestions ?? [])
+  const activeSuggestion = computed(() => activeSuggestions.value.find((suggestion) => suggestion.id === activeSuggestionId.value) ?? activeSuggestions.value[0] ?? null)
+  const activeSuggestionTargetId = computed(() => activeSuggestion.value?.id ?? '')
+  const activeSuggestionPosition = computed(() => {
+    const index = activeSuggestions.value.findIndex((suggestion) => suggestion.id === activeSuggestionTargetId.value)
+    return index >= 0 ? index + 1 : 0
+  })
   const reviewQueueItems = computed(() => sentenceQueue.value.filter((sentence) => !sentence.completed && sentence.suggestion_count > 0))
   const reviewNavigationItems = computed(() => {
     if (reviewQueueOrder.value === 'position' || !reviewQueueDetails.value.length) {
@@ -174,9 +181,11 @@ export function useDocumentReader() {
   useReaderKeyboardShortcuts({
     acceptCurrentSentenceSuggestions,
     acceptSuggestedSpan,
+    activeSuggestion,
     activeSuggestions,
     applyTagToSelection,
     completeCurrentSentence,
+    cycleActiveSuggestionTarget,
     currentSentenceIndex,
     jumpToNextReviewSentence,
     rejectCurrentSentenceSuggestions,
@@ -236,6 +245,7 @@ export function useDocumentReader() {
       currentSentenceIndex.value = preserveCurrent
         ? clampIndex(previousIndex)
         : initialSentenceIndex(payload)
+      activeSuggestionId.value = ''
       if (currentSentenceIndex.value < 0) currentSentenceIndex.value = 0
       await loadSentenceWindow(documentId, currentSentenceIndex.value, true)
       await centerCurrentSentence()
@@ -380,6 +390,7 @@ export function useDocumentReader() {
     sentences.value = page.sentences
     loadedWindow.value = { offset: page.offset, limit: page.limit, total: page.total }
     restoreSuggestionReviews(page.sentences)
+    normalizeActiveSuggestionTarget()
   }
 
   function isTargetComfortablyLoaded(targetIndex: number) {
@@ -398,6 +409,7 @@ export function useDocumentReader() {
     if (!metrics.value.sentence_count) return
     currentSentenceIndex.value = clampIndex(index)
     selection.clearSelection()
+    activeSuggestionId.value = ''
     void (async () => {
       if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value)
       await centerCurrentSentence(scrollBehavior)
@@ -443,6 +455,30 @@ export function useDocumentReader() {
 
   function jumpToNextReviewIfCurrentCleared() {
     if (activeSuggestions.value.length === 0 && hasReviewQueue.value) jumpToNextReviewSentence()
+  }
+
+  function setActiveSuggestionTarget(suggestion: SuggestionDef) {
+    if (!activeSuggestions.value.some((item) => item.id === suggestion.id)) return
+    activeSuggestionId.value = suggestion.id
+  }
+
+  function cycleActiveSuggestionTarget(direction: 1 | -1) {
+    const suggestions = activeSuggestions.value
+    if (!suggestions.length) return
+    const currentIndex = suggestions.findIndex((suggestion) => suggestion.id === activeSuggestionTargetId.value)
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0
+    const nextIndex = (safeIndex + direction + suggestions.length) % suggestions.length
+    activeSuggestionId.value = suggestions[nextIndex].id
+  }
+
+  function normalizeActiveSuggestionTarget() {
+    if (!activeSuggestions.value.length) {
+      activeSuggestionId.value = ''
+      return
+    }
+    if (!activeSuggestions.value.some((suggestion) => suggestion.id === activeSuggestionId.value)) {
+      activeSuggestionId.value = activeSuggestions.value[0].id
+    }
   }
 
   async function completeCurrentSentence(answer: 'accept' | 'reject' | 'ignore' = 'accept') {
@@ -1087,6 +1123,7 @@ export function useDocumentReader() {
     sentences.value = sentences.value.map((sentence) =>
       sentence.id === sentenceId ? { ...sentence, annotations, suggestions: withoutAnnotationOverlaps(sentence.suggestions, annotations) } : sentence,
     )
+    normalizeActiveSuggestionTarget()
   }
 
   function removeSuggestion(suggestionId: string) {
@@ -1094,6 +1131,7 @@ export function useDocumentReader() {
       ...sentence,
       suggestions: sentence.suggestions.filter((suggestion) => suggestion.id !== suggestionId),
     }))
+    normalizeActiveSuggestionTarget()
   }
 
   function annotationForToken(sentence: SentenceDef, tokenIndex: number) {
@@ -1111,6 +1149,15 @@ export function useDocumentReader() {
   function tokenStyle(sentence: SentenceDef, tokenIndex: number): Record<string, string> {
     const annotation = annotationForToken(sentence, tokenIndex)
     if (annotation) return { '--token-color': annotation.tag_color }
+    const targetSuggestion = activeSuggestion.value
+    if (
+      targetSuggestion &&
+      targetSuggestion.sentence_id === sentence.id &&
+      targetSuggestion.start_token_index <= tokenIndex &&
+      targetSuggestion.end_token_index >= tokenIndex
+    ) {
+      return { '--token-color': targetSuggestion.tag_color }
+    }
     const suggestion = suggestionForToken(sentence, tokenIndex)
     if (suggestion) return { '--token-color': suggestion.tag_color }
     if ((selection.isTokenInDrag(sentence, tokenIndex) || selection.isTokenPending(sentence, tokenIndex)) && selectedTag.value) {
@@ -1171,6 +1218,7 @@ export function useDocumentReader() {
       loadedWindow.value = { offset: 0, limit: 0, total: 0 }
       metrics.value = emptyMetrics()
       currentSentenceIndex.value = 0
+      activeSuggestionId.value = ''
       suggestionReviews.value = {}
       reviewingSuggestionId.value = ''
       lastAnnotationImport.value = null
@@ -1343,6 +1391,8 @@ export function useDocumentReader() {
     reviewQueueOrder,
     suggestionReviews,
     reviewingSuggestionId,
+    activeSuggestionTargetId,
+    activeSuggestionPosition,
     lastAnnotationImport,
     currentSentence,
     progressPercent,
@@ -1383,6 +1433,7 @@ export function useDocumentReader() {
     undoLastSpanAction,
     acceptSuggestedSpan,
     rejectSuggestedSpan,
+    setActiveSuggestionTarget,
     acceptCurrentSentenceSuggestions,
     autoAnnotateDocument,
     autoAcceptDocumentSuggestions,

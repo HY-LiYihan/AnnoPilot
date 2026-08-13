@@ -8,6 +8,7 @@ type KeyboardShortcutActions = {
   acceptSuggestedSpan: (suggestion: SuggestionDef) => void | Promise<void>
   applyTagToSelection: (tagId: string) => void | Promise<void>
   completeCurrentSentence: (answer?: SentenceAnswer) => void | Promise<void>
+  cycleActiveSuggestionTarget: (direction: 1 | -1) => void
   jumpToNextReviewSentence: () => void
   rejectCurrentSentenceSuggestions: () => void | Promise<void>
   rejectSuggestedSpan: (suggestion: SuggestionDef) => void | Promise<void>
@@ -17,6 +18,7 @@ type KeyboardShortcutActions = {
 }
 
 type ReaderKeyboardShortcutOptions = KeyboardShortcutActions & {
+  activeSuggestion: ComputedRef<SuggestionDef | null>
   activeSuggestions: ComputedRef<SuggestionDef[]>
   currentSentenceIndex: Ref<number>
   tags: Ref<TagDef[]>
@@ -29,6 +31,11 @@ export function useReaderKeyboardShortcuts(options: ReaderKeyboardShortcutOption
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
       event.preventDefault()
       void options.undoLastSpanAction()
+      return
+    }
+    if (event.key === 'Tab' && options.activeSuggestions.value.length > 0) {
+      event.preventDefault()
+      options.cycleActiveSuggestionTarget(event.shiftKey ? -1 : 1)
       return
     }
     const shortcutTag = options.tags.value.find((tagItem) => tagItem.shortcut === event.key)
@@ -84,13 +91,13 @@ export function useReaderKeyboardShortcuts(options: ReaderKeyboardShortcutOption
     }
     if (event.key.toLowerCase() === 'y') {
       event.preventDefault()
-      const suggestion = options.activeSuggestions.value[0]
+      const suggestion = options.activeSuggestion.value
       if (suggestion) void options.acceptSuggestedSpan(suggestion)
       return
     }
     if (event.key.toLowerCase() === 'n') {
       event.preventDefault()
-      const suggestion = options.activeSuggestions.value[0]
+      const suggestion = options.activeSuggestion.value
       if (suggestion) void options.rejectSuggestedSpan(suggestion)
       return
     }
