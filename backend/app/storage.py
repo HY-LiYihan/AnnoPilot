@@ -18,6 +18,7 @@ from .services import (
     AuditService,
     DocumentService,
     ExportService,
+    RuntimeSettingsService,
     SuggestionDecisionService,
     SuggestionService,
     TagService,
@@ -138,6 +139,7 @@ class AnnotationStorage:
             high_confidence_threshold=HIGH_CONFIDENCE_THRESHOLD,
             medium_confidence_threshold=MEDIUM_CONFIDENCE_THRESHOLD,
         )
+        self.runtime_settings_service = RuntimeSettingsService(self.connect, now=self._now)
         self.event_outbox = EventOutbox(
             self.connect,
             self.data_root,
@@ -759,24 +761,10 @@ class AnnotationStorage:
         return self.tag_service.get_tags(project_id)
 
     def get_runtime_setting(self, key: str) -> str | None:
-        with self.connect() as conn:
-            row = conn.execute("SELECT value FROM runtime_settings WHERE key = ?", (key,)).fetchone()
-            return row["value"] if row else None
+        return self.runtime_settings_service.get_runtime_setting(key)
 
     def set_runtime_setting(self, key: str, value: str) -> dict[str, Any]:
-        now = self._now()
-        with self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO runtime_settings (key, value, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                  value = excluded.value,
-                  updated_at = excluded.updated_at
-                """,
-                (key, value, now),
-            )
-        return {"key": key, "value": value, "updated_at": now}
+        return self.runtime_settings_service.set_runtime_setting(key, value)
 
     def create_tag(
         self,

@@ -32,3 +32,4 @@ API routers 当前比较薄，调用 `AnnotationStorage` 的方法名也已经�
 - `services/suggestion_decisions.py` 负责 suggestion accept/reject、sentence batch decision、review apply 和 document auto decision 的事务边界。
 - `services/suggestions.py` 负责 Character RAG suggestion generation、LLM review context、review event 记录和 suggestion read model 查询；`AnnotationStorage` 仅保留兼容代理方法。
 - `services/tags.py` 负责 tag CRUD、tag schema import/export、legacy seed 清理和默认 tag backfill；`AnnotationStorage` 仅保留兼容代理方法。
+- `services/runtime_settings.py` 负责 SQLite runtime key/value settings；`AnnotationStorage` 仅保留兼容代理方法。

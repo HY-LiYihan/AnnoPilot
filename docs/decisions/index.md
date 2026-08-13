@@ -32,6 +32,7 @@ backend/app/
     tags.py
     exports.py
     audit.py
+    runtime_settings.py
     reset.py
   events/                 # event builder, outbox flush, replay validation
     outbox.py
