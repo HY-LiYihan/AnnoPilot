@@ -26,6 +26,18 @@ class FakeSuggestionReviewer:
             "recommendation": "accept",
             "confidence": 0.91,
             "rationale": "候选词面和词性标签匹配。",
+            "judge": {
+                "format_score": 1.0,
+                "concept_fit_score": 0.94,
+                "boundary_score": 0.87,
+                "relation_score": 1.0,
+                "missed_span_risk": 0.05,
+                "extra_span_risk": 0.08,
+                "overall_score": 0.92,
+                "needs_review": False,
+                "error_types": [],
+                "risk_flags": ["borderline_concept"],
+            },
         }
 
 
@@ -2875,16 +2887,20 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert review["recommendation"] == "accept"
         assert review["confidence"] == 0.91
         assert review["context_sha256"] == expected_context_sha256
+        assert review["judge"]["overall_score"] == 0.92
+        assert review["judge"]["boundary_score"] == 0.87
+        assert review["judge"]["risk_flags"] == ["borderline_concept"]
         assert len(review["context_sha256"]) == 64
 
         with storage.connect() as conn:
             stored = conn.execute(
-                "SELECT recommendation, rationale, context_sha256 FROM annotation_suggestion_reviews WHERE suggestion_id = ?",
+                "SELECT recommendation, rationale, context_sha256, judge_json FROM annotation_suggestion_reviews WHERE suggestion_id = ?",
                 (suggestion_id,),
             ).fetchone()
         assert stored["recommendation"] == "accept"
         assert "匹配" in stored["rationale"]
         assert stored["context_sha256"] == expected_context_sha256
+        assert json.loads(stored["judge_json"])["concept_fit_score"] == 0.94
 
         document = client.get(f"/api/projects/default/documents/{document_id}").json()
         suggestion = next(
@@ -2896,6 +2912,7 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert suggestion["latest_review"]["recommendation"] == "accept"
         assert suggestion["latest_review"]["model"] == "fake-gpt5.5"
         assert suggestion["latest_review"]["context_sha256"] == expected_context_sha256
+        assert suggestion["latest_review"]["judge"]["overall_score"] == 0.92
         assert document["metrics"]["accuracy"] is None
         assert document["metrics"]["accuracy_label"] == "Waiting for reviewed accept/reject data"
         assert document["metrics"]["calibration_count"] == 0
@@ -2909,6 +2926,7 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         exported_suggestions = [suggestion for line in exported for suggestion in line["suggestions"]]
         assert any(item["latest_review"] and item["latest_review"]["recommendation"] == "accept" for item in exported_suggestions)
         assert any(item["latest_review"] and item["latest_review"]["context_sha256"] == expected_context_sha256 for item in exported_suggestions)
+        assert any(item["latest_review"] and item["latest_review"]["judge"]["boundary_score"] == 0.87 for item in exported_suggestions)
         assert all("evidence_text" in item for item in exported_suggestions)
         assert all("match_key" in item and item["match_key"] for item in exported_suggestions)
         assert all("evidence_match_key" in item and item["evidence_match_key"] for item in exported_suggestions)
@@ -2925,6 +2943,7 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert review_queue_lines[0]["queue_order"] == "goldsmith"
         assert review_queue_lines[0]["first_suggestion"]["id"] == suggestion_id
         assert review_queue_lines[0]["first_suggestion"]["latest_review"]["recommendation"] == "accept"
+        assert review_queue_lines[0]["first_suggestion"]["latest_review"]["judge"]["overall_score"] == 0.92
 
         accept_response = client.post(f"/api/projects/default/suggestions/{suggestion_id}/accept")
         assert accept_response.status_code == 200
@@ -2946,6 +2965,7 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert choices[0]["suggestion_id"] == suggestion_id
         assert choices[0]["human_decision"] == "accept"
         assert choices[0]["latest_review"]["recommendation"] == "accept"
+        assert choices[0]["latest_review"]["judge"]["concept_fit_score"] == 0.94
         assert choices[0]["disagreement"] is False
         assert choices[0]["span"]["text"] == choices[0]["suggestion"]["text"]
 
@@ -2972,6 +2992,26 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert review_event["actor_id"] == "fake-gpt5.5"
         assert review_event["rationale"] == "候选词面和词性标签匹配。"
         assert review_event["context_sha256"] == expected_context_sha256
+        assert review_event["judge"]["overall_score"] == 0.92
+
+        rebuild_result = rebuild_project_from_events(
+            project_id="default",
+            event_path=tmp_path / "projects" / "default" / "events.jsonl",
+            database_path=tmp_path / "rebuilt" / "annopilot.sqlite",
+            data_root=tmp_path / "rebuilt-projects",
+            force=True,
+        )
+        assert rebuild_result.ok
+        rebuilt_storage = AnnotationStorage(
+            database_path=tmp_path / "rebuilt" / "annopilot.sqlite",
+            data_root=tmp_path / "rebuilt-projects",
+        )
+        with rebuilt_storage.connect() as conn:
+            rebuilt_review = conn.execute(
+                "SELECT judge_json FROM annotation_suggestion_reviews WHERE suggestion_id = ?",
+                (suggestion_id,),
+            ).fetchone()
+        assert json.loads(rebuilt_review["judge_json"])["overall_score"] == 0.92
 
 
 def test_llm_review_calibration_disagreement_is_measured(tmp_path: Path) -> None:

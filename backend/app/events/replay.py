@@ -189,9 +189,9 @@ def apply_replay_event(conn: sqlite3.Connection, project_id: str, event: dict[st
         conn.execute(
             """
             INSERT OR REPLACE INTO annotation_suggestion_reviews (
-              id, suggestion_id, model, recommendation, confidence, rationale, context_sha256, created_at
+              id, suggestion_id, model, recommendation, confidence, rationale, context_sha256, judge_json, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event["review_id"],
@@ -201,6 +201,7 @@ def apply_replay_event(conn: sqlite3.Connection, project_id: str, event: dict[st
                 event["confidence"],
                 event["rationale"],
                 event.get("context_sha256"),
+                json.dumps(event.get("judge"), ensure_ascii=False) if event.get("judge") else None,
                 event.get("created_at") or event.get("ts"),
             ),
         )

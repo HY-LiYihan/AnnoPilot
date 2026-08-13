@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable
 from typing import Any
@@ -410,7 +411,7 @@ class DocumentQueryRepository:
                        sg.confidence, sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after, sg.status, sg.created_at,
                        rev.model AS review_model, rev.recommendation AS review_recommendation,
                        rev.confidence AS review_confidence, rev.rationale AS review_rationale,
-                       rev.context_sha256 AS review_context_sha256,
+                       rev.context_sha256 AS review_context_sha256, rev.judge_json AS review_judge_json,
                        rev.created_at AS review_created_at
                 FROM annotation_suggestions sg
                 JOIN sentences s ON s.id = sg.sentence_id
@@ -613,7 +614,7 @@ class DocumentQueryRepository:
                            sg.confidence, sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after, sg.status, sg.created_at,
                            rev.model AS review_model, rev.recommendation AS review_recommendation,
                            rev.confidence AS review_confidence, rev.rationale AS review_rationale,
-                           rev.context_sha256 AS review_context_sha256,
+                           rev.context_sha256 AS review_context_sha256, rev.judge_json AS review_judge_json,
                            rev.created_at AS review_created_at
                     FROM annotation_suggestions sg
                     JOIN sentences s ON s.id = sg.sentence_id
@@ -738,7 +739,7 @@ class DocumentQueryRepository:
                        sg.context_before, sg.context_after, sg.status, sg.created_at,
                        rev.model AS review_model, rev.recommendation AS review_recommendation,
                        rev.confidence AS review_confidence, rev.rationale AS review_rationale,
-                       rev.context_sha256 AS review_context_sha256,
+                       rev.context_sha256 AS review_context_sha256, rev.judge_json AS review_judge_json,
                        rev.created_at AS review_created_at
                 FROM annotation_suggestions sg
                 JOIN sentences s ON s.id = sg.sentence_id
@@ -962,6 +963,7 @@ class DocumentQueryRepository:
                 "confidence": row["review_confidence"],
                 "rationale": row["review_rationale"],
                 "context_sha256": row["review_context_sha256"],
+                "judge": self._decode_json_object(row["review_judge_json"]),
                 "created_at": row["review_created_at"],
             }
         human_decision = "accept" if row["status"] == "accepted" else "reject"
@@ -1027,6 +1029,16 @@ class DocumentQueryRepository:
         return {key: row[key] for key in row.keys() if key not in excluded}
 
     @staticmethod
+    def _decode_json_object(value: str | None) -> dict[str, Any] | None:
+        if not value:
+            return None
+        try:
+            payload = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    @staticmethod
     def _label_counts(tags: list[dict[str, Any]], counts: dict[str, int], include_zero: bool = False) -> list[dict[str, Any]]:
         rows = [
             {
@@ -1049,6 +1061,7 @@ class DocumentQueryRepository:
             "review_confidence",
             "review_rationale",
             "review_context_sha256",
+            "review_judge_json",
             "review_created_at",
         }
         data = self._row_dict(row, exclude=(exclude or set()) | review_keys)
@@ -1059,6 +1072,7 @@ class DocumentQueryRepository:
                 "confidence": row["review_confidence"],
                 "rationale": row["review_rationale"],
                 "context_sha256": row["review_context_sha256"],
+                "judge": self._decode_json_object(row["review_judge_json"]),
                 "created_at": row["review_created_at"],
             }
         else:

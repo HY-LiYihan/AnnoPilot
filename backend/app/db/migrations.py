@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
-from .schema import create_base_schema, ensure_legacy_columns
+from .schema import create_base_schema, ensure_column, ensure_legacy_columns
 
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,7 @@ class Migration:
 MIGRATIONS = (
     Migration(version=1, name="baseline_schema", apply=create_base_schema),
     Migration(version=2, name="ensure_legacy_columns", apply=ensure_legacy_columns),
+    Migration(version=3, name="ensure_review_judge_json", apply=lambda conn: ensure_column(conn, "annotation_suggestion_reviews", "judge_json", "TEXT")),
 )
 
 

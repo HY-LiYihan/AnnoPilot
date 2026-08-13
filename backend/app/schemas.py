@@ -205,6 +205,7 @@ class SuggestionReviewPayload(BaseModel):
     confidence: float
     rationale: str
     context_sha256: Optional[str] = None
+    judge: Optional[dict[str, Any]] = None
     created_at: Optional[str] = None
 
 
@@ -678,6 +679,7 @@ class ReviewSuggestionResponse(BaseModel):
     confidence: float
     rationale: str
     context_sha256: Optional[str] = None
+    judge: Optional[dict[str, Any]] = None
     created_at: Optional[str] = None
 
 

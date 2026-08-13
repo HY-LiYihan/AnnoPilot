@@ -175,6 +175,23 @@ function samplePresetButtonText(preset: SamplePreset, labels: UiLabels['reader']
   return labels.loadSamplePreset(truncateFilename(preset.title, 34))
 }
 
+function reviewJudgeLabel(review: SuggestionReview | undefined, labels: UiLabels['reader']) {
+  const judge = review?.judge
+  if (!judge) return ''
+  const parts: string[] = []
+  if (typeof judge.overall_score === 'number') {
+    parts.push(`${labels.judgeOverall} ${Math.round(judge.overall_score * 100)}%`)
+  }
+  if (typeof judge.boundary_score === 'number') {
+    parts.push(`${labels.judgeBoundary} ${Math.round(judge.boundary_score * 100)}%`)
+  }
+  const flags = [...(judge.error_types ?? []), ...(judge.risk_flags ?? [])]
+  if (flags.length) {
+    parts.push(`${labels.judgeFlags} ${flags.slice(0, 2).join(', ')}`)
+  }
+  return parts.join(' · ')
+}
+
 const swipeStart = ref<{ x: number; y: number; pointerId: number } | null>(null)
 
 function isInteractiveTarget(target: EventTarget | null) {
@@ -553,6 +570,10 @@ function predicatePositionClasses(
               {{ suggestionReviews[suggestion.id].recommendation }} ·
               {{ Math.round(suggestionReviews[suggestion.id].confidence * 100) }}% ·
               {{ suggestionReviews[suggestion.id].rationale }}
+            </small>
+            <small v-if="reviewJudgeLabel(suggestionReviews[suggestion.id], labels)" class="review-copy judge-copy">
+              <em>{{ labels.judgeSignal }}</em>
+              {{ reviewJudgeLabel(suggestionReviews[suggestion.id], labels) }}
             </small>
           </span>
           <div class="suggestion-actions">

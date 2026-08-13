@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS annotation_suggestion_reviews (
   confidence REAL NOT NULL,
   rationale TEXT NOT NULL,
   context_sha256 TEXT,
+  judge_json TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -148,6 +149,7 @@ LEGACY_COLUMN_MIGRATIONS = (
     ("annotation_suggestions", "context_before", "TEXT"),
     ("annotation_suggestions", "context_after", "TEXT"),
     ("annotation_suggestion_reviews", "context_sha256", "TEXT"),
+    ("annotation_suggestion_reviews", "judge_json", "TEXT"),
 )
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")

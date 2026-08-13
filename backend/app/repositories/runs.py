@@ -90,7 +90,7 @@ class RunQueryRepository:
                        sg.text, sg.confidence, sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after, sg.status, sg.created_at,
                        rev.model AS review_model, rev.recommendation AS review_recommendation,
                        rev.confidence AS review_confidence, rev.rationale AS review_rationale,
-                       rev.context_sha256 AS review_context_sha256,
+                       rev.context_sha256 AS review_context_sha256, rev.judge_json AS review_judge_json,
                        rev.created_at AS review_created_at
                 FROM annotation_suggestions sg
                 JOIN sentences s ON s.id = sg.sentence_id
@@ -298,6 +298,7 @@ class RunQueryRepository:
             "review_confidence",
             "review_rationale",
             "review_context_sha256",
+            "review_judge_json",
             "review_created_at",
         }
         data = RunQueryRepository._row_dict(row, exclude=(exclude or set()) | review_keys)
@@ -308,6 +309,7 @@ class RunQueryRepository:
                 "confidence": row["review_confidence"],
                 "rationale": row["review_rationale"],
                 "context_sha256": row["review_context_sha256"],
+                "judge": RunQueryRepository._decode_json_object(row["review_judge_json"]),
                 "created_at": row["review_created_at"],
             }
         else:
@@ -318,6 +320,16 @@ class RunQueryRepository:
     def _row_dict(row: sqlite3.Row, exclude: set[str] | None = None) -> dict[str, Any]:
         excluded = exclude or set()
         return {key: row[key] for key in row.keys() if key not in excluded}
+
+    @staticmethod
+    def _decode_json_object(value: str | None) -> dict[str, Any] | None:
+        if not value:
+            return None
+        try:
+            payload = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return payload if isinstance(payload, dict) else None
 
     @staticmethod
     def _payload_sha256(payload: dict[str, Any]) -> str:

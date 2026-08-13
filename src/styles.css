@@ -1678,6 +1678,15 @@ kbd {
   color: #326bd8;
 }
 
+.suggestion-row .judge-copy {
+  color: #5f6883;
+  font-size: 0.73rem;
+}
+
+.suggestion-row .judge-copy em {
+  color: #4f5d8b;
+}
+
 .suggestion-actions {
   display: flex;
   gap: 7px;

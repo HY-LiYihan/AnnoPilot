@@ -67,6 +67,19 @@ export type SuggestionReview = {
   confidence: number
   rationale: string
   context_sha256?: string | null
+  judge?: {
+    format_score?: number
+    concept_fit_score?: number
+    boundary_score?: number
+    relation_score?: number
+    missed_span_risk?: number
+    extra_span_risk?: number
+    overall_score?: number
+    needs_review?: boolean
+    error_types?: string[]
+    risk_flags?: string[]
+    rationale?: string
+  } | null
   created_at?: string | null
 }
 
