@@ -153,6 +153,7 @@ const {
   onTokenPointerDown,
   onTokenPointerEnter,
   onTokenPointerUp,
+  selectCurrentSentenceSpan,
   handleTagClick,
   addTag,
   renameTag,
@@ -351,6 +352,7 @@ async function confirmProjectReset() {
         @token-pointer-down="onTokenPointerDown"
         @token-pointer-enter="onTokenPointerEnter"
         @token-pointer-up="onTokenPointerUp"
+        @select-current-sentence="selectCurrentSentenceSpan"
         @delete-annotation="removeAnnotation"
         @undo="undoLastSpanAction"
         @generate-current-suggestions="generateCurrentSentenceSuggestions"

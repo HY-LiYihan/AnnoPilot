@@ -70,6 +70,7 @@ const emit = defineEmits<{
   'token-pointer-down': [sentence: SentenceDef, tokenIndex: number, event: PointerEvent]
   'token-pointer-enter': [sentence: SentenceDef, tokenIndex: number]
   'token-pointer-up': [sentence: SentenceDef, tokenIndex: number]
+  'select-current-sentence': []
   'delete-annotation': [annotationId: string]
   undo: []
   'generate-current-suggestions': []
@@ -444,6 +445,9 @@ function predicatePositionClasses(
           <button class="suggest-button secondary" :disabled="!documentMeta || isSuggesting" @click="emit('generate-suggestions')">
             <Sparkles :size="16" aria-hidden="true" />
             {{ labels.wholeDoc }}
+          </button>
+          <button class="suggest-button secondary" :disabled="!currentSentence || isSaving" @click="emit('select-current-sentence')">
+            {{ labels.selectSentence }}
           </button>
           <button class="batch-review-button accept" :disabled="!documentMeta || isSuggesting || isSaving" @click="emit('auto-annotate-document')">
             <Check :size="16" aria-hidden="true" />

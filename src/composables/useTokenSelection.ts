@@ -34,6 +34,11 @@ export function useTokenSelection(sentences: Ref<SentenceDef[]>) {
     dragSelection.value = null
   }
 
+  function setPendingSelection(sentenceId: string, start: number, end: number) {
+    dragSelection.value = null
+    pendingSelection.value = { sentenceId, start, end }
+  }
+
   function isTokenInDrag(sentence: SentenceDef, tokenIndex: number) {
     const selection = dragSelection.value
     if (!selection || selection.sentenceId !== sentence.id) return false
@@ -60,6 +65,7 @@ export function useTokenSelection(sentences: Ref<SentenceDef[]>) {
     beginSelection,
     extendSelection,
     finishSelection,
+    setPendingSelection,
     isTokenInDrag,
     isTokenPending,
     clearSelection,

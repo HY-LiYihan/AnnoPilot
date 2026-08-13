@@ -253,6 +253,7 @@ function shortHash(value: string) {
       </div>
       <div class="shortcut-grid">
         <span><kbd>1-9</kbd><em>{{ labels.applyTag }}</em></span>
+        <span><kbd>S</kbd><em>{{ labels.selectSentence }}</em></span>
         <span><kbd>Enter</kbd><em>{{ labels.completeSentence }}</em></span>
         <span><kbd>Space / I</kbd><em>{{ labels.ignoreSentence }}</em></span>
         <span><kbd>J</kbd><em>{{ labels.rejectSentence }}</em></span>

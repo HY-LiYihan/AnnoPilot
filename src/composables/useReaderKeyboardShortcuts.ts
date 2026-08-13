@@ -13,6 +13,7 @@ type KeyboardShortcutActions = {
   rejectCurrentSentenceSuggestions: () => void | Promise<void>
   rejectSuggestedSpan: (suggestion: SuggestionDef) => void | Promise<void>
   reopenCurrentSentence: () => void | Promise<void>
+  selectCurrentSentenceSpan: () => void
   setCurrentSentence: (index: number, scrollBehavior?: ScrollBehavior) => void
   undoLastSpanAction: () => void | Promise<void>
 }
@@ -33,6 +34,7 @@ export function useReaderKeyboardShortcuts(options: ReaderKeyboardShortcutOption
       void options.undoLastSpanAction()
       return
     }
+    if (event.metaKey || event.ctrlKey || event.altKey) return
     if (event.key === 'Tab' && options.activeSuggestions.value.length > 0) {
       event.preventDefault()
       options.cycleActiveSuggestionTarget(event.shiftKey ? -1 : 1)
@@ -62,6 +64,11 @@ export function useReaderKeyboardShortcuts(options: ReaderKeyboardShortcutOption
     if (event.key.toLowerCase() === 'e') {
       event.preventDefault()
       void options.reopenCurrentSentence()
+      return
+    }
+    if (event.key.toLowerCase() === 's') {
+      event.preventDefault()
+      options.selectCurrentSentenceSpan()
       return
     }
     if ((event.code === 'Space' || event.key === ' ') && !target?.matches('button, a')) {

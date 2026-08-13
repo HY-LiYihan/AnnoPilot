@@ -191,6 +191,7 @@ export function useDocumentReader() {
     rejectCurrentSentenceSuggestions,
     rejectSuggestedSpan,
     reopenCurrentSentence,
+    selectCurrentSentenceSpan,
     setCurrentSentence,
     tags,
     undoLastSpanAction,
@@ -455,6 +456,14 @@ export function useDocumentReader() {
 
   function jumpToNextReviewIfCurrentCleared() {
     if (activeSuggestions.value.length === 0 && hasReviewQueue.value) jumpToNextReviewSentence()
+  }
+
+  function selectCurrentSentenceSpan() {
+    const sentence = currentSentence.value
+    if (!sentence?.tokens.length) return
+    const firstToken = sentence.tokens[0]
+    const lastToken = sentence.tokens[sentence.tokens.length - 1]
+    selection.setPendingSelection(sentence.id, firstToken.token_index, lastToken.token_index)
   }
 
   function setActiveSuggestionTarget(suggestion: SuggestionDef) {
@@ -1424,6 +1433,7 @@ export function useDocumentReader() {
     onTokenPointerDown,
     onTokenPointerEnter,
     onTokenPointerUp,
+    selectCurrentSentenceSpan,
     handleTagClick,
     addTag,
     renameTag,

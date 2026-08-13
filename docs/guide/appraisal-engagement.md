@@ -38,7 +38,8 @@ Web UI 空白阅读器中也会显示同一组内置样例按钮；点击后会�
 1. 在空白阅读器中选择一个内置样例：通用标注流程、新闻/政策叙事、学术/方法讨论、平台复核、客服反馈、合规/法律，或社交舆情场景。
 2. 如果想手动复现，也可以左侧导入 `samples/appraisal-engagement-tag-schema.json`，再在中间导入任一 `samples/appraisal-engagement-*.txt`。
 3. 人工 accept/reject suggestions：accept 会生成 `source=accepted_suggestion` annotation；human reject 和 latest LLM review `reject` 都会成为同 label 的 negative example，下一轮 Character RAG 会避开同一错误 span；已 LLM-reviewed 的 pending suggestions 会保留等待人工决策。
-4. 完成句子后用右侧 `Export Prodigy` 或 `Export Prodigy Spans` 导出，可直接得到 Prodigy-compatible JSONL。
+4. 对 Monogloss 或整句断言，按 `S` 先把当前整句设为 pending span，再按对应数字快捷键或点击左侧 label 应用标签。
+5. 完成句子后用右侧 `Export Prodigy` 或 `Export Prodigy Spans` 导出，可直接得到 Prodigy-compatible JSONL。
 
 ## Goldsmith 对齐
 
