@@ -1,8 +1,7 @@
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   completeSentence,
   fetchDocuments,
-  fetchDocumentSentences,
   fetchDocumentSummary,
   fetchReviewQueue,
   fetchSamplePresets,
@@ -10,7 +9,6 @@ import {
   loadSamplePreset as loadSamplePresetApi,
   mergeTxt,
   resetProject,
-  updateDocumentCursor,
 } from '../api/documents'
 import {
   ACTIVE_DOCUMENT_KEY,
@@ -36,9 +34,7 @@ import { useReaderTags } from './useReaderTags'
 import { useReaderAudit } from './useReaderAudit'
 import { useReaderSuggestions } from './useReaderSuggestions'
 import { useReaderAnnotationActions } from './useReaderAnnotationActions'
-
-const SENTENCE_WINDOW_SIZE = 60
-const SENTENCE_WINDOW_PADDING = 20
+import { useReaderSentenceWindow } from './useReaderSentenceWindow'
 
 function emptyMetrics(): Metrics {
   return {
@@ -84,6 +80,33 @@ export function useDocumentReader() {
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
   let interactiveRefreshSerial = 0
 
+  const selection = useTokenSelection(sentences)
+  let restoreSuggestionReviewsForLoadedSentences = (_sentences: SentenceDef[]) => {}
+  const {
+    centerCurrentSentence,
+    clampIndex,
+    currentSentence,
+    loadSentenceWindow,
+    onSentenceClick,
+    persistSessionCursor,
+    setCurrentSentence,
+    setSentenceElement,
+  } = useReaderSentenceWindow({
+    activeSession,
+    activeSuggestionId,
+    currentSentenceIndex,
+    documentMeta,
+    documents,
+    loadedWindow,
+    metrics,
+    normalizeActiveSuggestionTarget,
+    onSentencesLoaded: (loadedSentences) => restoreSuggestionReviewsForLoadedSentences(loadedSentences),
+    selection,
+    sentenceElements,
+    sentenceQueue,
+    sentences,
+  })
+
   const {
     auditSummary,
     handleAnnotationImport,
@@ -125,8 +148,6 @@ export function useDocumentReader() {
     refreshDocumentSummary,
   })
 
-  const selection = useTokenSelection(sentences)
-  const currentSentence = computed(() => sentences.value.find((sentence) => sentence.index === currentSentenceIndex.value) ?? null)
   const progressPercent = computed(() => Math.min(Math.max(metrics.value.progress * 100, 0), 100))
   const reviewedSummary = computed(() => `${metrics.value.completed_count} / ${metrics.value.sentence_count || 0}`)
   const reviewSummary = computed(() => `${metrics.value.suggestion_count} 待确认`)
@@ -223,6 +244,7 @@ export function useDocumentReader() {
     removeSuggestion,
     replaceSentenceAnnotations,
   })
+  restoreSuggestionReviewsForLoadedSentences = restoreSuggestionReviews
 
   const readerExports = useReaderExports({
     documentMeta,
@@ -428,75 +450,6 @@ export function useDocumentReader() {
     void refreshReviewQueue()
   }
 
-  async function loadSentenceWindow(documentId: string, targetIndex: number, force = false) {
-    const targetLoaded = sentences.value.some((sentence) => sentence.index === targetIndex)
-    if (!force && targetLoaded && isTargetComfortablyLoaded(targetIndex)) return
-
-    const total = Math.max(metrics.value.sentence_count, sentenceQueue.value.length, 0)
-    if (!total) {
-      sentences.value = []
-      loadedWindow.value = { offset: 0, limit: 0, total: 0 }
-      return
-    }
-
-    const maxOffset = Math.max(total - SENTENCE_WINDOW_SIZE, 0)
-    const offset = Math.min(Math.max(targetIndex - SENTENCE_WINDOW_PADDING, 0), maxOffset)
-    const limit = Math.min(SENTENCE_WINDOW_SIZE, total)
-    const page = await fetchDocumentSentences(PROJECT_ID, documentId, offset, limit)
-    sentences.value = page.sentences
-    loadedWindow.value = { offset: page.offset, limit: page.limit, total: page.total }
-    restoreSuggestionReviews(page.sentences)
-    normalizeActiveSuggestionTarget()
-  }
-
-  function isTargetComfortablyLoaded(targetIndex: number) {
-    if (!sentences.value.length) return false
-    const total = Math.max(metrics.value.sentence_count, sentenceQueue.value.length, loadedWindow.value.total)
-    const firstIndex = sentences.value[0]?.index ?? loadedWindow.value.offset
-    const lastIndex = sentences.value[sentences.value.length - 1]?.index ?? firstIndex
-    const wholeDocumentLoaded = firstIndex === 0 && lastIndex >= total - 1
-    if (wholeDocumentLoaded) return true
-    const nearStart = targetIndex - firstIndex < SENTENCE_WINDOW_PADDING && firstIndex > 0
-    const nearEnd = lastIndex - targetIndex < SENTENCE_WINDOW_PADDING && lastIndex < total - 1
-    return !nearStart && !nearEnd
-  }
-
-  function setCurrentSentence(index: number, scrollBehavior: ScrollBehavior = 'smooth') {
-    if (!metrics.value.sentence_count) return
-    currentSentenceIndex.value = clampIndex(index)
-    selection.clearSelection()
-    activeSuggestionId.value = ''
-    void (async () => {
-      if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value)
-      await centerCurrentSentence(scrollBehavior)
-      void persistSessionCursor(currentSentenceIndex.value)
-    })()
-  }
-
-  async function persistSessionCursor(index: number) {
-    if (!documentMeta.value || metrics.value.sentence_count === 0) return
-    try {
-      const payload = await updateDocumentCursor(PROJECT_ID, documentMeta.value.id, index)
-      activeSession.value = {
-        id: activeSession.value?.id ?? 'annopilot-human',
-        actor_id: activeSession.value?.actor_id ?? 'annopilot-human',
-        current_sentence_index: payload.session.current_sentence_index,
-        updated_at: payload.session.updated_at,
-      }
-      documents.value = documents.value.map((document) =>
-        document.id === documentMeta.value?.id
-          ? {
-              ...document,
-              current_sentence_index: payload.session.current_sentence_index,
-              session_updated_at: payload.session.updated_at,
-            }
-          : document,
-      )
-    } catch {
-      // Cursor persistence is best-effort runtime state; annotation mutations still surface errors elsewhere.
-    }
-  }
-
   function jumpToNextReviewSentence() {
     const items = reviewNavigationItems.value
     if (!items.length) return
@@ -637,35 +590,6 @@ export function useDocumentReader() {
     }
   }
 
-  function setSentenceElement(sentenceId: string, element: unknown) {
-    sentenceElements.value[sentenceId] = element as HTMLElement | null
-  }
-
-  async function centerCurrentSentence(behavior: ScrollBehavior = 'smooth') {
-    await nextTick()
-    const sentence = currentSentence.value
-    if (!sentence) return
-    const element = sentenceElements.value[sentence.id]
-    const reader = element?.closest('.text-reader')
-    if (!(element instanceof HTMLElement) || !(reader instanceof HTMLElement)) return
-
-    const elementRect = element.getBoundingClientRect()
-    const readerRect = reader.getBoundingClientRect()
-    const centeredTop =
-      reader.scrollTop + elementRect.top - readerRect.top - (reader.clientHeight - elementRect.height) / 2
-    const maxScrollTop = Math.max(reader.scrollHeight - reader.clientHeight, 0)
-    const top = Math.min(Math.max(centeredTop, 0), maxScrollTop)
-    if (behavior === 'auto') {
-      reader.scrollTop = top
-      return
-    }
-    reader.scrollTo({ top, behavior })
-  }
-
-  function onSentenceClick(sentenceIndex: number) {
-    if (sentenceIndex !== currentSentenceIndex.value) setCurrentSentence(sentenceIndex)
-  }
-
   function onTokenPointerDown(sentence: SentenceDef, tokenIndex: number, event: PointerEvent) {
     if (sentence.index !== currentSentenceIndex.value) {
       setCurrentSentence(sentence.index)
@@ -777,11 +701,6 @@ export function useDocumentReader() {
     } finally {
       isResetting.value = false
     }
-  }
-
-  function clampIndex(index: number) {
-    const total = Math.max(metrics.value.sentence_count, sentenceQueue.value.length, sentences.value.length)
-    return Math.min(Math.max(index, 0), Math.max(total - 1, 0))
   }
 
   return {
