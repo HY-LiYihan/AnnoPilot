@@ -1,5 +1,4 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { createAnnotation, deleteAnnotation } from '../api/annotations'
 import {
   completeSentence,
   fetchDocuments,
@@ -30,30 +29,16 @@ import {
   type SuggestionDef,
   type TxtImportMode,
 } from '../types/domain'
-import { normalizedRange, useTokenSelection } from './useTokenSelection'
+import { useTokenSelection } from './useTokenSelection'
 import { useReaderKeyboardShortcuts } from './useReaderKeyboardShortcuts'
 import { useReaderExports } from './useReaderExports'
 import { useReaderTags } from './useReaderTags'
 import { useReaderAudit } from './useReaderAudit'
 import { useReaderSuggestions } from './useReaderSuggestions'
+import { useReaderAnnotationActions } from './useReaderAnnotationActions'
 
 const SENTENCE_WINDOW_SIZE = 60
 const SENTENCE_WINDOW_PADDING = 20
-
-type UndoableSpanAction =
-  | {
-      kind: 'created'
-      label: string
-      sentenceId: string
-      createdAnnotationIds: string[]
-      restoredAnnotations: AnnotationDef[]
-    }
-  | {
-      kind: 'deleted'
-      label: string
-      sentenceId: string
-      annotation: AnnotationDef
-    }
 
 function emptyMetrics(): Metrics {
   return {
@@ -95,7 +80,6 @@ export function useDocumentReader() {
   const reviewQueueDetails = ref<ReviewQueueItem[]>([])
   const reviewQueueTotal = ref(0)
   const reviewQueueOrder = ref<ReviewQueueOrder>('position')
-  const lastUndoAction = ref<UndoableSpanAction | null>(null)
   const activeSuggestionId = ref('')
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
   let interactiveRefreshSerial = 0
@@ -168,10 +152,36 @@ export function useDocumentReader() {
     const queueIndex = items.findIndex((sentence) => sentence.index === currentSentenceIndex.value)
     return queueIndex >= 0 ? `Review ${queueIndex + 1}/${total}` : `${total} pending reviews`
   })
-  const canUndoSpanAction = computed(() => Boolean(lastUndoAction.value))
-  const undoLabel = computed(() => lastUndoAction.value?.label ?? 'Undo span')
   const hasReviewQueue = computed(() => sentenceQueue.value.some((sentence) => !sentence.completed && sentence.suggestion_count > 0))
   const queueItems = computed(() => sentenceQueue.value)
+
+  const {
+    applyTagToSelection,
+    canUndoSpanAction,
+    handleTagClick,
+    markCurrentSentenceMonogloss,
+    removeAnnotation,
+    resetAnnotationActionState,
+    selectCurrentSentenceSpan,
+    undoLabel,
+    undoLastSpanAction,
+  } = useReaderAnnotationActions({
+    completeCurrentSentence,
+    currentSentence,
+    currentSentenceIndex,
+    documentMeta,
+    findMonoglossTag,
+    isSaving,
+    loadSentenceWindow,
+    readerError,
+    refreshAuditSummary,
+    refreshDocumentSummary,
+    replaceSentenceAnnotations,
+    selectedTagId,
+    selection,
+    sentences,
+    tags,
+  })
 
   const {
     acceptCurrentSentenceSuggestions,
@@ -345,7 +355,7 @@ export function useDocumentReader() {
     isSuggesting.value = true
     readerError.value = ''
     lastAnnotationImport.value = null
-    lastUndoAction.value = null
+    resetAnnotationActionState()
     try {
       const loaded = await loadSamplePresetApi(PROJECT_ID, presetId)
       setTags(loaded.tags, 'first')
@@ -364,7 +374,7 @@ export function useDocumentReader() {
     if (!documentId || documentId === documentMeta.value?.id) return
     readerError.value = ''
     lastAnnotationImport.value = null
-    lastUndoAction.value = null
+    resetAnnotationActionState()
     selection.clearSelection()
     await loadDocument(documentId)
   }
@@ -501,29 +511,6 @@ export function useDocumentReader() {
 
   function jumpToNextReviewIfCurrentCleared() {
     if (activeSuggestions.value.length === 0 && hasReviewQueue.value) jumpToNextReviewSentence()
-  }
-
-  function selectCurrentSentenceSpan() {
-    const sentence = currentSentence.value
-    if (!sentence?.tokens.length) return
-    const firstToken = sentence.tokens[0]
-    const lastToken = sentence.tokens[sentence.tokens.length - 1]
-    selection.setPendingSelection(sentence.id, firstToken.token_index, lastToken.token_index)
-  }
-
-  async function markCurrentSentenceMonogloss() {
-    const sentence = currentSentence.value
-    const tag = findMonoglossTag()
-    if (!sentence?.tokens.length || isSaving.value) return
-    if (!tag) {
-      readerError.value = 'Monogloss label is not available in the current schema.'
-      return
-    }
-    const firstToken = sentence.tokens[0]
-    const lastToken = sentence.tokens[sentence.tokens.length - 1]
-    selectedTagId.value = tag.id
-    const created = await createSentenceAnnotation(sentence, firstToken.token_index, lastToken.token_index, tag.id)
-    if (created) await completeCurrentSentence('accept')
   }
 
   function setActiveSuggestionTarget(suggestion: SuggestionDef) {
@@ -696,127 +683,6 @@ export function useDocumentReader() {
     selection.finishSelection(sentence.id, tokenIndex)
   }
 
-  function handleTagClick(tagId: string) {
-    void applyTagToSelection(tagId)
-  }
-
-  async function applyTagToSelection(tagId: string) {
-    selectedTagId.value = tagId
-    const pendingSelection = selection.pendingSelection.value
-    if (!pendingSelection) return
-    const sentence = sentences.value.find((item) => item.id === pendingSelection.sentenceId)
-    if (!sentence) return
-    await createSentenceAnnotation(sentence, pendingSelection.start, pendingSelection.end, tagId)
-  }
-
-  async function createSentenceAnnotation(sentence: SentenceDef, start: number, end: number, tagId: string) {
-    const tag = tags.value.find((tagItem) => tagItem.id === tagId)
-    if (!tag || isSaving.value) return false
-    isSaving.value = true
-    readerError.value = ''
-    const [startTokenIndex, endTokenIndex] = normalizedRange(start, end)
-    try {
-      const previousAnnotationIds = new Set(sentence.annotations.map((annotation) => annotation.id))
-      const overlaps = overlappingAnnotations(sentence, startTokenIndex, endTokenIndex)
-      await Promise.all(overlaps.map((annotation) => deleteAnnotation(PROJECT_ID, annotation.id)))
-      const payload = await createAnnotation(PROJECT_ID, sentence.id, tag.id, startTokenIndex, endTokenIndex)
-      const createdAnnotationIds = payload.annotations
-        .filter((annotation) => !previousAnnotationIds.has(annotation.id))
-        .map((annotation) => annotation.id)
-      replaceSentenceAnnotations(sentence.id, payload.annotations)
-      selection.pendingSelection.value = null
-      lastUndoAction.value = {
-        kind: 'created',
-        label: `Undo ${tag.name}`,
-        sentenceId: sentence.id,
-        createdAnnotationIds,
-        restoredAnnotations: overlaps.filter((annotation) => annotation.source === 'human'),
-      }
-      await refreshDocumentSummary()
-      await refreshAuditSummary()
-      return true
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not save annotation.'
-      return false
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function removeAnnotation(annotationId: string) {
-    if (isSaving.value) return
-    const removedFromSentence = sentences.value.find((sentence) => sentence.annotations.some((annotation) => annotation.id === annotationId))
-    const removedAnnotation = removedFromSentence?.annotations.find((annotation) => annotation.id === annotationId)
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      await deleteAnnotation(PROJECT_ID, annotationId)
-      sentences.value = sentences.value.map((sentence) => ({
-        ...sentence,
-        annotations: sentence.annotations.filter((annotation) => annotation.id !== annotationId),
-      }))
-      lastUndoAction.value = removedFromSentence && removedAnnotation?.source === 'human'
-        ? {
-            kind: 'deleted',
-            label: `Restore ${removedAnnotation.tag_name}`,
-            sentenceId: removedFromSentence.id,
-            annotation: removedAnnotation,
-          }
-        : null
-      await refreshDocumentSummary()
-      await refreshAuditSummary()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not delete annotation.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function undoLastSpanAction() {
-    const action = lastUndoAction.value
-    if (!action || !documentMeta.value || isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      if (action.kind === 'created') {
-        await Promise.all(action.createdAnnotationIds.map((annotationId) => deleteAnnotation(PROJECT_ID, annotationId)))
-        for (const annotation of action.restoredAnnotations) {
-          await createAnnotation(
-            PROJECT_ID,
-            action.sentenceId,
-            annotation.tag_id,
-            annotation.start_token_index,
-            annotation.end_token_index,
-          )
-        }
-      } else {
-        const loadedSentence = sentences.value.find((sentence) => sentence.id === action.sentenceId)
-        const overlaps = loadedSentence
-          ? overlappingAnnotations(loadedSentence, action.annotation.start_token_index, action.annotation.end_token_index)
-          : []
-        if (overlaps.length) {
-          readerError.value = 'Cannot undo because that span now overlaps another annotation.'
-          return
-        }
-        await createAnnotation(
-          PROJECT_ID,
-          action.sentenceId,
-          action.annotation.tag_id,
-          action.annotation.start_token_index,
-          action.annotation.end_token_index,
-        )
-      }
-      lastUndoAction.value = null
-      await refreshDocumentSummary()
-      await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
-      await refreshAuditSummary()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not undo the last span action.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
   function replaceSentenceAnnotations(sentenceId: string, annotations: AnnotationDef[]) {
     sentences.value = sentences.value.map((sentence) =>
       sentence.id === sentenceId ? { ...sentence, annotations, suggestions: withoutAnnotationOverlaps(sentence.suggestions, annotations) } : sentence,
@@ -871,12 +737,6 @@ export function useDocumentReader() {
     )
   }
 
-  function overlappingAnnotations(sentence: SentenceDef, start: number, end: number) {
-    return sentence.annotations.filter(
-      (annotation) => annotation.start_token_index <= end && annotation.end_token_index >= start,
-    )
-  }
-
   function withoutAnnotationOverlaps(suggestions: SuggestionDef[], annotations: AnnotationDef[]) {
     return suggestions.filter(
       (suggestion) =>
@@ -903,7 +763,7 @@ export function useDocumentReader() {
       currentSentenceIndex.value = 0
       activeSuggestionId.value = ''
       resetSuggestionState()
-      lastUndoAction.value = null
+      resetAnnotationActionState()
       sentenceElements.value = {}
       resetAuditState()
       reviewQueueDetails.value = []
