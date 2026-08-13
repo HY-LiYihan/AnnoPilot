@@ -33,6 +33,13 @@ import { useReaderAnnotationActions } from './useReaderAnnotationActions'
 import { useReaderSentenceWindow } from './useReaderSentenceWindow'
 import { useReaderReviewQueue } from './useReaderReviewQueue'
 import { useReaderSentenceCompletion } from './useReaderSentenceCompletion'
+import {
+  annotationForToken as findAnnotationForToken,
+  suggestionForToken as findSuggestionForToken,
+  suggestionsWithoutAnnotationOverlaps,
+  tokenPrefix as getTokenPrefix,
+  tokenStyleForToken,
+} from './readerTokenDisplay'
 
 function emptyMetrics(): Metrics {
   return {
@@ -492,7 +499,7 @@ export function useDocumentReader() {
 
   function replaceSentenceAnnotations(sentenceId: string, annotations: AnnotationDef[]) {
     sentences.value = sentences.value.map((sentence) =>
-      sentence.id === sentenceId ? { ...sentence, annotations, suggestions: withoutAnnotationOverlaps(sentence.suggestions, annotations) } : sentence,
+      sentence.id === sentenceId ? { ...sentence, annotations, suggestions: suggestionsWithoutAnnotationOverlaps(sentence.suggestions, annotations) } : sentence,
     )
     normalizeActiveSuggestionTarget()
   }
@@ -506,52 +513,24 @@ export function useDocumentReader() {
   }
 
   function annotationForToken(sentence: SentenceDef, tokenIndex: number) {
-    return sentence.annotations.find(
-      (annotation) => annotation.start_token_index <= tokenIndex && annotation.end_token_index >= tokenIndex,
-    )
+    return findAnnotationForToken(sentence, tokenIndex)
   }
 
   function tokenPrefix(sentence: SentenceDef, tokenIndex: number) {
-    const token = sentence.tokens[tokenIndex]
-    const previousEnd = tokenIndex === 0 ? sentence.start_char : sentence.tokens[tokenIndex - 1].end_char
-    return sentence.text.slice(previousEnd - sentence.start_char, token.start_char - sentence.start_char)
+    return getTokenPrefix(sentence, tokenIndex)
   }
 
   function tokenStyle(sentence: SentenceDef, tokenIndex: number): Record<string, string> {
-    const annotation = annotationForToken(sentence, tokenIndex)
-    if (annotation) return { '--token-color': annotation.tag_color }
-    const targetSuggestion = activeSuggestion.value
-    if (
-      targetSuggestion &&
-      targetSuggestion.sentence_id === sentence.id &&
-      targetSuggestion.start_token_index <= tokenIndex &&
-      targetSuggestion.end_token_index >= tokenIndex
-    ) {
-      return { '--token-color': targetSuggestion.tag_color }
-    }
-    const suggestion = suggestionForToken(sentence, tokenIndex)
-    if (suggestion) return { '--token-color': suggestion.tag_color }
-    if ((selection.isTokenInDrag(sentence, tokenIndex) || selection.isTokenPending(sentence, tokenIndex)) && selectedTag.value) {
-      return { '--token-color': selectedTag.value.color }
-    }
-    return {}
+    return tokenStyleForToken(sentence, tokenIndex, {
+      activeSuggestion: activeSuggestion.value,
+      selectedTag: selectedTag.value,
+      isTokenInDrag: selection.isTokenInDrag,
+      isTokenPending: selection.isTokenPending,
+    })
   }
 
   function suggestionForToken(sentence: SentenceDef, tokenIndex: number) {
-    if (annotationForToken(sentence, tokenIndex)) return undefined
-    return sentence.suggestions.find(
-      (suggestion) => suggestion.start_token_index <= tokenIndex && suggestion.end_token_index >= tokenIndex,
-    )
-  }
-
-  function withoutAnnotationOverlaps(suggestions: SuggestionDef[], annotations: AnnotationDef[]) {
-    return suggestions.filter(
-      (suggestion) =>
-        !annotations.some(
-          (annotation) =>
-            annotation.start_token_index <= suggestion.end_token_index && annotation.end_token_index >= suggestion.start_token_index,
-        ),
-    )
+    return findSuggestionForToken(sentence, tokenIndex)
   }
 
   async function resetProjectData() {
