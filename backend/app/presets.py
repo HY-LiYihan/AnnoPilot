@@ -192,6 +192,18 @@ Of course, one study cannot settle every clinical question, yet the authors argu
 """
 
 
+APPRAISAL_ENGAGEMENT_AI_EDUCATION_TEXT = """The district said the AI tutor may support struggling students, but it does not replace trained teachers.
+According to the evaluation team, the pilot clearly shows faster feedback and demonstrates where learners still need human guidance.
+Some parents reportedly claimed the system was biased; however, the review does not confirm that interpretation.
+Of course, one semester cannot prove long-term learning gains, yet the committee argues the evidence suggests careful expansion.
+
+学区表示，AI 辅导工具可能支持学习困难的学生，但它并不能取代受过训练的教师。
+评估小组指出，试点清楚显示反馈速度更快，并证明学习者仍然需要人工指导的地方。
+一些家长据称声称该系统存在偏见；然而，复核并不确认这种解读。
+当然，一个学期不能证明长期学习收益，不过委员会认为这些证据提示可以谨慎扩展。
+"""
+
+
 @dataclass(frozen=True)
 class SamplePreset:
     id: str
@@ -296,6 +308,15 @@ BUILTIN_SAMPLE_PRESETS = {
         description="面向公共卫生、试验结果和风险传播的中英 engagement 线索，适合练习 hedging、endorsement、claim distancing 和 clinical uncertainty。",
         filename="appraisal-engagement-health-science-cn-en.txt",
         text=APPRAISAL_ENGAGEMENT_HEALTH_SCIENCE_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-ai-education-cn-en": SamplePreset(
+        id="appraisal-engagement-ai-education-cn-en",
+        title="Engagement AI 教育样例",
+        description="面向 AI 辅导、教育政策和课堂试点评估的中英 engagement 线索，适合练习 cautious expansion、bias claim、human guidance 和 evidence framing。",
+        filename="appraisal-engagement-ai-education-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_AI_EDUCATION_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
     ),
