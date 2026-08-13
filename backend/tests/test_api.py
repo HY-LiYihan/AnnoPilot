@@ -1740,8 +1740,13 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert consistency_lines[0]["scoring_mode"] == "character_rag_llm_review_proxy"
         assert 0 <= consistency_lines[0]["score"] <= 1
         assert 0 <= consistency_lines[0]["agreement"] <= 1
+        assert 0 <= consistency_lines[0]["pairwise_span_f1"] <= 1
+        assert consistency_lines[0]["average_model_confidence"] == consistency_lines[0]["avg_confidence"]
+        assert 0 <= consistency_lines[0]["uncertainty_score"] <= 1
+        assert consistency_lines[0]["rosetta_route"] in {"high", "medium", "low"}
         assert consistency_lines[0]["review_route"] in {"high_confidence_sample", "light_review", "expert_review"}
         assert consistency_lines[0]["candidate_count"] == len(consistency_lines[0]["candidate_scores"])
+        assert 0 <= consistency_lines[0]["candidate_scores"][0]["pairwise_span_f1"] <= 1
         consistency_candidate_ids = {candidate["suggestion_id"] for line in consistency_lines for candidate in line["candidate_scores"]}
         assert consistency_candidate_ids.issubset({suggestion["id"] for suggestion in suggestions})
         assert consistency_lines[0]["meta"]["rosetta_reference"] == "consistency_scores.jsonl"
@@ -1767,6 +1772,9 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert candidate_runs[0]["meta"]["candidate_score"]["span_f1_to_consensus"] >= 0
         assert candidate_runs[0]["meta"]["consistency"]["diagnostic_scope"] == "visible_pending_suggestions"
         assert candidate_runs[0]["meta"]["consistency"]["scoring_mode"] == "character_rag_llm_review_proxy"
+        assert 0 <= candidate_runs[0]["meta"]["consistency"]["pairwise_span_f1"] <= 1
+        assert 0 <= candidate_runs[0]["meta"]["consistency"]["uncertainty_score"] <= 1
+        assert candidate_runs[0]["meta"]["consistency"]["rosetta_route"] in {"high", "medium", "low"}
         assert candidate_runs[0]["meta"]["consistency"]["candidate_count"] >= 1
         assert candidate_runs[0]["meta"]["consistency"]["review_route"] in {"high_confidence_sample", "light_review", "expert_review"}
 

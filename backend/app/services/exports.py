@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from io import BytesIO
 from collections.abc import Callable
+from io import BytesIO
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -536,12 +536,16 @@ class ExportService:
                 "scoring_mode": "character_rag_llm_review_proxy",
                 "score": score["score"],
                 "agreement": score["agreement"],
+                "pairwise_span_f1": score["pairwise_span_f1"],
                 "exact_match_rate": score["exact_match_rate"],
+                "average_model_confidence": score["average_model_confidence"],
                 "avg_confidence": score["avg_confidence"],
                 "avg_rule_risk": score["avg_rule_risk"],
+                "uncertainty_score": score["uncertainty_score"],
                 "overlap_conflict_rate": score["overlap_conflict_rate"],
                 "review_risk": score["review_risk"],
                 "review_route": score["review_route"],
+                "rosetta_route": score["rosetta_route"],
                 "route_reason": score["route_reason"],
                 "candidate_count": len(suggestions),
                 "reviewed_candidate_count": score["reviewed_candidate_count"],
@@ -567,7 +571,7 @@ class ExportService:
             if not suggestions:
                 continue
             consistency_score = self._goldsmith_consistency_score(suggestions)
-            rosetta_route = self._rosetta_consistency_route(consistency_score)
+            rosetta_route = consistency_score["rosetta_route"]
             candidate_scores = {
                 candidate_score["suggestion_id"]: candidate_score
                 for candidate_score in consistency_score["candidate_scores"]
@@ -631,12 +635,16 @@ class ExportService:
                             "scoring_mode": "character_rag_llm_review_proxy",
                             "score": consistency_score["score"],
                             "agreement": consistency_score["agreement"],
+                            "pairwise_span_f1": consistency_score["pairwise_span_f1"],
                             "exact_match_rate": consistency_score["exact_match_rate"],
+                            "average_model_confidence": consistency_score["average_model_confidence"],
                             "avg_confidence": consistency_score["avg_confidence"],
                             "avg_rule_risk": consistency_score["avg_rule_risk"],
+                            "uncertainty_score": consistency_score["uncertainty_score"],
                             "overlap_conflict_rate": consistency_score["overlap_conflict_rate"],
                             "review_risk": consistency_score["review_risk"],
                             "review_route": consistency_score["review_route"],
+                            "rosetta_route": consistency_score["rosetta_route"],
                             "route_reason": consistency_score["route_reason"],
                             "candidate_count": len(suggestions),
                             "reviewed_candidate_count": consistency_score["reviewed_candidate_count"],
@@ -658,6 +666,7 @@ class ExportService:
 
         confidences = [float(suggestion.get("confidence") or 0.0) for suggestion in suggestions]
         avg_confidence = sum(confidences) / len(confidences)
+        pairwise_span_f1 = self._pairwise_span_f1(suggestions)
         conflicts_by_id = self._suggestion_conflicts_by_id(suggestions)
         total_pairs = len(suggestions) * (len(suggestions) - 1) / 2
         conflict_pair_count = sum(conflicts_by_id.values()) / 2
@@ -681,6 +690,7 @@ class ExportService:
                     "suggestion_id": suggestion["id"],
                     "span_signature": self._suggestion_signature(suggestion),
                     "span_f1_to_consensus": self._span_f1_to_signature(suggestion, consensus_signature),
+                    "pairwise_span_f1": self._candidate_pairwise_span_f1(suggestion, suggestions),
                     "model_confidence": suggestion.get("confidence"),
                     "review_recommendation": recommendation,
                     "review_risk": round(review_risk, 4),
@@ -695,15 +705,21 @@ class ExportService:
         raw_score = (agreement * 0.5) + (avg_confidence * 0.25) + ((1.0 - review_risk) * 0.15) + (exact_match_rate * 0.1)
         score = max(0.0, min(raw_score, 1.0 - (avg_rule_risk * 0.35)))
         review_route = self._consistency_review_route(score, overlap_conflict_rate, review_risk)
+        uncertainty_score = self._rosetta_uncertainty_score(pairwise_span_f1, avg_confidence)
+        rosetta_route = self._rosetta_consistency_route(pairwise_span_f1, exact_match_rate, avg_confidence)
         return {
             "score": round(score, 4),
             "agreement": round(agreement, 4),
+            "pairwise_span_f1": pairwise_span_f1,
             "exact_match_rate": round(exact_match_rate, 4),
+            "average_model_confidence": round(avg_confidence, 4),
             "avg_confidence": round(avg_confidence, 4),
             "avg_rule_risk": round(avg_rule_risk, 4),
+            "uncertainty_score": uncertainty_score,
             "overlap_conflict_rate": round(overlap_conflict_rate, 4),
             "review_risk": round(review_risk, 4),
             "review_route": review_route,
+            "rosetta_route": rosetta_route,
             "route_reason": self._consistency_route_reason(review_route),
             "reviewed_candidate_count": reviewed_candidate_count,
             "review_counts": review_counts,
@@ -723,6 +739,30 @@ class ExportService:
                 conflicts[left["id"]] += 1
                 conflicts[right["id"]] += 1
         return conflicts
+
+    @classmethod
+    def _pairwise_span_f1(cls, suggestions: list[dict[str, Any]]) -> float:
+        if len(suggestions) <= 1:
+            return 1.0 if suggestions else 0.0
+        scores = []
+        for left_index, left in enumerate(suggestions):
+            for right in suggestions[left_index + 1 :]:
+                scores.append(cls._span_f1_between_suggestions(left, right))
+        return round(sum(scores) / len(scores), 4) if scores else 0.0
+
+    @classmethod
+    def _candidate_pairwise_span_f1(cls, suggestion: dict[str, Any], suggestions: list[dict[str, Any]]) -> float:
+        peers = [peer for peer in suggestions if peer["id"] != suggestion["id"]]
+        if not peers:
+            return 1.0
+        scores = [cls._span_f1_between_suggestions(suggestion, peer) for peer in peers]
+        return round(sum(scores) / len(scores), 4)
+
+    @classmethod
+    def _span_f1_between_suggestions(cls, left: dict[str, Any], right: dict[str, Any]) -> float:
+        if cls._suggestion_signature(left) == cls._suggestion_signature(right):
+            return 1.0
+        return 0.0
 
     @staticmethod
     def _suggestions_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
@@ -781,17 +821,23 @@ class ExportService:
         return reasons[route]
 
     @staticmethod
-    def _rosetta_consistency_route(score: dict[str, Any]) -> str:
-        confidence_ok = score["avg_confidence"] >= 0.7
+    def _rosetta_uncertainty_score(pairwise_span_f1: float, avg_confidence: float | None) -> float:
+        disagreement = 1 - pairwise_span_f1
+        if avg_confidence is None:
+            return round(disagreement, 4)
+        confidence_penalty = 1 - avg_confidence
+        return round((disagreement * 0.7) + (confidence_penalty * 0.3), 4)
+
+    @staticmethod
+    def _rosetta_consistency_route(pairwise_span_f1: float, exact_match_rate: float, avg_confidence: float | None) -> str:
+        confidence_ok = avg_confidence is None or avg_confidence >= 0.7
         if (
-            score["agreement"] >= 0.95
-            and score["exact_match_rate"] >= 0.8
+            pairwise_span_f1 >= 0.95
+            and exact_match_rate >= 0.8
             and confidence_ok
-            and score["review_risk"] == 0
-            and score["overlap_conflict_rate"] == 0
         ):
             return "high"
-        if score["agreement"] >= 0.6 and score["score"] >= 0.6:
+        if pairwise_span_f1 >= 0.6:
             return "medium"
         return "low"
 
