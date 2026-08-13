@@ -243,11 +243,21 @@ class SuggestionDecisionService:
             "affected_sentence_ids": affected_sentence_ids,
         }
 
-    def auto_accept_document_suggestions(self, project_id: str, document_id: str, min_confidence: float = 0.9) -> dict[str, Any]:
+    def auto_accept_document_suggestions(
+        self,
+        project_id: str,
+        document_id: str,
+        min_confidence: float = 0.9,
+        *,
+        complete_sentences: bool = False,
+        completion_source: str = "auto_accept_suggestions",
+    ) -> dict[str, Any]:
         confidence_floor = max(0.0, min(float(min_confidence), 1.0))
         now = self.now()
         accepted_suggestion_ids: list[str] = []
         affected_sentence_ids: list[str] = []
+        accepted_by_sentence: dict[str, list[str]] = {}
+        completed_sentence_ids: list[str] = []
         skipped = 0
 
         with self.connect() as conn:
@@ -275,7 +285,18 @@ class SuggestionDecisionService:
                 self._accept_suggestion_row(conn, project_id, suggestion, now)
                 blocked_ranges.append((suggestion["start_token_index"], suggestion["end_token_index"]))
                 accepted_suggestion_ids.append(suggestion["id"])
+                accepted_by_sentence.setdefault(suggestion["sentence_id"], []).append(suggestion["id"])
                 self._append_unique(affected_sentence_ids, suggestion["sentence_id"])
+
+            if complete_sentences and affected_sentence_ids:
+                completed_sentence_ids = self._complete_clear_accepted_sentences(
+                    conn,
+                    project_id,
+                    document_id,
+                    affected_sentence_ids,
+                    accepted_by_sentence,
+                    completion_source,
+                )
 
         self.flush_event_outbox(project_id)
         return {
@@ -284,6 +305,8 @@ class SuggestionDecisionService:
             "min_confidence": confidence_floor,
             "accepted_suggestion_ids": accepted_suggestion_ids,
             "affected_sentence_ids": affected_sentence_ids,
+            "completed": len(completed_sentence_ids),
+            "completed_sentence_ids": completed_sentence_ids,
         }
 
     def auto_reject_document_suggestions(self, project_id: str, document_id: str) -> dict[str, Any]:
@@ -455,3 +478,70 @@ class SuggestionDecisionService:
     def _append_unique(values: list[str], value: str) -> None:
         if value not in values:
             values.append(value)
+
+    def _complete_clear_accepted_sentences(
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        document_id: str,
+        candidate_sentence_ids: list[str],
+        accepted_by_sentence: dict[str, list[str]],
+        source: str,
+    ) -> list[str]:
+        remaining_pending = self._sentences_with_visible_pending_suggestions(conn, document_id, candidate_sentence_ids)
+        completed_sentence_ids: list[str] = []
+        for sentence_id in candidate_sentence_ids:
+            if sentence_id in remaining_pending:
+                continue
+            sentence = conn.execute(
+                "SELECT id, completed, answer FROM sentences WHERE id = ? AND document_id = ?",
+                (sentence_id, document_id),
+            ).fetchone()
+            if sentence is None or bool(sentence["completed"]):
+                continue
+            old_answer = sentence["answer"] or ("accept" if sentence["completed"] else "pending")
+            conn.execute("UPDATE sentences SET completed = 1, answer = 'accept' WHERE id = ?", (sentence_id,))
+            self.enqueue_event(
+                conn,
+                project_id,
+                {
+                    "type": "sentence.completed",
+                    "sentence_id": sentence_id,
+                    "old_completed": bool(sentence["completed"]),
+                    "old_answer": old_answer,
+                    "completed": True,
+                    "answer": "accept",
+                    "source": source,
+                    "accepted_suggestion_ids": accepted_by_sentence.get(sentence_id, []),
+                },
+            )
+            completed_sentence_ids.append(sentence_id)
+        return completed_sentence_ids
+
+    @staticmethod
+    def _sentences_with_visible_pending_suggestions(
+        conn: sqlite3.Connection,
+        document_id: str,
+        sentence_ids: list[str],
+    ) -> set[str]:
+        if not sentence_ids:
+            return set()
+        placeholders = ",".join("?" for _ in sentence_ids)
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT sg.sentence_id
+            FROM annotation_suggestions sg
+            WHERE sg.sentence_id IN ({placeholders})
+              AND sg.status = 'pending'
+              AND EXISTS (SELECT 1 FROM sentences s WHERE s.id = sg.sentence_id AND s.document_id = ?)
+              AND NOT EXISTS (
+                SELECT 1
+                FROM annotations a
+                WHERE a.sentence_id = sg.sentence_id
+                  AND a.start_token_index <= sg.end_token_index
+                  AND a.end_token_index >= sg.start_token_index
+              )
+            """,
+            (*sentence_ids, document_id),
+        ).fetchall()
+        return {row["sentence_id"] for row in rows}

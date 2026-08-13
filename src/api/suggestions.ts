@@ -80,11 +80,11 @@ export async function applyDocumentSuggestionReviews(projectId: string, document
   }>(response)
 }
 
-export async function autoAcceptSuggestions(projectId: string, documentId: string, minConfidence = 0.9) {
+export async function autoAcceptSuggestions(projectId: string, documentId: string, minConfidence = 0.9, completeSentences = false) {
   const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/suggestions/auto-accept`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ min_confidence: minConfidence }),
+    body: JSON.stringify({ min_confidence: minConfidence, complete_sentences: completeSentences }),
   })
   return parseJsonResponse<{
     accepted: number
@@ -92,14 +92,26 @@ export async function autoAcceptSuggestions(projectId: string, documentId: strin
     min_confidence: number
     accepted_suggestion_ids: string[]
     affected_sentence_ids: string[]
+    completed: number
+    completed_sentence_ids: string[]
   }>(response)
 }
 
-export async function autoAnnotateSuggestions(projectId: string, documentId: string, limitPerSentence = 6, minConfidence = 0.9) {
+export async function autoAnnotateSuggestions(
+  projectId: string,
+  documentId: string,
+  limitPerSentence = 6,
+  minConfidence = 0.9,
+  completeSentences = false,
+) {
   const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/suggestions/auto-annotate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ limit_per_sentence: limitPerSentence, min_confidence: minConfidence }),
+    body: JSON.stringify({
+      limit_per_sentence: limitPerSentence,
+      min_confidence: minConfidence,
+      complete_sentences: completeSentences,
+    }),
   })
   return parseJsonResponse<{
     run_id: string
@@ -111,6 +123,8 @@ export async function autoAnnotateSuggestions(projectId: string, documentId: str
     min_confidence: number
     accepted_suggestion_ids: string[]
     affected_sentence_ids: string[]
+    completed: number
+    completed_sentence_ids: string[]
   }>(response)
 }
 

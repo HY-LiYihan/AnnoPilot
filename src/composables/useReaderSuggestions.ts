@@ -139,7 +139,7 @@ export function useReaderSuggestions(options: UseReaderSuggestionsOptions) {
     options.isSaving.value = true
     options.readerError.value = ''
     try {
-      const result = await autoAcceptSuggestions(PROJECT_ID, documentId, suggestionMinConfidence.value)
+      const result = await autoAcceptSuggestions(PROJECT_ID, documentId, suggestionMinConfidence.value, true)
       await options.loadDocument(documentId, true)
       if (result.accepted === 0) {
         options.readerError.value = `No suggestions met the ${Math.round(result.min_confidence * 100)}% threshold.`
@@ -158,7 +158,13 @@ export function useReaderSuggestions(options: UseReaderSuggestionsOptions) {
     options.isSuggesting.value = true
     options.readerError.value = ''
     try {
-      const result = await autoAnnotateSuggestions(PROJECT_ID, documentId, suggestionLimit.value, suggestionMinConfidence.value)
+      const result = await autoAnnotateSuggestions(
+        PROJECT_ID,
+        documentId,
+        suggestionLimit.value,
+        suggestionMinConfidence.value,
+        true,
+      )
       await options.loadDocument(documentId, true)
       await options.refreshRunHistory()
       await options.refreshAuditSummary()

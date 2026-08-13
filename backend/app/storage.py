@@ -466,8 +466,22 @@ class AnnotationStorage:
     def apply_document_suggestion_reviews(self, project_id: str, document_id: str) -> dict[str, Any]:
         return self.suggestion_decisions.apply_document_suggestion_reviews(project_id, document_id)
 
-    def auto_accept_document_suggestions(self, project_id: str, document_id: str, min_confidence: float = 0.9) -> dict[str, Any]:
-        return self.suggestion_decisions.auto_accept_document_suggestions(project_id, document_id, min_confidence)
+    def auto_accept_document_suggestions(
+        self,
+        project_id: str,
+        document_id: str,
+        min_confidence: float = 0.9,
+        *,
+        complete_sentences: bool = False,
+        completion_source: str = "auto_accept_suggestions",
+    ) -> dict[str, Any]:
+        return self.suggestion_decisions.auto_accept_document_suggestions(
+            project_id,
+            document_id,
+            min_confidence,
+            complete_sentences=complete_sentences,
+            completion_source=completion_source,
+        )
 
     def auto_annotate_document_suggestions(
         self,
@@ -475,9 +489,17 @@ class AnnotationStorage:
         document_id: str,
         limit_per_sentence: int = 6,
         min_confidence: float = 0.9,
+        *,
+        complete_sentences: bool = False,
     ) -> dict[str, Any]:
         generated = self.generate_suggestions(project_id, document_id, limit_per_sentence, min_confidence)
-        accepted = self.auto_accept_document_suggestions(project_id, document_id, min_confidence)
+        accepted = self.auto_accept_document_suggestions(
+            project_id,
+            document_id,
+            min_confidence,
+            complete_sentences=complete_sentences,
+            completion_source="auto_annotate_suggestions",
+        )
         return {
             "run_id": generated["run_id"],
             "suggestions_created": generated["suggestions_created"],

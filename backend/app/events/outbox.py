@@ -87,8 +87,13 @@ class EventOutbox:
         event_type = payload.get("type")
         if event_type == "suggestion.llm_reviewed":
             return {"actor_type": "llm", "actor_id": str(payload.get("model") or "unknown")}
-        if event_type == "suggestions.generated" or (
-            event_type == "annotation.created" and payload.get("source") == "accepted_suggestion"
+        if (
+            event_type == "suggestions.generated"
+            or (event_type == "annotation.created" and payload.get("source") == "accepted_suggestion")
+            or (
+                event_type == "sentence.completed"
+                and payload.get("source") in {"auto_accept_suggestions", "auto_annotate_suggestions"}
+            )
         ):
             return {"actor_type": "system", "actor_id": self.system_actor_id}
         return {"actor_type": "human", "actor_id": self.human_actor_id}

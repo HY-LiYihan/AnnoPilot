@@ -442,6 +442,11 @@ class GenerateSuggestionsResponse(BaseModel):
 
 class AutoAcceptSuggestionsRequest(BaseModel):
     min_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+    complete_sentences: bool = False
+
+
+class AutoAnnotateSuggestionsRequest(GenerateSuggestionsRequest):
+    complete_sentences: bool = False
 
 
 class AutoAnnotateSuggestionsResponse(BaseModel):
@@ -454,6 +459,8 @@ class AutoAnnotateSuggestionsResponse(BaseModel):
     min_confidence: float
     accepted_suggestion_ids: list[str]
     affected_sentence_ids: list[str]
+    completed: int = 0
+    completed_sentence_ids: list[str] = Field(default_factory=list)
 
 
 class AutoAcceptSuggestionsResponse(BaseModel):
@@ -462,6 +469,8 @@ class AutoAcceptSuggestionsResponse(BaseModel):
     min_confidence: float
     accepted_suggestion_ids: list[str]
     affected_sentence_ids: list[str]
+    completed: int = 0
+    completed_sentence_ids: list[str] = Field(default_factory=list)
 
 
 class AcceptSentenceSuggestionsResponse(BaseModel):

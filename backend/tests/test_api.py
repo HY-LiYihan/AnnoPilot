@@ -2725,6 +2725,8 @@ def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:
         accepted_payload = auto_accept.json()
         assert accepted_payload["accepted"] == len(suggestions)
         assert accepted_payload["skipped"] == 0
+        assert accepted_payload["completed"] == 0
+        assert accepted_payload["completed_sentence_ids"] == []
         assert set(accepted_payload["accepted_suggestion_ids"]) == {suggestion["id"] for suggestion in suggestions}
 
         document = client.get(f"/api/projects/default/documents/{document_id}").json()
@@ -2747,6 +2749,92 @@ def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert manifest["annotation_source_counts"] == {"accepted_suggestion": len(suggestions)}
         assert manifest["source_run_ids"] == [suggestion_payload["run_id"]]
+
+
+def test_auto_accept_can_complete_clean_accepted_sentences(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        labels = seed_pos_span_labels(client)
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("story.txt", "小猫跑。小狗跳。", "text/plain")},
+        )
+        document_id = response.json()["document_id"]
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        first_sentence = document["sentences"][0]
+        second_sentence = document["sentences"][1]
+        tag_id = labels["名词"]["id"]
+
+        def suggestion_values(suggestion_id: str, sentence: dict, token_index: int, confidence: float) -> tuple:
+            token = sentence["tokens"][token_index]
+            return (
+                suggestion_id,
+                None,
+                sentence["id"],
+                tag_id,
+                token["token_index"],
+                token["token_index"],
+                token["start_char"],
+                token["end_char"],
+                token["text"],
+                confidence,
+                "test",
+                "2026-08-14T00:00:00+00:00",
+            )
+
+        with storage.connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO annotation_suggestions (
+                    id, run_id, sentence_id, tag_id, start_token_index, end_token_index,
+                    start_char, end_char, text, confidence, source, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    suggestion_values("sg_clean_high", first_sentence, 0, 0.99),
+                    suggestion_values("sg_mixed_high", second_sentence, 0, 0.99),
+                    suggestion_values("sg_mixed_low", second_sentence, 1, 0.5),
+                ],
+            )
+
+        auto_accept = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/auto-accept",
+            json={"min_confidence": 0.98, "complete_sentences": True},
+        )
+        assert auto_accept.status_code == 200
+        payload = auto_accept.json()
+        assert payload["accepted"] == 2
+        assert payload["skipped"] == 0
+        assert payload["completed"] == 1
+        assert payload["completed_sentence_ids"] == [first_sentence["id"]]
+
+        updated_document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        assert updated_document["metrics"]["completed_count"] == 1
+        assert updated_document["metrics"]["suggestion_count"] == 1
+        assert updated_document["sentences"][0]["completed"] is True
+        assert updated_document["sentences"][0]["answer"] == "accept"
+        assert updated_document["sentences"][1]["completed"] is False
+        assert updated_document["sentences"][1]["answer"] == "pending"
+        assert [suggestion["id"] for suggestion in updated_document["sentences"][1]["suggestions"]] == ["sg_mixed_low"]
+
+        prodigy_lines = [
+            json.loads(line)
+            for line in client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl").text.splitlines()
+        ]
+        assert prodigy_lines[0]["meta"]["answer"] == "accept"
+        assert prodigy_lines[1]["meta"]["answer"] == "pending"
+
+        events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
+        completed_event = next(event for event in events if event["type"] == "sentence.completed")
+        assert completed_event["source"] == "auto_accept_suggestions"
+        assert completed_event["actor_type"] == "system"
+        assert completed_event["actor_id"] == "annopilot-character-rag"
+        assert completed_event["accepted_suggestion_ids"] == ["sg_clean_high"]
+        assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
 
 def test_auto_annotate_generates_and_accepts_high_confidence_spans(tmp_path: Path) -> None:
