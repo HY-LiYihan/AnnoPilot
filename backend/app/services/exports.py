@@ -740,6 +740,7 @@ class ExportService:
         document = self.get_document(project_id, document_id)
         lines = []
         document_meta = document["document"]
+        tag_schema_context = self._prodigy_tag_schema_context(project_id)
         for sentence in document["sentences"]:
             spans = [self._export_prodigy_span(annotation, sentence["start_char"]) for annotation in sentence["annotations"]]
             line = {
@@ -769,6 +770,7 @@ class ExportService:
                     "sentence_id": sentence["id"],
                     "sentence_index": sentence["index"],
                     "filename": document_meta["filename"],
+                    "tag_schema": tag_schema_context,
                     "completed": sentence["completed"],
                     "answer": sentence.get("answer", "accept" if sentence["completed"] else "pending"),
                     "suggestion_count": len(sentence["suggestions"]),
@@ -780,6 +782,25 @@ class ExportService:
             }
             lines.append(json.dumps(line, ensure_ascii=False) + "\n")
         return lines
+
+    def _prodigy_tag_schema_context(self, project_id: str) -> dict[str, Any]:
+        payload = self.export_tag_schema(project_id)
+        return {
+            "schema_version": payload["schema_version"],
+            "content_sha256": payload["content_sha256"],
+            "tag_count": payload["tag_count"],
+            "labels": [
+                {
+                    "id": tag["id"],
+                    "name": tag["name"],
+                    "description": tag.get("description"),
+                    "examples": tag.get("examples", []),
+                    "shortcut": tag.get("shortcut"),
+                    "color": tag.get("color"),
+                }
+                for tag in payload["tags"]
+            ],
+        }
 
     @staticmethod
     def _manifest_event_audit(audit_summary: dict[str, Any]) -> dict[str, Any]:

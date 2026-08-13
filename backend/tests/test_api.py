@@ -200,6 +200,18 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert isinstance(prodigy_lines[0]["_input_hash"], int)
         assert isinstance(prodigy_lines[0]["_task_hash"], int)
         assert prodigy_lines[0]["meta"]["source"] == "annopilot"
+        assert prodigy_lines[0]["meta"]["tag_schema"]["schema_version"] == "annopilot.tag_schema.v1"
+        assert prodigy_lines[0]["meta"]["tag_schema"]["tag_count"] == 1
+        assert prodigy_lines[0]["meta"]["tag_schema"]["labels"] == [
+            {
+                "id": tag["id"],
+                "name": "动词",
+                "description": None,
+                "examples": ["reduced"],
+                "shortcut": "1",
+                "color": "#0b7565",
+            }
+        ]
         assert prodigy_lines[0]["meta"]["annotation_sources"] == [
             {"annotation_id": created_annotation["id"], "label_id": tag["id"], "source": "human"}
         ]
@@ -250,6 +262,7 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert tag_schema["tags"][0]["name"] == "动词"
         assert "reduced" in tag_schema["tags"][0]["examples"]
         assert "usage_count" not in tag_schema["tags"][0]
+        assert prodigy_lines[0]["meta"]["tag_schema"]["content_sha256"] == tag_schema["content_sha256"]
 
         manifest_response = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json")
         assert manifest_response.status_code == 200
