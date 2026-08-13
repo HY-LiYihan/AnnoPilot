@@ -2476,6 +2476,107 @@ def test_review_queue_goldsmith_uses_llm_review_risk_signal(tmp_path: Path) -> N
         assert boundary_artifact["line_count"] == 1
 
 
+def test_review_queue_goldsmith_uses_judge_review_risk_signal(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("judge-risk.txt", "Stable cue. Dense lexical risk.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "Engagement", "description": "Appraisal engagement cue."},
+        ).json()["tag"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=2").json()
+        first_sentence = page["sentences"][0]
+        second_sentence = page["sentences"][1]
+
+        with storage.connect() as conn:
+            now = "2026-01-01T00:00:00Z"
+            controlled_suggestions = [
+                ("sg-judge-risk", first_sentence, first_sentence["tokens"][0], 0.99),
+                ("sg-dense-a", second_sentence, second_sentence["tokens"][0], 0.74),
+                ("sg-dense-b", second_sentence, second_sentence["tokens"][1], 0.75),
+            ]
+            for suggestion_id, sentence, token, confidence in controlled_suggestions:
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestions (
+                      id, sentence_id, tag_id, start_token_index, end_token_index,
+                      start_char, end_char, text, confidence, source, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                    """,
+                    (
+                        suggestion_id,
+                        sentence["id"],
+                        tag["id"],
+                        token["token_index"],
+                        token["token_index"],
+                        token["start_char"],
+                        token["end_char"],
+                        token["text"],
+                        confidence,
+                        "test",
+                        now,
+                    ),
+                )
+            conn.execute(
+                """
+                INSERT INTO annotation_suggestion_reviews (
+                  id, suggestion_id, model, recommendation, confidence, rationale, context_sha256, judge_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "rev-sg-judge-risk",
+                    "sg-judge-risk",
+                    "fake-gpt5.5",
+                    "accept",
+                    0.92,
+                    "Candidate is plausible but judge found likely boundary and under-annotation risk.",
+                    hashlib.sha256(b"sg-judge-risk").hexdigest(),
+                    json.dumps(
+                        {
+                            "format_score": 1.0,
+                            "concept_fit_score": 0.91,
+                            "boundary_score": 0.2,
+                            "relation_score": 1.0,
+                            "missed_span_risk": 0.82,
+                            "extra_span_risk": 0.1,
+                            "overall_score": 0.88,
+                            "needs_review": True,
+                            "error_types": ["boundary_too_wide"],
+                            "risk_flags": ["possible_under_annotation"],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    now,
+                ),
+            )
+
+        by_goldsmith = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith").json()
+        assert [item["id"] for item in by_goldsmith["items"]] == [first_sentence["id"], second_sentence["id"]]
+        assert round(by_goldsmith["items"][0]["lexical_risk_score"], 2) == 0.01
+        assert by_goldsmith["items"][0]["llm_review_risk_score"] == 0.0
+        assert by_goldsmith["items"][0]["judge_review_risk_score"] == 0.82
+        assert round(by_goldsmith["items"][0]["risk_score"], 2) == 0.83
+        assert round(by_goldsmith["items"][1]["risk_score"], 2) == 0.52
+        assert by_goldsmith["items"][0]["first_suggestion"]["id"] == "sg-judge-risk"
+        assert by_goldsmith["items"][0]["first_suggestion"]["latest_review"]["judge"]["needs_review"] is True
+
+        review_queue_export = client.get(
+            f"/api/projects/default/documents/{document_id}/export.goldsmith.review-queue.jsonl?order=goldsmith&limit=5"
+        )
+        assert review_queue_export.status_code == 200
+        review_queue_lines = [json.loads(line) for line in review_queue_export.text.splitlines()]
+        assert review_queue_lines[0]["sentence_id"] == first_sentence["id"]
+        assert review_queue_lines[0]["judge_review_risk_score"] == 0.82
+        assert round(review_queue_lines[0]["risk_score"], 2) == 0.83
+
+
 def test_review_queue_hybrid_reserves_high_confidence_calibration_sample(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",
@@ -3285,6 +3386,97 @@ def test_review_efficiency_goldsmith_uses_candidate_disagreement_risk(tmp_path: 
         assert curves["goldsmith"]["first_disagreement_rank"] == 1
         assert curves["position"]["points"][0]["suggestion_id"] == "sug_curve_conflict_aaa"
         assert curves["uncertain"]["points"][0]["suggestion_id"] == "sug_curve_lexical_low"
+
+
+def test_review_efficiency_goldsmith_uses_judge_review_risk(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        tag = client.post("/api/projects/default/tags", json={"name": "Engagement"}).json()["tag"]
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("curve-judge-risk.txt", "Stable cue. Baseline cue.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=2").json()
+        first_sentence = page["sentences"][0]
+        second_sentence = page["sentences"][1]
+        now = storage._now()
+
+        with storage.connect() as conn:
+            def insert_reviewed_suggestion(
+                suggestion_id: str,
+                sentence: dict,
+                confidence: float,
+                recommendation: str,
+                status: str,
+                judge=None,
+            ) -> None:
+                token = sentence["tokens"][0]
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestions (
+                      id, sentence_id, tag_id, start_token_index, end_token_index,
+                      start_char, end_char, text, confidence, source, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        suggestion_id,
+                        sentence["id"],
+                        tag["id"],
+                        token["token_index"],
+                        token["token_index"],
+                        token["start_char"],
+                        token["end_char"],
+                        token["text"],
+                        confidence,
+                        "lexical_exact",
+                        status,
+                        now,
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestion_reviews (
+                      id, suggestion_id, model, recommendation, confidence, rationale, context_sha256, judge_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        f"rev_{suggestion_id}",
+                        suggestion_id,
+                        "fake-gpt5.5",
+                        recommendation,
+                        0.91,
+                        "controlled judge risk fixture",
+                        hashlib.sha256(suggestion_id.encode("utf-8")).hexdigest(),
+                        json.dumps(judge, ensure_ascii=False) if judge else None,
+                        now,
+                    ),
+                )
+
+            insert_reviewed_suggestion(
+                "sug_curve_judge_risk",
+                first_sentence,
+                0.99,
+                "accept",
+                "rejected",
+                {
+                    "boundary_score": 0.2,
+                    "missed_span_risk": 0.82,
+                    "overall_score": 0.88,
+                    "needs_review": True,
+                    "error_types": ["boundary_too_wide"],
+                    "risk_flags": ["possible_under_annotation"],
+                },
+            )
+            insert_reviewed_suggestion("sug_curve_low_confidence", second_sentence, 0.6, "accept", "accepted")
+
+        curves = client.get(f"/api/projects/default/documents/{document_id}/summary").json()["metrics"]["review_efficiency_curves"]
+        assert curves["goldsmith"]["points"][0]["suggestion_id"] == "sug_curve_judge_risk"
+        assert curves["goldsmith"]["first_disagreement_rank"] == 1
+        assert curves["uncertain"]["points"][0]["suggestion_id"] == "sug_curve_low_confidence"
 
 
 def test_sentence_llm_review_suggestions_reviews_current_queue(tmp_path: Path) -> None:

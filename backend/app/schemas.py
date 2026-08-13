@@ -263,6 +263,7 @@ class ReviewQueueItemResponse(BaseModel):
     min_confidence: float
     lexical_risk_score: float = 0.0
     llm_review_risk_score: float = 0.0
+    judge_review_risk_score: float = 0.0
     candidate_disagreement_score: float = 0.0
     risk_score: float
     review_route: str = "risk"

@@ -188,6 +188,7 @@ function riskBreakdownText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
   const parts = [
     item.candidate_disagreement_score > 0 ? `${labels.candidateConflictRisk} ${item.candidate_disagreement_score.toFixed(2)}` : '',
     item.llm_review_risk_score > 0 ? `${labels.llmReviewRisk} ${item.llm_review_risk_score.toFixed(2)}` : '',
+    item.judge_review_risk_score > 0 ? `${labels.judgeRisk} ${item.judge_review_risk_score.toFixed(2)}` : '',
     item.lexical_risk_score > 0 ? `${labels.lexicalRisk} ${item.lexical_risk_score.toFixed(2)}` : '',
   ].filter(Boolean)
   return parts.length ? ` · ${parts.join(' · ')}` : ''

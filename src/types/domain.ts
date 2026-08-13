@@ -113,6 +113,7 @@ export type ReviewQueueItem = {
   min_confidence: number
   lexical_risk_score: number
   llm_review_risk_score: number
+  judge_review_risk_score: number
   candidate_disagreement_score: number
   risk_score: number
   review_route: 'position' | 'uncertain' | 'risk' | 'calibration' | string

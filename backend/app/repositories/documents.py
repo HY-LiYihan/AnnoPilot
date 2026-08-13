@@ -5,6 +5,7 @@ import sqlite3
 from collections.abc import Callable
 from typing import Any
 
+from ..db.connection import judge_review_risk_score
 from .tags import TagQueryRepository
 
 
@@ -488,12 +489,13 @@ class DocumentQueryRepository:
                 "risk_score DESC, "
                 "candidate_disagreement_score DESC, "
                 "llm_review_risk_score DESC, "
+                "judge_review_risk_score DESC, "
                 "suggestion_count DESC, "
                 "min_confidence ASC, "
                 "s.sentence_index"
             )
             suggestion_order_sql = (
-                f"s.sentence_index, {self._llm_review_risk_sql()} DESC, "
+                f"s.sentence_index, {self._combined_review_risk_sql()} DESC, "
                 "sg.confidence ASC, sg.start_token_index, sg.id"
             )
         else:
@@ -504,7 +506,11 @@ class DocumentQueryRepository:
         candidate_disagreement_score_sql = self._candidate_disagreement_score_sql("s")
         lexical_risk_score_sql = "((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id))"
         llm_review_risk_score_sql = f"SUM({self._llm_review_risk_sql()})"
-        risk_score_sql = f"({lexical_risk_score_sql} + {llm_review_risk_score_sql} + {candidate_disagreement_score_sql})"
+        judge_review_risk_score_sql = f"SUM({self._judge_review_risk_sql()})"
+        risk_score_sql = (
+            f"({lexical_risk_score_sql} + {llm_review_risk_score_sql} + "
+            f"{judge_review_risk_score_sql} + {candidate_disagreement_score_sql})"
+        )
         with self.connect() as conn:
             document = conn.execute(
                 "SELECT id FROM documents WHERE id = ? AND project_id = ?",
@@ -540,6 +546,7 @@ class DocumentQueryRepository:
                        MIN(sg.confidence) AS min_confidence,
                        {lexical_risk_score_sql} AS lexical_risk_score,
                        {llm_review_risk_score_sql} AS llm_review_risk_score,
+                       {judge_review_risk_score_sql} AS judge_review_risk_score,
                        {candidate_disagreement_score_sql} AS candidate_disagreement_score,
                        {risk_score_sql} AS risk_score
                 FROM sentences s
@@ -576,6 +583,7 @@ class DocumentQueryRepository:
                                MIN(sg.confidence) AS min_confidence,
                                {lexical_risk_score_sql} AS lexical_risk_score,
                                {llm_review_risk_score_sql} AS llm_review_risk_score,
+                               {judge_review_risk_score_sql} AS judge_review_risk_score,
                                {candidate_disagreement_score_sql} AS candidate_disagreement_score,
                                {risk_score_sql} AS risk_score
                         FROM sentences s
@@ -596,7 +604,7 @@ class DocumentQueryRepository:
                               AND a.end_token_index >= sg.start_token_index
                           )
                         GROUP BY s.id, s.sentence_index, s.text
-                        HAVING MIN(sg.confidence) >= ? AND SUM({self._llm_review_risk_sql()}) = 0
+                        HAVING MIN(sg.confidence) >= ? AND SUM({self._combined_review_risk_sql()}) = 0
                         ORDER BY MIN(sg.confidence) DESC, s.sentence_index
                         LIMIT ?
                         """,
@@ -653,6 +661,7 @@ class DocumentQueryRepository:
                     "min_confidence": float(row["min_confidence"] or 0),
                     "lexical_risk_score": float(row["lexical_risk_score"] or 0),
                     "llm_review_risk_score": float(row["llm_review_risk_score"] or 0),
+                    "judge_review_risk_score": float(row["judge_review_risk_score"] or 0),
                     "candidate_disagreement_score": float(row["candidate_disagreement_score"] or 0),
                     "risk_score": float(row["risk_score"] or 0),
                     "review_route": review_routes.get(
@@ -674,6 +683,14 @@ class DocumentQueryRepository:
             f"WHEN 'uncertain' THEN {LLM_REVIEW_UNCERTAIN_RISK_WEIGHT} "
             "ELSE 0 END"
         )
+
+    @staticmethod
+    def _judge_review_risk_sql(alias: str = "rev") -> str:
+        return f"annopilot_judge_review_risk({alias}.judge_json)"
+
+    @classmethod
+    def _combined_review_risk_sql(cls, alias: str = "rev") -> str:
+        return f"({cls._llm_review_risk_sql(alias)} + {cls._judge_review_risk_sql(alias)})"
 
     @staticmethod
     def _candidate_disagreement_score_sql(sentence_alias: str = "s") -> str:
@@ -787,7 +804,7 @@ class DocumentQueryRepository:
         rows = conn.execute(
             """
             SELECT sg.id, sg.sentence_id, s.sentence_index, sg.start_token_index, sg.end_token_index,
-                   sg.tag_id, sg.confidence, sg.status, rev.recommendation
+                   sg.tag_id, sg.confidence, sg.status, rev.recommendation, rev.judge_json
             FROM annotation_suggestions sg
             JOIN sentences s ON s.id = sg.sentence_id
             JOIN documents d ON d.id = s.document_id
@@ -823,6 +840,7 @@ class DocumentQueryRepository:
                 "confidence": float(row["confidence"] or 0.0),
                 "human_decision": human_decision,
                 "review_recommendation": row["recommendation"],
+                "judge_review_risk_score": judge_review_risk_score(row["judge_json"]),
                 "disagreement": human_decision != row["recommendation"],
             }
             items.append(item)
@@ -848,7 +866,11 @@ class DocumentQueryRepository:
             item["sentence_suggestion_count"] = int(stats["suggestion_count"])
             item["sentence_min_confidence"] = float(stats["min_confidence"])
             item["candidate_disagreement_score"] = candidate_disagreement_score
-            item["risk_score"] = ((1.0 - item["sentence_min_confidence"]) * item["sentence_suggestion_count"]) + candidate_disagreement_score
+            item["risk_score"] = (
+                ((1.0 - item["sentence_min_confidence"]) * item["sentence_suggestion_count"])
+                + float(item.get("judge_review_risk_score", 0.0))
+                + candidate_disagreement_score
+            )
 
         return {
             order: self._review_efficiency_curve(order, self._order_review_efficiency_items(items, order))
@@ -893,6 +915,7 @@ class DocumentQueryRepository:
         return (
             -float(item["risk_score"]),
             -float(item.get("candidate_disagreement_score", 0.0)),
+            -float(item.get("judge_review_risk_score", 0.0)),
             -int(item["sentence_suggestion_count"]),
             float(item["sentence_min_confidence"]),
             item["sentence_index"],
