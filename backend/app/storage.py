@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from .db.connection import configure_connection, connect_database
 from .db.migrations import migrate_database
-from .events import EventOutbox, clear_project_runtime_rows, event_replay_issue, has_import_snapshot
+from .events import EventOutbox, event_replay_issue, has_import_snapshot
 from .repositories import DocumentQueryRepository, RunQueryRepository, TagQueryRepository
 from .services import (
     AnnotationImportService,
@@ -19,6 +19,7 @@ from .services import (
     AuditService,
     DocumentService,
     ExportService,
+    ProjectService,
     RuntimeSettingsService,
     SuggestionDecisionService,
     SuggestionService,
@@ -158,6 +159,13 @@ class AnnotationStorage:
             self.data_root,
             flush_event_outbox=self.flush_event_outbox,
             event_replay_issue=event_replay_issue,
+        )
+        self.project_service = ProjectService(
+            self.connect,
+            now=self._now,
+            enqueue_event=self._enqueue_event,
+            flush_event_outbox=self.flush_event_outbox,
+            seed_tags=self.tag_service.seed_tags,
         )
         self.annotation_service = AnnotationService(
             self.connect,
@@ -380,26 +388,7 @@ class AnnotationStorage:
         return self.annotation_import_service.import_annotations_jsonl(project_id, document_id, filename, data)
 
     def reset_project(self, project_id: str) -> dict[str, Any]:
-        self.flush_event_outbox(project_id)
-        reset_at = self._now()
-        with self.connect() as conn:
-            conn.execute("BEGIN")
-            self.tag_service.seed_tags(conn, project_id)
-            counts = self._count_project_runtime_rows(conn, project_id)
-            clear_project_runtime_rows(conn, project_id)
-            self._enqueue_event(
-                conn,
-                project_id,
-                {
-                    "type": "project.reset",
-                    "reset_at": reset_at,
-                    **counts,
-                },
-            )
-            conn.commit()
-
-        self.flush_event_outbox(project_id)
-        return {"project_id": project_id, "reset_at": reset_at, **counts}
+        return self.project_service.reset_project(project_id)
 
     def export_event_lines(self, project_id: str) -> list[str]:
         return self.audit_service.export_event_lines(project_id)
@@ -534,77 +523,6 @@ class AnnotationStorage:
 
     def _enqueue_event(self, conn: sqlite3.Connection, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self.event_outbox.enqueue(conn, project_id, payload)
-
-    @classmethod
-    def _count_project_runtime_rows(cls, conn: sqlite3.Connection, project_id: str) -> dict[str, int]:
-        return {
-            "deleted_documents": cls._count_rows(conn, "SELECT COUNT(*) AS count FROM documents WHERE project_id = ?", (project_id,)),
-            "deleted_sentences": cls._count_rows(
-                conn,
-                """
-                SELECT COUNT(*) AS count
-                FROM sentences s
-                JOIN documents d ON d.id = s.document_id
-                WHERE d.project_id = ?
-                """,
-                (project_id,),
-            ),
-            "deleted_tokens": cls._count_rows(
-                conn,
-                """
-                SELECT COUNT(*) AS count
-                FROM tokens t
-                JOIN sentences s ON s.id = t.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                WHERE d.project_id = ?
-                """,
-                (project_id,),
-            ),
-            "deleted_annotations": cls._count_rows(
-                conn,
-                """
-                SELECT COUNT(*) AS count
-                FROM annotations a
-                JOIN sentences s ON s.id = a.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                WHERE d.project_id = ?
-                """,
-                (project_id,),
-            ),
-            "deleted_suggestions": cls._count_rows(
-                conn,
-                """
-                SELECT COUNT(*) AS count
-                FROM annotation_suggestions sg
-                JOIN sentences s ON s.id = sg.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                WHERE d.project_id = ?
-                """,
-                (project_id,),
-            ),
-            "deleted_suggestion_reviews": cls._count_rows(
-                conn,
-                """
-                SELECT COUNT(*) AS count
-                FROM annotation_suggestion_reviews rev
-                JOIN annotation_suggestions sg ON sg.id = rev.suggestion_id
-                JOIN sentences s ON s.id = sg.sentence_id
-                JOIN documents d ON d.id = s.document_id
-                WHERE d.project_id = ?
-                """,
-                (project_id,),
-            ),
-            "deleted_runs": cls._count_rows(conn, "SELECT COUNT(*) AS count FROM annotation_runs WHERE project_id = ?", (project_id,)),
-            "deleted_sessions": cls._count_rows(conn, "SELECT COUNT(*) AS count FROM annotation_sessions WHERE project_id = ?", (project_id,)),
-        }
-
-    @staticmethod
-    def _count_rows(conn: sqlite3.Connection, query: str, params: tuple[Any, ...]) -> int:
-        return int(conn.execute(query, params).fetchone()["count"])
-
-    @staticmethod
-    def _clear_project_runtime_rows(conn: sqlite3.Connection, project_id: str) -> None:
-        clear_project_runtime_rows(conn, project_id)
 
     def _get_tags(self, conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:
         return self.tag_service.list_tags_from_conn(conn, project_id)
