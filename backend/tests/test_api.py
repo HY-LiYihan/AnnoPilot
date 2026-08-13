@@ -1538,6 +1538,23 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert generated_summary["metrics"]["suggestion_review_counts"] == {"accept": 0, "reject": 0, "uncertain": 0}
         assert generated_summary["metrics"]["reviewed_suggestion_count"] == 0
 
+        consistency_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.consistency-scores.jsonl")
+        assert consistency_response.status_code == 200
+        assert consistency_response.headers["content-disposition"] == f'attachment; filename="{document_id}.goldsmith.consistency-scores.jsonl"'
+        consistency_lines = [json.loads(line) for line in consistency_response.text.splitlines()]
+        assert consistency_lines
+        assert consistency_lines[0]["schema_version"] == "annopilot.goldsmith_consistency_scores.v1"
+        assert consistency_lines[0]["record_type"] == "consistency_score"
+        assert consistency_lines[0]["diagnostic_scope"] == "visible_pending_suggestions"
+        assert consistency_lines[0]["scoring_mode"] == "character_rag_llm_review_proxy"
+        assert 0 <= consistency_lines[0]["score"] <= 1
+        assert 0 <= consistency_lines[0]["agreement"] <= 1
+        assert consistency_lines[0]["review_route"] in {"high_confidence_sample", "light_review", "expert_review"}
+        assert consistency_lines[0]["candidate_count"] == len(consistency_lines[0]["candidate_scores"])
+        consistency_candidate_ids = {candidate["suggestion_id"] for line in consistency_lines for candidate in line["candidate_scores"]}
+        assert consistency_candidate_ids.issubset({suggestion["id"] for suggestion in suggestions})
+        assert consistency_lines[0]["meta"]["rosetta_reference"] == "consistency_scores.jsonl"
+
         accepted = client.post(f"/api/projects/default/suggestions/{suggestions[0]['id']}/accept")
         assert accepted.status_code == 200
         assert accepted.json()["accepted"] is True
@@ -1656,6 +1673,7 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["schema_version"] == "annopilot.run_provenance.v1"
         assert manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["filename"].endswith(".provenance.json")
         assert manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["content_sha256"] == provenance["content_sha256"]
+        assert manifest["artifacts"]["goldsmith_consistency_scores_jsonl"]["schema_version"] == "annopilot.goldsmith_consistency_scores.v1"
         second_manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert second_manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["content_sha256"] == provenance["content_sha256"]
 

@@ -33,6 +33,7 @@ class ExportService:
         goldsmith_human_choices_schema_version: str,
         goldsmith_hard_examples_schema_version: str,
         goldsmith_boundary_feedback_schema_version: str,
+        goldsmith_consistency_scores_schema_version: str,
         medium_confidence_threshold: float,
     ) -> None:
         self.get_document = get_document
@@ -56,6 +57,7 @@ class ExportService:
         self.goldsmith_human_choices_schema_version = goldsmith_human_choices_schema_version
         self.goldsmith_hard_examples_schema_version = goldsmith_hard_examples_schema_version
         self.goldsmith_boundary_feedback_schema_version = goldsmith_boundary_feedback_schema_version
+        self.goldsmith_consistency_scores_schema_version = goldsmith_consistency_scores_schema_version
         self.medium_confidence_threshold = medium_confidence_threshold
 
     def export_document_lines(self, project_id: str, document_id: str) -> list[str]:
@@ -122,6 +124,7 @@ class ExportService:
         goldsmith_choices_lines = self.export_goldsmith_human_choices_lines(project_id, document_id)
         goldsmith_hard_example_lines = self.export_goldsmith_hard_examples_lines(project_id, document_id)
         goldsmith_boundary_feedback_lines = self.export_goldsmith_boundary_feedback_lines(project_id, document_id)
+        goldsmith_consistency_score_lines = self.export_goldsmith_consistency_scores_lines(project_id, document_id)
         event_lines = self.export_event_lines(project_id)
         audit_summary = self.audit_project(project_id)
         tag_schema_payload = self.export_tag_schema(project_id)
@@ -203,6 +206,11 @@ class ExportService:
                     filename=f"{document_id}.goldsmith.boundary-feedback.jsonl",
                     schema_version=self.goldsmith_boundary_feedback_schema_version,
                     lines=goldsmith_boundary_feedback_lines,
+                ),
+                "goldsmith_consistency_scores_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.consistency-scores.jsonl",
+                    schema_version=self.goldsmith_consistency_scores_schema_version,
+                    lines=goldsmith_consistency_score_lines,
                 ),
             },
         }
@@ -399,6 +407,182 @@ class ExportService:
             }
             lines.append(json.dumps(line, ensure_ascii=False) + "\n")
         return lines
+
+    def export_goldsmith_consistency_scores_lines(self, project_id: str, document_id: str) -> list[str]:
+        document = self.get_document(project_id, document_id)
+        generated_at = self.now()
+        lines = []
+        for sentence in document["sentences"]:
+            suggestions = sentence.get("suggestions", [])
+            if not suggestions:
+                continue
+            score = self._goldsmith_consistency_score(suggestions)
+            line = {
+                "schema_version": self.goldsmith_consistency_scores_schema_version,
+                "record_type": "consistency_score",
+                "generated_at": generated_at,
+                "project_id": project_id,
+                "document_id": document_id,
+                "sentence_id": sentence["id"],
+                "sentence_index": sentence["index"],
+                "text": sentence["text"],
+                "diagnostic_scope": "visible_pending_suggestions",
+                "scoring_mode": "character_rag_llm_review_proxy",
+                "score": score["score"],
+                "agreement": score["agreement"],
+                "exact_match_rate": score["exact_match_rate"],
+                "avg_confidence": score["avg_confidence"],
+                "avg_rule_risk": score["avg_rule_risk"],
+                "overlap_conflict_rate": score["overlap_conflict_rate"],
+                "review_risk": score["review_risk"],
+                "review_route": score["review_route"],
+                "route_reason": score["route_reason"],
+                "candidate_count": len(suggestions),
+                "reviewed_candidate_count": score["reviewed_candidate_count"],
+                "review_counts": score["review_counts"],
+                "consensus_signature": score["consensus_signature"],
+                "candidate_scores": score["candidate_scores"],
+                "meta": {
+                    "source": "annopilot",
+                    "artifact": "consistency_scores.jsonl",
+                    "rosetta_reference": "consistency_scores.jsonl",
+                    "note": "Proxy diagnostics from current pending suggestions; full k-run self-consistency can replace this artifact without changing downstream consumers.",
+                },
+            }
+            lines.append(json.dumps(line, ensure_ascii=False) + "\n")
+        return lines
+
+    def _goldsmith_consistency_score(self, suggestions: list[dict[str, Any]]) -> dict[str, Any]:
+        signatures = [self._suggestion_signature(suggestion) for suggestion in suggestions]
+        signature_counts: dict[str, int] = {}
+        for signature in signatures:
+            signature_counts[signature] = signature_counts.get(signature, 0) + 1
+        consensus_signature = max(signature_counts, key=lambda key: (signature_counts[key], key))
+        exact_match_rate = signature_counts[consensus_signature] / len(suggestions)
+
+        confidences = [float(suggestion.get("confidence") or 0.0) for suggestion in suggestions]
+        avg_confidence = sum(confidences) / len(confidences)
+        conflicts_by_id = self._suggestion_conflicts_by_id(suggestions)
+        total_pairs = len(suggestions) * (len(suggestions) - 1) / 2
+        conflict_pair_count = sum(conflicts_by_id.values()) / 2
+        overlap_conflict_rate = conflict_pair_count / total_pairs if total_pairs else 0.0
+        review_counts = {"accept": 0, "reject": 0, "uncertain": 0}
+        review_risk_sum = 0.0
+        reviewed_candidate_count = 0
+        candidate_scores = []
+
+        for suggestion in suggestions:
+            latest_review = suggestion.get("latest_review") or {}
+            recommendation = latest_review.get("recommendation")
+            review_risk = self._review_recommendation_risk(recommendation)
+            if recommendation in review_counts:
+                review_counts[recommendation] += 1
+                reviewed_candidate_count += 1
+            review_risk_sum += review_risk
+            candidate_conflicts = conflicts_by_id.get(suggestion["id"], 0)
+            candidate_scores.append(
+                {
+                    "suggestion_id": suggestion["id"],
+                    "span_signature": self._suggestion_signature(suggestion),
+                    "span_f1_to_consensus": self._span_f1_to_signature(suggestion, consensus_signature),
+                    "model_confidence": suggestion.get("confidence"),
+                    "review_recommendation": recommendation,
+                    "review_risk": round(review_risk, 4),
+                    "overlap_conflict_count": candidate_conflicts,
+                    "rule_risk": round(min(1.0, review_risk + (0.25 * candidate_conflicts)), 4),
+                }
+            )
+
+        review_risk = review_risk_sum / len(suggestions)
+        agreement = 1.0 - overlap_conflict_rate
+        avg_rule_risk = min(1.0, (overlap_conflict_rate * 0.55) + (review_risk * 0.45))
+        raw_score = (agreement * 0.5) + (avg_confidence * 0.25) + ((1.0 - review_risk) * 0.15) + (exact_match_rate * 0.1)
+        score = max(0.0, min(raw_score, 1.0 - (avg_rule_risk * 0.35)))
+        review_route = self._consistency_review_route(score, overlap_conflict_rate, review_risk)
+        return {
+            "score": round(score, 4),
+            "agreement": round(agreement, 4),
+            "exact_match_rate": round(exact_match_rate, 4),
+            "avg_confidence": round(avg_confidence, 4),
+            "avg_rule_risk": round(avg_rule_risk, 4),
+            "overlap_conflict_rate": round(overlap_conflict_rate, 4),
+            "review_risk": round(review_risk, 4),
+            "review_route": review_route,
+            "route_reason": self._consistency_route_reason(review_route),
+            "reviewed_candidate_count": reviewed_candidate_count,
+            "review_counts": review_counts,
+            "consensus_signature": consensus_signature,
+            "candidate_scores": candidate_scores,
+        }
+
+    @classmethod
+    def _suggestion_conflicts_by_id(cls, suggestions: list[dict[str, Any]]) -> dict[str, int]:
+        conflicts = {suggestion["id"]: 0 for suggestion in suggestions}
+        for left_index, left in enumerate(suggestions):
+            for right in suggestions[left_index + 1 :]:
+                if not cls._suggestions_overlap(left, right):
+                    continue
+                if cls._suggestion_signature(left) == cls._suggestion_signature(right):
+                    continue
+                conflicts[left["id"]] += 1
+                conflicts[right["id"]] += 1
+        return conflicts
+
+    @staticmethod
+    def _suggestions_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
+        return int(left["start_token_index"]) <= int(right["end_token_index"]) and int(left["end_token_index"]) >= int(right["start_token_index"])
+
+    @staticmethod
+    def _suggestion_signature(suggestion: dict[str, Any]) -> str:
+        return ":".join(
+            [
+                str(suggestion["tag_id"]),
+                str(suggestion["start_token_index"]),
+                str(suggestion["end_token_index"]),
+                str(suggestion.get("match_key") or suggestion.get("text") or ""),
+            ]
+        )
+
+    @classmethod
+    def _span_f1_to_signature(cls, suggestion: dict[str, Any], signature: str) -> float:
+        tag_id, start, end, *_ = signature.split(":", 3)
+        if str(suggestion["tag_id"]) != tag_id:
+            return 0.0
+        left = set(range(int(suggestion["start_token_index"]), int(suggestion["end_token_index"]) + 1))
+        right = set(range(int(start), int(end) + 1))
+        if not left and not right:
+            return 1.0
+        if not left or not right:
+            return 0.0
+        overlap = len(left & right)
+        precision = overlap / len(left)
+        recall = overlap / len(right)
+        return round((2 * precision * recall) / (precision + recall), 4) if precision + recall else 0.0
+
+    @staticmethod
+    def _review_recommendation_risk(recommendation: str | None) -> float:
+        if recommendation == "reject":
+            return 1.0
+        if recommendation == "uncertain":
+            return 0.6
+        return 0.0
+
+    @staticmethod
+    def _consistency_review_route(score: float, overlap_conflict_rate: float, review_risk: float) -> str:
+        if review_risk >= 0.6 or overlap_conflict_rate >= 0.25 or score < 0.7:
+            return "expert_review"
+        if score < 0.9 or review_risk > 0:
+            return "light_review"
+        return "high_confidence_sample"
+
+    @staticmethod
+    def _consistency_route_reason(route: str) -> str:
+        reasons = {
+            "expert_review": "High conflict, low score, or LLM reject/uncertain signal; prioritize for human calibration.",
+            "light_review": "Moderate confidence or minor risk; review after expert-priority items.",
+            "high_confidence_sample": "High confidence with no overlap conflict or negative LLM review signal; sample for audit.",
+        }
+        return reasons[route]
 
     def _export_prodigy_document_lines(self, project_id: str, document_id: str, view_id: str) -> list[str]:
         document = self.get_document(project_id, document_id)

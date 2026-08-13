@@ -35,7 +35,7 @@ AnnoPilot 现在同时维护两个 surface：
 - 当前句第一条 suggestion 会标成 `Y/N target`，键盘 `Y` 接受单条、`N` 拒绝单条；`A` / `X` 仍用于当前句批量接受 / 拒绝。
 - 当前句 `A` / `X` 走 sentence-scoped batch endpoint，在一个 SQLite transaction 中处理该句所有 pending suggestions，避免前端逐条循环写入。
 - 支持独立 review queue API 和右侧 review queue 列表，可按原文位置、稳定随机 baseline、低 confidence、Goldsmith risk 或 hybrid calibration 排序；Goldsmith / hybrid 会把 latest LLM review 的 `reject` / `uncertain` 作为额外风险信号；summary metrics 会直接展示建议状态、LLM 评审推荐分布、待审建议来源、置信度分布和 human-calibrated error discovery 曲线；处理完当前句建议后会自动跳到下一句待确认，保留 `R` 快捷键手动跳转。
-- 支持导出 task JSONL、Prodigy `ner_manual` / `spans_manual` JSONL、Goldsmith/Rosetta-style review queue、human choices、hard examples 与 boundary feedback JSONL、manifest JSON、events JSONL 和 Character RAG run provenance JSON。
+- 支持导出 task JSONL、Prodigy `ner_manual` / `spans_manual` JSONL、Goldsmith/Rosetta-style review queue、human choices、hard examples、boundary feedback 与 consistency scores JSONL、manifest JSON、events JSONL 和 Character RAG run provenance JSON。
 
 当前 backend 和 frontend 已支持 Prodigy / AnnoPilot style annotations JSONL 导入，入口位于右侧 metrics/export panel。
 
@@ -97,6 +97,7 @@ GET    /api/projects/{project_id}/documents/{document_id}/export.goldsmith.revie
 GET    /api/projects/{project_id}/documents/{document_id}/export.goldsmith.human-choices.jsonl
 GET    /api/projects/{project_id}/documents/{document_id}/export.goldsmith.hard-examples.jsonl
 GET    /api/projects/{project_id}/documents/{document_id}/export.goldsmith.boundary-feedback.jsonl
+GET    /api/projects/{project_id}/documents/{document_id}/export.goldsmith.consistency-scores.jsonl
 GET    /api/projects/{project_id}/documents/{document_id}/export.manifest.json
 GET    /api/projects/{project_id}/events.jsonl
 GET    /api/projects/{project_id}/tags/schema.json

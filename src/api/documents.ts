@@ -146,6 +146,10 @@ export function goldsmithBoundaryFeedbackExportUrl(projectId: string, documentId
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.boundary-feedback.jsonl`
 }
 
+export function goldsmithConsistencyScoresExportUrl(projectId: string, documentId: string) {
+  return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.consistency-scores.jsonl`
+}
+
 export function manifestExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.manifest.json`
 }

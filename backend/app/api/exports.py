@@ -127,6 +127,20 @@ def export_goldsmith_boundary_feedback(
     return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
 
 
+@router.get("/documents/{document_id}/export.goldsmith.consistency-scores.jsonl")
+def export_goldsmith_consistency_scores(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> StreamingResponse:
+    try:
+        lines = storage.export_goldsmith_consistency_scores_lines(project_id, document_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.goldsmith.consistency-scores.jsonl"'}
+    return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
+
+
 @router.get("/events.jsonl")
 def export_events(
     project_id: str,

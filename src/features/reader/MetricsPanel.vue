@@ -30,6 +30,7 @@ const emit = defineEmits<{
   'export-goldsmith-human-choices': []
   'export-goldsmith-hard-examples': []
   'export-goldsmith-boundary-feedback': []
+  'export-goldsmith-consistency-scores': []
   'import-annotations': [file: File]
   'reset-project': []
   'review-sentence': [sentenceIndex: number]
@@ -425,6 +426,11 @@ function shortHash(value: string) {
 
     <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-goldsmith-boundary-feedback')">
       {{ labels.exportBoundaryFeedback }}
+      <Download :size="18" aria-hidden="true" />
+    </button>
+
+    <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-goldsmith-consistency-scores')">
+      {{ labels.exportConsistencyScores }}
       <Download :size="18" aria-hidden="true" />
     </button>
 
