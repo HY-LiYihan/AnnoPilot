@@ -7,6 +7,7 @@ import {
   goldsmithConsistencyScoresExportUrl,
   goldsmithHardExamplesExportUrl,
   goldsmithHumanChoicesExportUrl,
+  goldsmithRiskReasonsExportUrl,
   goldsmithReviewQueueExportUrl,
   manifestExportUrl,
   prodigyBundleExportUrl,
@@ -92,6 +93,10 @@ export function useReaderExports(options: ReaderExportOptions) {
     withDocument(goldsmithCandidateRunsExportUrl)
   }
 
+  function exportGoldsmithRiskReasonsJsonl() {
+    withDocument(goldsmithRiskReasonsExportUrl)
+  }
+
   return {
     exportEventsJsonl,
     exportGoldsmithBoundaryFeedbackJsonl,
@@ -99,6 +104,7 @@ export function useReaderExports(options: ReaderExportOptions) {
     exportGoldsmithConsistencyScoresJsonl,
     exportGoldsmithHardExamplesJsonl,
     exportGoldsmithHumanChoicesJsonl,
+    exportGoldsmithRiskReasonsJsonl,
     exportGoldsmithReviewQueueJsonl,
     exportJsonl,
     exportManifestJson,

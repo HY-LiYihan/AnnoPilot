@@ -38,6 +38,7 @@ class ExportService:
         goldsmith_boundary_feedback_schema_version: str,
         goldsmith_consistency_scores_schema_version: str,
         goldsmith_candidate_runs_schema_version: str,
+        goldsmith_risk_reasons_schema_version: str,
         medium_confidence_threshold: float,
     ) -> None:
         self.get_document = get_document
@@ -64,6 +65,7 @@ class ExportService:
         self.goldsmith_boundary_feedback_schema_version = goldsmith_boundary_feedback_schema_version
         self.goldsmith_consistency_scores_schema_version = goldsmith_consistency_scores_schema_version
         self.goldsmith_candidate_runs_schema_version = goldsmith_candidate_runs_schema_version
+        self.goldsmith_risk_reasons_schema_version = goldsmith_risk_reasons_schema_version
         self.medium_confidence_threshold = medium_confidence_threshold
 
     def export_document_lines(self, project_id: str, document_id: str) -> list[str]:
@@ -173,6 +175,7 @@ class ExportService:
             "goldsmith_boundary_feedback_jsonl": "".join(context["goldsmith_boundary_feedback_lines"]),
             "goldsmith_consistency_scores_jsonl": "".join(context["goldsmith_consistency_score_lines"]),
             "goldsmith_candidate_runs_jsonl": "".join(context["goldsmith_candidate_run_lines"]),
+            "goldsmith_risk_reasons_jsonl": "".join(context["goldsmith_risk_reason_lines"]),
         }
         bundle_files: dict[str, str] = {
             "README.txt": self._prodigy_bundle_readme(project_id, document_id, manifest),
@@ -199,6 +202,15 @@ class ExportService:
         goldsmith_boundary_feedback_lines = self.export_goldsmith_boundary_feedback_lines(project_id, document_id)
         goldsmith_consistency_score_lines = self.export_goldsmith_consistency_scores_lines(project_id, document_id)
         goldsmith_candidate_run_lines = self.export_goldsmith_candidate_runs_lines(project_id, document_id)
+        goldsmith_risk_reason_lines = self._build_goldsmith_risk_reason_lines(
+            project_id=project_id,
+            document_id=document_id,
+            document=document,
+            generated_at=self.now(),
+            review_queue_lines=goldsmith_queue_lines,
+            hard_example_lines=goldsmith_hard_example_lines,
+            boundary_feedback_lines=goldsmith_boundary_feedback_lines,
+        )
         event_lines = self.export_event_lines(project_id)
         audit_summary = self.audit_project(project_id)
         tag_schema_payload = self.export_tag_schema(project_id)
@@ -302,6 +314,11 @@ class ExportService:
                     schema_version=self.goldsmith_candidate_runs_schema_version,
                     lines=goldsmith_candidate_run_lines,
                 ),
+                "goldsmith_risk_reasons_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.risk-reasons.jsonl",
+                    schema_version=self.goldsmith_risk_reasons_schema_version,
+                    lines=goldsmith_risk_reason_lines,
+                ),
             },
         }
         manifest["content_sha256"] = self._payload_sha256(self._manifest_content_payload(manifest))
@@ -317,6 +334,7 @@ class ExportService:
             "goldsmith_boundary_feedback_lines": goldsmith_boundary_feedback_lines,
             "goldsmith_consistency_score_lines": goldsmith_consistency_score_lines,
             "goldsmith_candidate_run_lines": goldsmith_candidate_run_lines,
+            "goldsmith_risk_reason_lines": goldsmith_risk_reason_lines,
             "event_lines": event_lines,
             "tag_schema_line": tag_schema_line,
             "run_provenance_lines": run_provenance_lines,
@@ -659,6 +677,148 @@ class ExportService:
                 }
                 lines.append(json.dumps(line, ensure_ascii=False) + "\n")
         return lines
+
+    def export_goldsmith_risk_reason_lines(self, project_id: str, document_id: str) -> list[str]:
+        document = self.get_document(project_id, document_id)
+        return self._build_goldsmith_risk_reason_lines(
+            project_id=project_id,
+            document_id=document_id,
+            document=document,
+            generated_at=self.now(),
+            review_queue_lines=self.export_goldsmith_review_queue_lines(project_id, document_id, order="hybrid", limit=100),
+            hard_example_lines=self.export_goldsmith_hard_examples_lines(project_id, document_id),
+            boundary_feedback_lines=self.export_goldsmith_boundary_feedback_lines(project_id, document_id),
+        )
+
+    def _build_goldsmith_risk_reason_lines(
+        self,
+        *,
+        project_id: str,
+        document_id: str,
+        document: dict[str, Any],
+        generated_at: str,
+        review_queue_lines: list[str],
+        hard_example_lines: list[str],
+        boundary_feedback_lines: list[str],
+    ) -> list[str]:
+        metrics = document.get("metrics") or {}
+        goldsmith_curve = (metrics.get("review_efficiency_curves") or {}).get("goldsmith") or {}
+        summaries: dict[str, dict[str, Any]] = {}
+
+        def summary_for(reason_code: str) -> dict[str, Any]:
+            return summaries.setdefault(
+                reason_code,
+                {
+                    "reason_code": reason_code,
+                    "calibrated_count": 0,
+                    "disagreement_count": 0,
+                    "queue_count": 0,
+                    "hard_example_count": 0,
+                    "boundary_feedback_count": 0,
+                    "first_examples": [],
+                },
+            )
+
+        for reason_code, count in (goldsmith_curve.get("reason_counts") or {}).items():
+            summary_for(reason_code)["calibrated_count"] = int(count)
+        for reason_code, count in (goldsmith_curve.get("disagreement_reason_counts") or {}).items():
+            summary_for(reason_code)["disagreement_count"] = int(count)
+
+        artifact_sources = [
+            (
+                "review_queue",
+                "queue_count",
+                review_queue_lines,
+            ),
+            (
+                "hard_examples",
+                "hard_example_count",
+                hard_example_lines,
+            ),
+            (
+                "boundary_feedback",
+                "boundary_feedback_count",
+                boundary_feedback_lines,
+            ),
+        ]
+        for source_artifact, count_key, lines in artifact_sources:
+            for payload in self._jsonl_payloads(lines):
+                for reason_code in payload.get("risk_reason_codes") or []:
+                    summary = summary_for(reason_code)
+                    summary[count_key] += 1
+                    if len(summary["first_examples"]) < 3:
+                        summary["first_examples"].append(self._risk_reason_example(source_artifact, payload))
+
+        lines = []
+        sorted_summaries = sorted(
+            summaries.values(),
+            key=lambda item: (
+                -int(item["disagreement_count"]),
+                -self._risk_reason_total_count(item),
+                str(item["reason_code"]),
+            ),
+        )
+        for rank, summary in enumerate(sorted_summaries, start=1):
+            total_count = self._risk_reason_total_count(summary)
+            line = {
+                "schema_version": self.goldsmith_risk_reasons_schema_version,
+                "record_type": "risk_reason_summary",
+                "generated_at": generated_at,
+                "project_id": project_id,
+                "document_id": document_id,
+                "rank": rank,
+                "reason_code": summary["reason_code"],
+                "total_count": total_count,
+                "calibrated_count": summary["calibrated_count"],
+                "disagreement_count": summary["disagreement_count"],
+                "queue_count": summary["queue_count"],
+                "hard_example_count": summary["hard_example_count"],
+                "boundary_feedback_count": summary["boundary_feedback_count"],
+                "first_examples": summary["first_examples"],
+                "meta": {
+                    "source": "annopilot",
+                    "artifact": "risk_reasons.jsonl",
+                    "curve_order": "goldsmith",
+                    "queue_order": "hybrid",
+                    "reviewed_count": goldsmith_curve.get("reviewed_count", 0),
+                    "early_reviewed_count": goldsmith_curve.get("early_reviewed_count", 0),
+                },
+            }
+            lines.append(json.dumps(line, ensure_ascii=False) + "\n")
+        return lines
+
+    @staticmethod
+    def _risk_reason_total_count(summary: dict[str, Any]) -> int:
+        return (
+            int(summary.get("calibrated_count") or 0)
+            + int(summary.get("queue_count") or 0)
+            + int(summary.get("hard_example_count") or 0)
+            + int(summary.get("boundary_feedback_count") or 0)
+        )
+
+    @staticmethod
+    def _jsonl_payloads(lines: list[str]) -> list[dict[str, Any]]:
+        payloads = []
+        for line in lines:
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            if isinstance(payload, dict):
+                payloads.append(payload)
+        return payloads
+
+    @staticmethod
+    def _risk_reason_example(source_artifact: str, payload: dict[str, Any]) -> dict[str, Any]:
+        suggestion = payload.get("first_suggestion") or payload.get("suggestion") or {}
+        return {
+            "source_artifact": source_artifact,
+            "sentence_id": payload.get("sentence_id"),
+            "sentence_index": payload.get("sentence_index"),
+            "suggestion_id": payload.get("suggestion_id") or suggestion.get("id"),
+            "text": payload.get("text"),
+            "span_text": (payload.get("span") or {}).get("text") or suggestion.get("text"),
+            "label": (payload.get("span") or {}).get("label") or suggestion.get("tag_name"),
+        }
 
     def _goldsmith_consistency_score(self, suggestions: list[dict[str, Any]]) -> dict[str, Any]:
         signatures = [self._suggestion_signature(suggestion) for suggestion in suggestions]

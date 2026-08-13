@@ -162,6 +162,10 @@ export function goldsmithCandidateRunsExportUrl(projectId: string, documentId: s
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.candidate-runs.jsonl`
 }
 
+export function goldsmithRiskReasonsExportUrl(projectId: string, documentId: string) {
+  return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.risk-reasons.jsonl`
+}
+
 export function manifestExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.manifest.json`
 }

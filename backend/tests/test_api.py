@@ -3303,9 +3303,24 @@ def test_review_efficiency_curves_measure_error_discovery_by_queue_order(tmp_pat
         assert curves["goldsmith"]["points"][0]["risk_reason_codes"] == ["low_confidence"]
         assert curves["goldsmith"]["points"][1]["cumulative_disagreements"] == 2
 
+        risk_reasons_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.risk-reasons.jsonl")
+        assert risk_reasons_response.status_code == 200
+        assert risk_reasons_response.headers["content-disposition"] == f'attachment; filename="{document_id}.goldsmith.risk-reasons.jsonl"'
+        risk_reasons = [json.loads(line) for line in risk_reasons_response.text.splitlines()]
+        assert risk_reasons[0]["schema_version"] == "annopilot.goldsmith_risk_reasons.v1"
+        assert risk_reasons[0]["record_type"] == "risk_reason_summary"
+        assert risk_reasons[0]["reason_code"] == "low_confidence"
+        assert risk_reasons[0]["calibrated_count"] == 1
+        assert risk_reasons[0]["disagreement_count"] == 1
+        assert risk_reasons[0]["total_count"] >= 1
+        assert risk_reasons[0]["meta"]["curve_order"] == "goldsmith"
+
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert manifest["metrics"]["review_efficiency_curves"]["goldsmith"]["early_disagreement_count"] == 3
         assert manifest["metrics"]["review_efficiency_curves"]["goldsmith"]["disagreement_reason_counts"] == {"low_confidence": 1}
+        assert manifest["artifacts"]["goldsmith_risk_reasons_jsonl"]["schema_version"] == "annopilot.goldsmith_risk_reasons.v1"
+        assert manifest["artifacts"]["goldsmith_risk_reasons_jsonl"]["filename"] == f"{document_id}.goldsmith.risk-reasons.jsonl"
+        assert manifest["artifacts"]["goldsmith_risk_reasons_jsonl"]["line_count"] == len(risk_reasons)
 
 
 def test_review_efficiency_goldsmith_uses_candidate_disagreement_risk(tmp_path: Path) -> None:
