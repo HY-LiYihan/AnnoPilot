@@ -22,7 +22,7 @@ AnnoPilot 现在同时维护两个 surface：
 - 将文档切分为 sentences，并展示 token-level annotation UI。
 - 中间 reader 使用 sentence window 加载，避免长文档一次性把所有 tokens / annotations / suggestions 塞给前端。
 - 左侧保留全局 sentence dot grid，绿色表示已完成，紫灰色表示已忽略，黄色表示有待确认建议，灰色表示未开始。
-- 支持先选择 token/span，再用数字键或左侧 tag 应用标签；`S` 可把当前整句设为 pending span，便于 Monogloss 或关键断言类标注。
+- 支持先选择 token/span，再用数字键或左侧 tag 应用标签；`S` 可把当前整句设为 pending span，`M` 可一键把当前句标为 Monogloss、写入 accept 并前进。
 - 支持撤销最近一次人工 span 创建/删除，按钮和 `Ctrl/Cmd+Z` 均可触发，仍通过 backend API 写入 SQLite/JSONL。
 - 右侧 metrics panel 集中展示快捷键和移动端手势，便于进入高频标注模式。
 - 支持新增 / 重命名 / 编辑准则说明 / 维护低算力 RAG 词面种子 / 删除 tag；删除已使用 tag 前会提示对应 annotations 和 pending suggestions 会被一并删除。

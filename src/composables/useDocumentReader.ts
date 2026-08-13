@@ -198,6 +198,7 @@ export function useDocumentReader() {
     cycleActiveSuggestionTarget,
     currentSentenceIndex,
     jumpToNextReviewSentence,
+    markCurrentSentenceMonogloss,
     rejectCurrentSentenceSuggestions,
     rejectSuggestedSpan,
     reopenCurrentSentence,
@@ -474,6 +475,30 @@ export function useDocumentReader() {
     const firstToken = sentence.tokens[0]
     const lastToken = sentence.tokens[sentence.tokens.length - 1]
     selection.setPendingSelection(sentence.id, firstToken.token_index, lastToken.token_index)
+  }
+
+  async function markCurrentSentenceMonogloss() {
+    const sentence = currentSentence.value
+    const tag = findMonoglossTag()
+    if (!sentence?.tokens.length || isSaving.value) return
+    if (!tag) {
+      readerError.value = 'Monogloss label is not available in the current schema.'
+      return
+    }
+    const firstToken = sentence.tokens[0]
+    const lastToken = sentence.tokens[sentence.tokens.length - 1]
+    selectedTagId.value = tag.id
+    const created = await createSentenceAnnotation(sentence, firstToken.token_index, lastToken.token_index, tag.id)
+    if (created) await completeCurrentSentence('accept')
+  }
+
+  function findMonoglossTag() {
+    return tags.value.find((tag) =>
+      tag.id === 'engagement_monogloss' ||
+        tag.id.toLowerCase().includes('monogloss') ||
+        tag.name.toLowerCase().includes('monogloss') ||
+        tag.name.includes('单声'),
+    ) ?? null
   }
 
   function setActiveSuggestionTarget(suggestion: SuggestionDef) {
@@ -820,7 +845,7 @@ export function useDocumentReader() {
 
   async function createSentenceAnnotation(sentence: SentenceDef, start: number, end: number, tagId: string) {
     const tag = tags.value.find((tagItem) => tagItem.id === tagId)
-    if (!tag || isSaving.value) return
+    if (!tag || isSaving.value) return false
     isSaving.value = true
     readerError.value = ''
     const [startTokenIndex, endTokenIndex] = normalizedRange(start, end)
@@ -843,8 +868,10 @@ export function useDocumentReader() {
       }
       await refreshDocumentSummary()
       await refreshAuditSummary()
+      return true
     } catch (error) {
       readerError.value = error instanceof Error ? error.message : 'Could not save annotation.'
+      return false
     } finally {
       isSaving.value = false
     }
@@ -1369,6 +1396,7 @@ export function useDocumentReader() {
     setCurrentSentence,
     jumpToNextReviewSentence,
     setReviewQueueOrder,
+    markCurrentSentenceMonogloss,
     completeCurrentSentence,
     reopenCurrentSentence,
     generateDocumentSuggestions,

@@ -10,6 +10,7 @@ type KeyboardShortcutActions = {
   completeCurrentSentence: (answer?: SentenceAnswer) => void | Promise<void>
   cycleActiveSuggestionTarget: (direction: 1 | -1) => void
   jumpToNextReviewSentence: () => void
+  markCurrentSentenceMonogloss: () => void | Promise<void>
   rejectCurrentSentenceSuggestions: () => void | Promise<void>
   rejectSuggestedSpan: (suggestion: SuggestionDef) => void | Promise<void>
   reopenCurrentSentence: () => void | Promise<void>
@@ -69,6 +70,11 @@ export function useReaderKeyboardShortcuts(options: ReaderKeyboardShortcutOption
     if (event.key.toLowerCase() === 's') {
       event.preventDefault()
       options.selectCurrentSentenceSpan()
+      return
+    }
+    if (event.key.toLowerCase() === 'm') {
+      event.preventDefault()
+      void options.markCurrentSentenceMonogloss()
       return
     }
     if ((event.code === 'Space' || event.key === ' ') && !target?.matches('button, a')) {

@@ -71,6 +71,7 @@ const emit = defineEmits<{
   'token-pointer-enter': [sentence: SentenceDef, tokenIndex: number]
   'token-pointer-up': [sentence: SentenceDef, tokenIndex: number]
   'select-current-sentence': []
+  'mark-current-monogloss': []
   'delete-annotation': [annotationId: string]
   undo: []
   'generate-current-suggestions': []
@@ -448,6 +449,9 @@ function predicatePositionClasses(
           </button>
           <button class="suggest-button secondary" :disabled="!currentSentence || isSaving" @click="emit('select-current-sentence')">
             {{ labels.selectSentence }}
+          </button>
+          <button class="suggest-button secondary" :disabled="!currentSentence || isSaving" @click="emit('mark-current-monogloss')">
+            {{ labels.markMonogloss }}
           </button>
           <button class="batch-review-button accept" :disabled="!documentMeta || isSuggesting || isSaving" @click="emit('auto-annotate-document')">
             <Check :size="16" aria-hidden="true" />

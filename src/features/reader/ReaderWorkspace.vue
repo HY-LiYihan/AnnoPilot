@@ -142,6 +142,7 @@ const {
   setCurrentSentence,
   jumpToNextReviewSentence,
   setReviewQueueOrder,
+  markCurrentSentenceMonogloss,
   completeCurrentSentence,
   reopenCurrentSentence,
   generateDocumentSuggestions,
@@ -353,6 +354,7 @@ async function confirmProjectReset() {
         @token-pointer-enter="onTokenPointerEnter"
         @token-pointer-up="onTokenPointerUp"
         @select-current-sentence="selectCurrentSentenceSpan"
+        @mark-current-monogloss="markCurrentSentenceMonogloss"
         @delete-annotation="removeAnnotation"
         @undo="undoLastSpanAction"
         @generate-current-suggestions="generateCurrentSentenceSuggestions"
