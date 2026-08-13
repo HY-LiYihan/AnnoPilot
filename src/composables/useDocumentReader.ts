@@ -3,7 +3,6 @@ import {
   completeSentence,
   fetchDocuments,
   fetchDocumentSummary,
-  fetchReviewQueue,
   fetchSamplePresets,
   importTxt,
   loadSamplePreset as loadSamplePresetApi,
@@ -18,8 +17,6 @@ import {
   type DocumentListItem,
   type DocumentSummaryPayload,
   type Metrics,
-  type ReviewQueueItem,
-  type ReviewQueueOrder,
   type SamplePreset,
   type SentenceDef,
   type SentenceQueueItem,
@@ -35,6 +32,7 @@ import { useReaderAudit } from './useReaderAudit'
 import { useReaderSuggestions } from './useReaderSuggestions'
 import { useReaderAnnotationActions } from './useReaderAnnotationActions'
 import { useReaderSentenceWindow } from './useReaderSentenceWindow'
+import { useReaderReviewQueue } from './useReaderReviewQueue'
 
 function emptyMetrics(): Metrics {
   return {
@@ -73,9 +71,6 @@ export function useDocumentReader() {
   const isSuggesting = ref(false)
   const isResetting = ref(false)
   const readerError = ref('')
-  const reviewQueueDetails = ref<ReviewQueueItem[]>([])
-  const reviewQueueTotal = ref(0)
-  const reviewQueueOrder = ref<ReviewQueueOrder>('position')
   const activeSuggestionId = ref('')
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
   let interactiveRefreshSerial = 0
@@ -159,22 +154,25 @@ export function useDocumentReader() {
     const index = activeSuggestions.value.findIndex((suggestion) => suggestion.id === activeSuggestionTargetId.value)
     return index >= 0 ? index + 1 : 0
   })
-  const reviewQueueItems = computed(() => sentenceQueue.value.filter((sentence) => !sentence.completed && sentence.suggestion_count > 0))
-  const reviewNavigationItems = computed(() => {
-    if (reviewQueueOrder.value === 'position' || !reviewQueueDetails.value.length) {
-      return reviewQueueItems.value.map((sentence) => ({ id: sentence.id, index: sentence.index }))
-    }
-    return reviewQueueDetails.value.map((sentence) => ({ id: sentence.id, index: sentence.index }))
+  const {
+    hasReviewQueue,
+    jumpToNextReviewIfCurrentCleared,
+    jumpToNextReviewSentence,
+    queueItems,
+    refreshReviewQueue,
+    resetReviewQueueState,
+    reviewQueueDetails,
+    reviewQueueOrder,
+    reviewQueueSummary,
+    reviewQueueTotal,
+    setReviewQueueOrder,
+  } = useReaderReviewQueue({
+    activeSuggestions,
+    currentSentenceIndex,
+    documentMeta,
+    sentenceQueue,
+    setCurrentSentence,
   })
-  const reviewQueueSummary = computed(() => {
-    const items = reviewNavigationItems.value
-    const total = reviewQueueOrder.value === 'position' ? reviewQueueItems.value.length : reviewQueueTotal.value || items.length
-    if (!total) return 'No review queue'
-    const queueIndex = items.findIndex((sentence) => sentence.index === currentSentenceIndex.value)
-    return queueIndex >= 0 ? `Review ${queueIndex + 1}/${total}` : `${total} pending reviews`
-  })
-  const hasReviewQueue = computed(() => sentenceQueue.value.some((sentence) => !sentence.completed && sentence.suggestion_count > 0))
-  const queueItems = computed(() => sentenceQueue.value)
 
   const {
     applyTagToSelection,
@@ -428,44 +426,6 @@ export function useDocumentReader() {
     await refreshReviewQueue()
   }
 
-  async function refreshReviewQueue() {
-    if (!documentMeta.value) {
-      reviewQueueDetails.value = []
-      reviewQueueTotal.value = 0
-      return
-    }
-    try {
-      const payload = await fetchReviewQueue(PROJECT_ID, documentMeta.value.id, 20, reviewQueueOrder.value)
-      reviewQueueDetails.value = payload.items
-      reviewQueueTotal.value = payload.total
-    } catch {
-      reviewQueueDetails.value = []
-      reviewQueueTotal.value = 0
-    }
-  }
-
-  function setReviewQueueOrder(order: ReviewQueueOrder) {
-    if (reviewQueueOrder.value === order) return
-    reviewQueueOrder.value = order
-    void refreshReviewQueue()
-  }
-
-  function jumpToNextReviewSentence() {
-    const items = reviewNavigationItems.value
-    if (!items.length) return
-    const currentQueueIndex = items.findIndex((sentence) => sentence.index === currentSentenceIndex.value)
-    const target = currentQueueIndex >= 0
-      ? items[(currentQueueIndex + 1) % items.length]
-      : reviewQueueOrder.value === 'position'
-        ? items.find((sentence) => sentence.index >= currentSentenceIndex.value + 1) ?? items[0]
-        : items[0]
-    if (target) setCurrentSentence(target.index)
-  }
-
-  function jumpToNextReviewIfCurrentCleared() {
-    if (activeSuggestions.value.length === 0 && hasReviewQueue.value) jumpToNextReviewSentence()
-  }
-
   function setActiveSuggestionTarget(suggestion: SuggestionDef) {
     if (!activeSuggestions.value.some((item) => item.id === suggestion.id)) return
     activeSuggestionId.value = suggestion.id
@@ -690,8 +650,7 @@ export function useDocumentReader() {
       resetAnnotationActionState()
       sentenceElements.value = {}
       resetAuditState()
-      reviewQueueDetails.value = []
-      reviewQueueTotal.value = 0
+      resetReviewQueueState()
       selection.clearSelection()
       await loadDocumentList()
       await loadProjectTags()
