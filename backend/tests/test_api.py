@@ -3008,6 +3008,106 @@ def test_review_efficiency_curves_measure_error_discovery_by_queue_order(tmp_pat
         assert manifest["metrics"]["review_efficiency_curves"]["goldsmith"]["early_disagreement_count"] == 3
 
 
+def test_review_efficiency_goldsmith_uses_candidate_disagreement_risk(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        first_tag = client.post("/api/projects/default/tags", json={"name": "Entertain"}).json()["tag"]
+        second_tag = client.post("/api/projects/default/tags", json={"name": "Disclaim"}).json()["tag"]
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("curve-conflict.txt", "Alpha beta. Gamma delta.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=2").json()
+        first_sentence = page["sentences"][0]
+        second_sentence = page["sentences"][1]
+        now = storage._now()
+
+        with storage.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO annotation_runs (id, project_id, document_id, recipe, config_json, input_count, suggestion_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("run_curve_conflict", "default", document_id, "controlled", "{}", 3, 3, now),
+            )
+
+            def insert_reviewed_suggestion(
+                suggestion_id: str,
+                sentence: dict,
+                tag_id: str,
+                start_offset: int,
+                end_offset: int,
+                confidence: float,
+                recommendation: str,
+                status: str,
+            ) -> None:
+                start_token = sentence["tokens"][start_offset]
+                end_token = sentence["tokens"][end_offset]
+                text = sentence["text"][start_token["start_char"] - sentence["start_char"] : end_token["end_char"] - sentence["start_char"]]
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestions (
+                      id, run_id, sentence_id, tag_id, start_token_index, end_token_index,
+                      start_char, end_char, text, confidence, source, evidence_text, match_key, evidence_match_key,
+                      context_before, context_after, status, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        suggestion_id,
+                        "run_curve_conflict",
+                        sentence["id"],
+                        tag_id,
+                        start_token["token_index"],
+                        end_token["token_index"],
+                        start_token["start_char"],
+                        end_token["end_char"],
+                        text,
+                        confidence,
+                        "lexical_exact",
+                        text,
+                        text.casefold(),
+                        text.casefold(),
+                        "",
+                        "",
+                        status,
+                        now,
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestion_reviews (
+                      id, suggestion_id, model, recommendation, confidence, rationale, context_sha256, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        f"rev_{suggestion_id}",
+                        suggestion_id,
+                        "fake-gpt5.5",
+                        recommendation,
+                        0.91,
+                        "controlled candidate disagreement fixture",
+                        hashlib.sha256(suggestion_id.encode("utf-8")).hexdigest(),
+                        now,
+                    ),
+                )
+
+            insert_reviewed_suggestion("sug_curve_conflict_aaa", first_sentence, first_tag["id"], 0, 0, 0.98, "accept", "rejected")
+            insert_reviewed_suggestion("sug_curve_conflict_zzz", first_sentence, second_tag["id"], 0, 1, 0.98, "accept", "accepted")
+            insert_reviewed_suggestion("sug_curve_lexical_low", second_sentence, first_tag["id"], 0, 0, 0.70, "accept", "rejected")
+
+        curves = client.get(f"/api/projects/default/documents/{document_id}/summary").json()["metrics"]["review_efficiency_curves"]
+        assert curves["goldsmith"]["points"][0]["suggestion_id"] == "sug_curve_conflict_aaa"
+        assert curves["goldsmith"]["first_disagreement_rank"] == 1
+        assert curves["position"]["points"][0]["suggestion_id"] == "sug_curve_conflict_aaa"
+        assert curves["uncertain"]["points"][0]["suggestion_id"] == "sug_curve_lexical_low"
+
+
 def test_sentence_llm_review_suggestions_reviews_current_queue(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",

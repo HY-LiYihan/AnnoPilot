@@ -766,7 +766,7 @@ class DocumentQueryRepository:
         rows = conn.execute(
             """
             SELECT sg.id, sg.sentence_id, s.sentence_index, sg.start_token_index, sg.end_token_index,
-                   sg.confidence, sg.status, rev.recommendation
+                   sg.tag_id, sg.confidence, sg.status, rev.recommendation
             FROM annotation_suggestions sg
             JOIN sentences s ON s.id = sg.sentence_id
             JOIN documents d ON d.id = s.document_id
@@ -789,12 +789,14 @@ class DocumentQueryRepository:
 
         items = []
         sentence_stats: dict[str, dict[str, Any]] = {}
+        items_by_sentence: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             human_decision = "accept" if row["status"] == "accepted" else "reject"
             item = {
                 "suggestion_id": row["id"],
                 "sentence_id": row["sentence_id"],
                 "sentence_index": int(row["sentence_index"]),
+                "tag_id": row["tag_id"],
                 "start_token_index": int(row["start_token_index"]),
                 "end_token_index": int(row["end_token_index"]),
                 "confidence": float(row["confidence"] or 0.0),
@@ -803,6 +805,7 @@ class DocumentQueryRepository:
                 "disagreement": human_decision != row["recommendation"],
             }
             items.append(item)
+            items_by_sentence.setdefault(row["sentence_id"], []).append(item)
             stats = sentence_stats.setdefault(
                 row["sentence_id"],
                 {
@@ -813,11 +816,18 @@ class DocumentQueryRepository:
             stats["suggestion_count"] += 1
             stats["min_confidence"] = min(float(stats["min_confidence"]), float(row["confidence"] or 0.0))
 
+        candidate_disagreement_by_sentence = {
+            sentence_id: self._candidate_disagreement_score(sentence_items)
+            for sentence_id, sentence_items in items_by_sentence.items()
+        }
+
         for item in items:
             stats = sentence_stats[item["sentence_id"]]
+            candidate_disagreement_score = candidate_disagreement_by_sentence.get(item["sentence_id"], 0.0)
             item["sentence_suggestion_count"] = int(stats["suggestion_count"])
             item["sentence_min_confidence"] = float(stats["min_confidence"])
-            item["risk_score"] = (1.0 - item["sentence_min_confidence"]) * item["sentence_suggestion_count"]
+            item["candidate_disagreement_score"] = candidate_disagreement_score
+            item["risk_score"] = ((1.0 - item["sentence_min_confidence"]) * item["sentence_suggestion_count"]) + candidate_disagreement_score
 
         return {
             order: self._review_efficiency_curve(order, self._order_review_efficiency_items(items, order))
@@ -861,6 +871,7 @@ class DocumentQueryRepository:
     def _review_efficiency_risk_key(item: dict[str, Any]) -> tuple[Any, ...]:
         return (
             -float(item["risk_score"]),
+            -float(item.get("candidate_disagreement_score", 0.0)),
             -int(item["sentence_suggestion_count"]),
             float(item["sentence_min_confidence"]),
             item["sentence_index"],
@@ -868,6 +879,23 @@ class DocumentQueryRepository:
             item["start_token_index"],
             item["suggestion_id"],
         )
+
+    @staticmethod
+    def _candidate_disagreement_score(items: list[dict[str, Any]]) -> float:
+        pair_count = 0
+        conflict_count = 0
+        for left_index, left in enumerate(items):
+            for right in items[left_index + 1 :]:
+                pair_count += 1
+                overlaps = left["start_token_index"] <= right["end_token_index"] and left["end_token_index"] >= right["start_token_index"]
+                disagrees = (
+                    left["start_token_index"] != right["start_token_index"]
+                    or left["end_token_index"] != right["end_token_index"]
+                    or left["tag_id"] != right["tag_id"]
+                )
+                if overlaps and disagrees:
+                    conflict_count += 1
+        return conflict_count / pair_count if pair_count else 0.0
 
     @staticmethod
     def _review_efficiency_curve(order: str, ordered_items: list[dict[str, Any]]) -> dict[str, Any]:
