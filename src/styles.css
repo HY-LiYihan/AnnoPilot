@@ -1828,6 +1828,44 @@ kbd {
   line-height: 1;
 }
 
+.metric-card strong.readiness-status {
+  font-size: clamp(1.35rem, 3.2vw, 2rem);
+}
+
+.export-readiness-card {
+  margin-top: 14px;
+  background: #f7fbf8;
+}
+
+.readiness-list strong {
+  font-size: 0.9rem;
+  line-height: 1.1;
+}
+
+.quality-list.compact.readiness-list {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.quality-list.compact.readiness-list div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 36px;
+  padding: 7px 9px;
+}
+
+.readiness-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readiness-list strong {
+  justify-self: end;
+  white-space: nowrap;
+}
+
 .actor-breakdown {
   display: flex;
   flex-wrap: wrap;

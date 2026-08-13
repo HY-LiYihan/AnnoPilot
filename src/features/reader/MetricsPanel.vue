@@ -123,6 +123,34 @@ function labelMixTitle(item: LabelCount, labels: UiLabels['metrics']) {
   return `${item.name}: ${labels.labelCount(item.count)}`
 }
 
+function coveredLabelCount(metrics: Metrics) {
+  return metrics.annotation_label_counts.filter((item) => item.count > 0).length
+}
+
+function totalLabelCount(metrics: Metrics) {
+  return metrics.annotation_label_counts.length
+}
+
+function pendingSuggestionCount(metrics: Metrics) {
+  return metrics.suggestion_status_counts?.pending ?? metrics.suggestion_label_counts.reduce((total, item) => total + item.count, 0)
+}
+
+function progressPercent(metrics: Metrics) {
+  return (metrics.progress * 100).toFixed(2)
+}
+
+function isProdigyExportReady(documentMeta: DocumentMeta | null, metrics: Metrics) {
+  return Boolean(documentMeta && metrics.sentence_count > 0 && metrics.completed_count >= metrics.sentence_count && pendingSuggestionCount(metrics) === 0 && metrics.annotation_count > 0)
+}
+
+function prodigyReadinessStatus(documentMeta: DocumentMeta | null, metrics: Metrics, labels: UiLabels['metrics']) {
+  if (!documentMeta) return labels.noDocument
+  if (pendingSuggestionCount(metrics) > 0) return labels.exportNeedsReview
+  if (metrics.completed_count < metrics.sentence_count) return labels.exportInProgress
+  if (metrics.annotation_count === 0) return labels.exportNoSpans
+  return labels.exportReady
+}
+
 function reviewOrder(recommendation: string) {
   return { accept: 0, reject: 1, uncertain: 2 }[recommendation as 'accept' | 'reject' | 'uncertain'] ?? 3
 }
@@ -194,6 +222,30 @@ function shortHash(value: string) {
         <Trash2 :size="17" aria-hidden="true" />
       </button>
     </div>
+
+    <article class="metric-card export-readiness-card" :class="{ warning: documentMeta && !isProdigyExportReady(documentMeta, metrics) }">
+      <Download :size="22" aria-hidden="true" />
+      <span>{{ labels.prodigyReadiness }}</span>
+      <strong class="readiness-status">{{ prodigyReadinessStatus(documentMeta, metrics, labels) }}</strong>
+      <div class="quality-list compact readiness-list" :aria-label="labels.prodigyReadiness">
+        <div>
+          <span>{{ labels.completedSentences }}</span>
+          <strong>{{ labels.completedSummary(metrics.completed_count, metrics.sentence_count, progressPercent(metrics)) }}</strong>
+        </div>
+        <div>
+          <span>{{ labels.labelCoverage }}</span>
+          <strong>{{ labels.labelCoverageSummary(coveredLabelCount(metrics), totalLabelCount(metrics)) }}</strong>
+        </div>
+        <div>
+          <span>{{ labels.pendingSuggestions }}</span>
+          <strong>{{ pendingSuggestionCount(metrics) }}</strong>
+        </div>
+        <div>
+          <span>{{ labels.exportFormat }}</span>
+          <strong>Prodigy</strong>
+        </div>
+      </div>
+    </article>
 
     <div class="metric-stack">
       <article class="metric-card">
