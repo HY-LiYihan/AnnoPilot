@@ -14,7 +14,7 @@
       "id": "engagement_entertain",
       "name": "Entertain 可能化",
       "description": "通过可能性、推测、似然或主观判断打开对话空间。常见线索包括 may, might, perhaps, likely, 可能, 也许, 或许, 似乎。",
-      "examples": ["may", "might", "perhaps", "likely", "it seems", "可能", "也许", "或许", "似乎", "大概"],
+      "examples": ["may", "might", "perhaps", "likely", "suggests", "it seems", "possibly", "可能", "也许", "或许", "似乎", "大概"],
       "shortcut": "2",
       "color": "#326BD8"
     },
@@ -22,7 +22,7 @@
       "id": "engagement_attribute_acknowledge",
       "name": "Attribute Acknowledge 归因承认",
       "description": "中性引用或归因他人声音，不明显拉开距离。常见线索包括 said, according to, reported, 表示, 指出, 认为, 称。",
-      "examples": ["said", "according to", "reported", "noted", "表示", "指出", "认为", "称", "说"],
+      "examples": ["said", "according to", "reported", "noted", "argues", "told", "表示", "指出", "认为", "称", "说"],
       "shortcut": "3",
       "color": "#0B7565"
     },
@@ -30,7 +30,7 @@
       "id": "engagement_attribute_distance",
       "name": "Attribute Distance 归因疏离",
       "description": "引用他人声音时保留怀疑、疏离或非承诺立场。常见线索包括 claim, allegedly, 据称, 声称, 所谓。",
-      "examples": ["claim", "claimed", "allegedly", "so-called", "据称", "声称", "所谓", "号称"],
+      "examples": ["claim", "claimed", "allegedly", "reportedly", "so-called", "据称", "声称", "所谓", "号称"],
       "shortcut": "4",
       "color": "#7A3DB8"
     },

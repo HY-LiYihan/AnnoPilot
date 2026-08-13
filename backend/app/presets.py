@@ -20,7 +20,7 @@ APPRAISAL_ENGAGEMENT_TAG_SCHEMA: dict[str, Any] = {
             "id": "engagement_entertain",
             "name": "Entertain 可能化",
             "description": "通过可能性、推测、似然或主观判断打开对话空间。常见线索包括 may, might, perhaps, likely, 可能, 也许, 或许, 似乎。",
-            "examples": ["may", "might", "perhaps", "likely", "it seems", "可能", "也许", "或许", "似乎", "大概"],
+            "examples": ["may", "might", "perhaps", "likely", "suggests", "it seems", "possibly", "可能", "也许", "或许", "似乎", "大概"],
             "shortcut": "2",
             "color": "#326BD8",
         },
@@ -28,7 +28,7 @@ APPRAISAL_ENGAGEMENT_TAG_SCHEMA: dict[str, Any] = {
             "id": "engagement_attribute_acknowledge",
             "name": "Attribute Acknowledge 归因承认",
             "description": "中性引用或归因他人声音，不明显拉开距离。常见线索包括 said, according to, reported, 表示, 指出, 认为, 称。",
-            "examples": ["said", "according to", "reported", "noted", "表示", "指出", "认为", "称", "说"],
+            "examples": ["said", "according to", "reported", "noted", "argues", "told", "表示", "指出", "认为", "称", "说"],
             "shortcut": "3",
             "color": "#0B7565",
         },
@@ -36,7 +36,7 @@ APPRAISAL_ENGAGEMENT_TAG_SCHEMA: dict[str, Any] = {
             "id": "engagement_attribute_distance",
             "name": "Attribute Distance 归因疏离",
             "description": "引用他人声音时保留怀疑、疏离或非承诺立场。常见线索包括 claim, allegedly, 据称, 声称, 所谓。",
-            "examples": ["claim", "claimed", "allegedly", "so-called", "据称", "声称", "所谓", "号称"],
+            "examples": ["claim", "claimed", "allegedly", "reportedly", "so-called", "据称", "声称", "所谓", "号称"],
             "shortcut": "4",
             "color": "#7A3DB8",
         },
@@ -144,6 +144,30 @@ Of course, the workflow cannot solve every dispute; nevertheless, it proves acce
 """
 
 
+APPRAISAL_ENGAGEMENT_LEGAL_COMPLIANCE_TEXT = """Counsel said the disclosure may satisfy regulators, but it does not guarantee approval.
+According to the filing, the new control clearly shows how user data is retained and proves the audit trail was preserved.
+The complainants allegedly claimed the notice was misleading; however, the internal review does not support that claim.
+Of course, a compliance memo cannot resolve every dispute, yet it demonstrates which statements require legal review.
+
+律师表示，该披露可能满足监管要求，但它并不能保证获得批准。
+文件指出，新的控制措施清楚显示用户数据如何被保留，并证明审计轨迹已经保存。
+投诉人据称声称该通知具有误导性；然而，内部复核并不支持这种说法。
+当然，一份合规备忘录不能解决所有争议，不过它证明哪些陈述需要法律复核。
+"""
+
+
+APPRAISAL_ENGAGEMENT_SOCIAL_OPINION_TEXT = """The blogger said the update may help creators, although some users claimed it was only a cosmetic change.
+According to community posts, the new dashboard clearly shows payout delays and demonstrates where complaints cluster.
+Several accounts reportedly argued the policy was unfair; however, the company does not admit the ranking system is biased.
+Of course, one viral thread cannot prove platform-wide harm, yet it suggests which claims deserve closer annotation.
+
+博主表示，这次更新可能帮助创作者，尽管一些用户声称它只是表面变化。
+社区帖子指出，新仪表盘清楚显示付款延迟，并证明投诉集中在哪里。
+几个账号据称认为该政策不公平；然而，公司并不承认排序系统存在偏见。
+当然，一条爆红帖子不能证明平台范围的伤害，不过它提示哪些说法值得更仔细标注。
+"""
+
+
 @dataclass(frozen=True)
 class SamplePreset:
     id: str
@@ -212,6 +236,24 @@ BUILTIN_SAMPLE_PRESETS = {
         description="面向客服记录、用户反馈和产品支持复盘的中英 engagement 线索，适合练习 reported voice、denial、countering 和 export-ready spans。",
         filename="appraisal-engagement-customer-support-cn-en.txt",
         text=APPRAISAL_ENGAGEMENT_CUSTOMER_SUPPORT_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-legal-compliance-cn-en": SamplePreset(
+        id="appraisal-engagement-legal-compliance-cn-en",
+        title="Engagement 合规/法律样例",
+        description="面向披露、监管、申诉和法律复核的中英 engagement 线索，适合练习 claim、deny、endorse 和 counter 的高风险边界。",
+        filename="appraisal-engagement-legal-compliance-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_LEGAL_COMPLIANCE_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-social-opinion-cn-en": SamplePreset(
+        id="appraisal-engagement-social-opinion-cn-en",
+        title="Engagement 社交舆情样例",
+        description="面向社交媒体、平台争议和用户评论的中英 engagement 线索，适合练习 reported voice、countering、denial 和 uncertainty。",
+        filename="appraisal-engagement-social-opinion-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_SOCIAL_OPINION_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
     )
