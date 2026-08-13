@@ -252,6 +252,7 @@ class ExportService:
                 "min_confidence": item["min_confidence"],
                 "lexical_risk_score": item.get("lexical_risk_score", 0.0),
                 "llm_review_risk_score": item.get("llm_review_risk_score", 0.0),
+                "candidate_disagreement_score": item.get("candidate_disagreement_score", 0.0),
                 "risk_score": item["risk_score"],
                 "review_route": item["review_route"],
                 "first_suggestion": self._export_goldsmith_suggestion(item.get("first_suggestion")),

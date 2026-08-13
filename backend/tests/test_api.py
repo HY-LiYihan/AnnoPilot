@@ -2129,6 +2129,87 @@ def test_review_queue_can_prioritize_goldsmith_risk_density(tmp_path: Path) -> N
         assert by_goldsmith["items"][0]["risk_score"] > by_goldsmith["items"][1]["risk_score"]
 
 
+def test_review_queue_goldsmith_prioritizes_candidate_disagreement(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("candidate-conflict.txt", "Alpha beta. Gamma delta.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        first_tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "Entertain", "description": "Engagement entertain cue."},
+        ).json()["tag"]
+        second_tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "Disclaim", "description": "Engagement disclaim cue."},
+        ).json()["tag"]
+        page = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=2").json()
+        first_sentence = page["sentences"][0]
+        second_sentence = page["sentences"][1]
+
+        with storage.connect() as conn:
+            now = "2026-01-01T00:00:00Z"
+
+            def insert_suggestion(
+                suggestion_id: str,
+                sentence: dict,
+                tag_id: str,
+                start_token_offset: int,
+                end_token_offset: int,
+                confidence: float,
+            ) -> None:
+                start_token = sentence["tokens"][start_token_offset]
+                end_token = sentence["tokens"][end_token_offset]
+                text = sentence["text"][start_token["start_char"] - sentence["start_char"] : end_token["end_char"] - sentence["start_char"]]
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestions (
+                      id, sentence_id, tag_id, start_token_index, end_token_index,
+                      start_char, end_char, text, confidence, source, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                    """,
+                    (
+                        suggestion_id,
+                        sentence["id"],
+                        tag_id,
+                        start_token["token_index"],
+                        end_token["token_index"],
+                        start_token["start_char"],
+                        end_token["end_char"],
+                        text,
+                        confidence,
+                        "test",
+                        now,
+                    ),
+                )
+
+            insert_suggestion("sg-conflict-short", first_sentence, first_tag["id"], 0, 0, 0.98)
+            insert_suggestion("sg-conflict-wide", first_sentence, second_tag["id"], 0, 1, 0.98)
+            insert_suggestion("sg-nonoverlap-a", second_sentence, first_tag["id"], 0, 0, 0.80)
+            insert_suggestion("sg-nonoverlap-b", second_sentence, second_tag["id"], 1, 1, 0.81)
+
+        by_goldsmith = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith&limit=2").json()
+        assert [item["id"] for item in by_goldsmith["items"]] == [first_sentence["id"], second_sentence["id"]]
+        assert by_goldsmith["items"][0]["candidate_disagreement_score"] == 1.0
+        assert by_goldsmith["items"][1]["candidate_disagreement_score"] == 0.0
+        assert round(by_goldsmith["items"][0]["lexical_risk_score"], 2) == 0.04
+        assert round(by_goldsmith["items"][0]["risk_score"], 2) == 1.04
+        assert round(by_goldsmith["items"][1]["risk_score"], 2) == 0.40
+
+        review_queue_export = client.get(
+            f"/api/projects/default/documents/{document_id}/export.goldsmith.review-queue.jsonl?order=goldsmith&limit=2"
+        )
+        assert review_queue_export.status_code == 200
+        review_queue_lines = [json.loads(line) for line in review_queue_export.text.splitlines()]
+        assert review_queue_lines[0]["sentence_id"] == first_sentence["id"]
+        assert review_queue_lines[0]["candidate_disagreement_score"] == 1.0
+
+
 def test_review_queue_goldsmith_uses_llm_review_risk_signal(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",

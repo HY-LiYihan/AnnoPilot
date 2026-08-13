@@ -465,6 +465,7 @@ class DocumentQueryRepository:
         elif normalized_order in {"goldsmith", "hybrid"}:
             order_sql = (
                 "risk_score DESC, "
+                "candidate_disagreement_score DESC, "
                 "llm_review_risk_score DESC, "
                 "suggestion_count DESC, "
                 "min_confidence ASC, "
@@ -479,6 +480,10 @@ class DocumentQueryRepository:
             suggestion_order_sql = "s.sentence_index, sg.start_token_index, sg.confidence DESC, sg.id"
         hybrid_calibration_limit = max(1, safe_limit // 5) if normalized_order == "hybrid" and safe_limit >= 5 else 0
         query_limit = safe_limit + hybrid_calibration_limit if normalized_order == "hybrid" else safe_limit
+        candidate_disagreement_score_sql = self._candidate_disagreement_score_sql("s")
+        lexical_risk_score_sql = "((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id))"
+        llm_review_risk_score_sql = f"SUM({self._llm_review_risk_sql()})"
+        risk_score_sql = f"({lexical_risk_score_sql} + {llm_review_risk_score_sql} + {candidate_disagreement_score_sql})"
         with self.connect() as conn:
             document = conn.execute(
                 "SELECT id FROM documents WHERE id = ? AND project_id = ?",
@@ -512,9 +517,10 @@ class DocumentQueryRepository:
                 SELECT s.id, s.sentence_index, s.text,
                        COUNT(DISTINCT sg.id) AS suggestion_count,
                        MIN(sg.confidence) AS min_confidence,
-                       ((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) AS lexical_risk_score,
-                       SUM({self._llm_review_risk_sql()}) AS llm_review_risk_score,
-                       (((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) + SUM({self._llm_review_risk_sql()})) AS risk_score
+                       {lexical_risk_score_sql} AS lexical_risk_score,
+                       {llm_review_risk_score_sql} AS llm_review_risk_score,
+                       {candidate_disagreement_score_sql} AS candidate_disagreement_score,
+                       {risk_score_sql} AS risk_score
                 FROM sentences s
                 JOIN annotation_suggestions sg ON sg.sentence_id = s.id
                 LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
@@ -547,9 +553,10 @@ class DocumentQueryRepository:
                         SELECT s.id, s.sentence_index, s.text,
                                COUNT(DISTINCT sg.id) AS suggestion_count,
                                MIN(sg.confidence) AS min_confidence,
-                               ((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) AS lexical_risk_score,
-                               SUM({self._llm_review_risk_sql()}) AS llm_review_risk_score,
-                               (((1.0 - MIN(sg.confidence)) * COUNT(DISTINCT sg.id)) + SUM({self._llm_review_risk_sql()})) AS risk_score
+                               {lexical_risk_score_sql} AS lexical_risk_score,
+                               {llm_review_risk_score_sql} AS llm_review_risk_score,
+                               {candidate_disagreement_score_sql} AS candidate_disagreement_score,
+                               {risk_score_sql} AS risk_score
                         FROM sentences s
                         JOIN annotation_suggestions sg ON sg.sentence_id = s.id
                         LEFT JOIN annotation_suggestion_reviews rev ON rev.id = (
@@ -625,6 +632,7 @@ class DocumentQueryRepository:
                     "min_confidence": float(row["min_confidence"] or 0),
                     "lexical_risk_score": float(row["lexical_risk_score"] or 0),
                     "llm_review_risk_score": float(row["llm_review_risk_score"] or 0),
+                    "candidate_disagreement_score": float(row["candidate_disagreement_score"] or 0),
                     "risk_score": float(row["risk_score"] or 0),
                     "review_route": review_routes.get(
                         row["id"],
@@ -645,6 +653,53 @@ class DocumentQueryRepository:
             f"WHEN 'uncertain' THEN {LLM_REVIEW_UNCERTAIN_RISK_WEIGHT} "
             "ELSE 0 END"
         )
+
+    @staticmethod
+    def _candidate_disagreement_score_sql(sentence_alias: str = "s") -> str:
+        return f"""
+            (
+              SELECT CASE
+                WHEN COUNT(*) = 0 THEN 0.0
+                ELSE COALESCE(
+                  SUM(
+                    CASE
+                      WHEN left_sg.start_token_index <= right_sg.end_token_index
+                       AND left_sg.end_token_index >= right_sg.start_token_index
+                       AND (
+                         left_sg.start_token_index != right_sg.start_token_index
+                         OR left_sg.end_token_index != right_sg.end_token_index
+                         OR left_sg.tag_id != right_sg.tag_id
+                       )
+                      THEN 1.0
+                      ELSE 0.0
+                    END
+                  ) / COUNT(*),
+                  0.0
+                )
+              END
+              FROM annotation_suggestions left_sg
+              JOIN annotation_suggestions right_sg
+                ON right_sg.sentence_id = left_sg.sentence_id
+               AND right_sg.id > left_sg.id
+              WHERE left_sg.sentence_id = {sentence_alias}.id
+                AND left_sg.status = 'pending'
+                AND right_sg.status = 'pending'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM annotations left_annotation
+                  WHERE left_annotation.sentence_id = left_sg.sentence_id
+                    AND left_annotation.start_token_index <= left_sg.end_token_index
+                    AND left_annotation.end_token_index >= left_sg.start_token_index
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM annotations right_annotation
+                  WHERE right_annotation.sentence_id = right_sg.sentence_id
+                    AND right_annotation.start_token_index <= right_sg.end_token_index
+                    AND right_annotation.end_token_index >= right_sg.start_token_index
+                )
+            )
+        """
 
     def get_goldsmith_human_choices(self, project_id: str, document_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
