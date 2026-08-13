@@ -6,6 +6,7 @@
   "scripts": {
     "api": "DATABASE_PATH=.runtime/annopilot.sqlite DATA_ROOT=.runtime/projects uvicorn backend.app.main:app --host 0.0.0.0 --port 8000",
     "dev": "vite --host 0.0.0.0",
+    "test:frontend": "node --experimental-strip-types --test tests/frontend/*.test.ts",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "docs:dev": "vitepress dev docs --host 0.0.0.0",
