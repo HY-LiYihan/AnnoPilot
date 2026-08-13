@@ -434,6 +434,16 @@ class AnnotationStorage:
             sentence_id=sentence_id,
         )
 
+    def seed_calibration_suggestions(
+        self,
+        project_id: str,
+        document_id: str,
+        candidates: list[dict[str, Any]],
+        *,
+        preset_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.suggestion_service.seed_calibration_suggestions(project_id, document_id, candidates, preset_id=preset_id)
+
     def accept_suggestion(self, project_id: str, suggestion_id: str) -> list[dict[str, Any]]:
         return self.suggestion_decisions.accept_suggestion(project_id, suggestion_id)
 

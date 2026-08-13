@@ -363,6 +363,7 @@ class SamplePresetResponse(BaseModel):
     tag_count: int
     default_limit_per_sentence: int
     default_min_confidence: float
+    calibration_candidate_count: int = 0
 
 
 class SamplePresetListResponse(BaseModel):

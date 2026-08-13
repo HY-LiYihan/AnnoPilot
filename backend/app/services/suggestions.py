@@ -383,6 +383,187 @@ class SuggestionService:
             "suggestions": self.get_suggestions(project_id, suggestion_ids),
         }
 
+    def seed_calibration_suggestions(
+        self,
+        project_id: str,
+        document_id: str,
+        candidates: list[dict[str, Any]],
+        *,
+        preset_id: str | None = None,
+    ) -> dict[str, Any]:
+        now = self.now()
+        run_id = self.new_id("run")
+        suggestion_ids: list[str] = []
+        suggestion_records: list[dict[str, Any]] = []
+        run_config = {
+            "preset_id": preset_id,
+            "recipe": "goldsmith_rosetta_calibration",
+            "candidate_count": len(candidates),
+            "source": "calibration_seed",
+            "purpose": "Seed overlapping bilingual Engagement candidates for Goldsmith/Rosetta review calibration.",
+            "scope": "document",
+        }
+
+        with self.connect() as conn:
+            document = conn.execute(
+                "SELECT id FROM documents WHERE id = ? AND project_id = ?",
+                (document_id, project_id),
+            ).fetchone()
+            if document is None:
+                raise self.not_found_error("Document not found.")
+
+            tags = self.get_tags(conn, project_id)
+            tag_ids = {tag["id"] for tag in tags}
+            sentence_rows = conn.execute(
+                """
+                SELECT id, sentence_index, text, start_char, end_char
+                FROM sentences
+                WHERE document_id = ?
+                ORDER BY sentence_index
+                """,
+                (document_id,),
+            ).fetchall()
+            token_rows = conn.execute(
+                """
+                SELECT t.id, t.sentence_id, t.token_index, t.text, t.start_char, t.end_char
+                FROM tokens t
+                JOIN sentences s ON s.id = t.sentence_id
+                WHERE s.document_id = ?
+                ORDER BY s.sentence_index, t.token_index
+                """,
+                (document_id,),
+            ).fetchall()
+            tokens_by_sentence: dict[str, list[sqlite3.Row]] = {}
+            for token in token_rows:
+                tokens_by_sentence.setdefault(token["sentence_id"], []).append(token)
+
+            conn.execute(
+                """
+                INSERT INTO annotation_runs (
+                  id, project_id, document_id, recipe, config_json, input_count, suggestion_count, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+                """,
+                (
+                    run_id,
+                    project_id,
+                    document_id,
+                    "goldsmith_rosetta_calibration",
+                    json.dumps(run_config, ensure_ascii=False),
+                    len(sentence_rows),
+                    now,
+                ),
+            )
+
+            for candidate in candidates:
+                tag_id = str(candidate.get("tag_id") or "")
+                if tag_id not in tag_ids:
+                    raise self.validation_error(f"Calibration candidate tag not found: {tag_id}")
+                sentence = self._calibration_sentence(sentence_rows, str(candidate.get("sentence_contains") or ""))
+                text = str(candidate.get("text") or "").strip()
+                if not text:
+                    raise self.validation_error("Calibration candidate text is required.")
+                local_start = str(sentence["text"]).find(text)
+                if local_start < 0:
+                    raise self.validation_error(f"Calibration candidate span not found in sentence: {text}")
+                local_end = local_start + len(text)
+                start_char = int(sentence["start_char"]) + local_start
+                end_char = int(sentence["start_char"]) + local_end
+                span_tokens = [
+                    token
+                    for token in tokens_by_sentence.get(sentence["id"], [])
+                    if int(token["start_char"]) < end_char and int(token["end_char"]) > start_char
+                ]
+                if not span_tokens:
+                    raise self.validation_error(f"Calibration candidate does not overlap tokens: {text}")
+
+                confidence = max(0.0, min(float(candidate.get("confidence") or 0.0), 1.0))
+                evidence_text = str(candidate.get("evidence_text") or text)
+                context = self._suggestion_context(sentence["text"], sentence["start_char"], start_char, end_char)
+                suggestion_id = self.new_id("sug")
+                suggestion_record = {
+                    "id": suggestion_id,
+                    "run_id": run_id,
+                    "sentence_id": sentence["id"],
+                    "tag_id": tag_id,
+                    "start_token_index": int(span_tokens[0]["token_index"]),
+                    "end_token_index": int(span_tokens[-1]["token_index"]),
+                    "start_char": start_char,
+                    "end_char": end_char,
+                    "text": text,
+                    "confidence": confidence,
+                    "source": "calibration_seed",
+                    "evidence_text": evidence_text,
+                    "match_key": self._normalize_match_text(text),
+                    "evidence_match_key": self._normalize_match_text(evidence_text),
+                    "context_before": context["context_before"],
+                    "context_after": context["context_after"],
+                    "status": "pending",
+                    "created_at": now,
+                }
+                suggestion_ids.append(suggestion_id)
+                suggestion_records.append(suggestion_record)
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestions (
+                      id, run_id, sentence_id, tag_id, start_token_index, end_token_index,
+                      start_char, end_char, text, confidence, source, evidence_text, match_key, evidence_match_key,
+                      context_before, context_after, status, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                    """,
+                    (
+                        suggestion_record["id"],
+                        suggestion_record["run_id"],
+                        suggestion_record["sentence_id"],
+                        suggestion_record["tag_id"],
+                        suggestion_record["start_token_index"],
+                        suggestion_record["end_token_index"],
+                        suggestion_record["start_char"],
+                        suggestion_record["end_char"],
+                        suggestion_record["text"],
+                        suggestion_record["confidence"],
+                        suggestion_record["source"],
+                        suggestion_record["evidence_text"],
+                        suggestion_record["match_key"],
+                        suggestion_record["evidence_match_key"],
+                        suggestion_record["context_before"],
+                        suggestion_record["context_after"],
+                        now,
+                    ),
+                )
+
+            source_counts = self._suggestion_source_counts(suggestion_records)
+            confidence_counts = self._suggestion_confidence_counts(suggestion_records)
+            conn.execute("UPDATE annotation_runs SET suggestion_count = ? WHERE id = ?", (len(suggestion_ids), run_id))
+            self.enqueue_event(
+                conn,
+                project_id,
+                {
+                    "type": "suggestions.generated",
+                    "document_id": document_id,
+                    "sentence_id": None,
+                    "run_id": run_id,
+                    "recipe": "goldsmith_rosetta_calibration",
+                    "input_count": len(sentence_rows),
+                    "suggestion_count": len(suggestion_ids),
+                    "source_counts": source_counts,
+                    "confidence_counts": confidence_counts,
+                    "config": run_config,
+                    "cleared_pending_suggestion_ids": [],
+                    "suggestions": suggestion_records,
+                },
+            )
+
+        self.flush_event_outbox(project_id)
+        return {
+            "run_id": run_id,
+            "suggestions_created": len(suggestion_ids),
+            "source_counts": source_counts,
+            "confidence_counts": confidence_counts,
+            "suggestions": self.get_suggestions(project_id, suggestion_ids),
+        }
+
     def get_suggestion_review_context(self, project_id: str, suggestion_id: str) -> dict[str, Any]:
         with self.connect() as conn:
             row = conn.execute(
@@ -618,6 +799,20 @@ class SuggestionService:
         before = sentence_text[max(0, local_start - self.suggestion_context_chars) : local_start]
         after = sentence_text[local_end : min(len(sentence_text), local_end + self.suggestion_context_chars)]
         return {"context_before": before, "context_after": after}
+
+    def _calibration_sentence(self, sentence_rows: list[sqlite3.Row], sentence_contains: str) -> sqlite3.Row:
+        if not sentence_contains:
+            raise self.validation_error("Calibration candidate sentence anchor is required.")
+        matches = [sentence for sentence in sentence_rows if sentence_contains in str(sentence["text"])]
+        if not matches:
+            raise self.validation_error(f"Calibration sentence anchor not found: {sentence_contains}")
+        if len(matches) > 1:
+            raise self.validation_error(f"Calibration sentence anchor is ambiguous: {sentence_contains}")
+        return matches[0]
+
+    @staticmethod
+    def _normalize_match_text(value: str) -> str:
+        return " ".join(str(value).strip().split()).casefold()
 
     def _tag_schema_content_payload(self, tags: list[dict[str, Any]]) -> dict[str, Any]:
         schema_tags = [

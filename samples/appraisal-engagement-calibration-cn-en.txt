@@ -1,0 +1,9 @@
+The audit clearly shows where reviewers disagree, but it may also show only one pilot case.
+The memo allegedly claimed the model proves accuracy; however, the results only suggest improvement.
+The reviewer said the label is stable, yet the same evidence clearly shows uncertainty.
+Of course, a calibration set cannot prove every label boundary; nevertheless, it demonstrates why review routing matters.
+
+审计记录清楚显示复核者在哪里分歧，但它也可能只显示一个试点案例。
+备忘录据称声称模型证明了准确率；然而，结果只是提示有所改善。
+复核者表示这个标签很稳定，不过同一证据清楚显示仍有不确定性。
+当然，一个校准样本不能证明所有标签边界；不过，它证明为什么复核路由很重要。

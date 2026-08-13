@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -40,12 +41,32 @@ def load_preset(
             "confidence_counts": {},
         }
         if request.generate_suggestions:
-            generated = storage.generate_suggestions(
-                project_id,
-                imported["document_id"],
-                request.limit_per_sentence or preset.default_limit_per_sentence,
-                request.min_confidence if request.min_confidence is not None else preset.default_min_confidence,
-            )
+            if preset.calibration_candidates:
+                confidence_floor = request.min_confidence if request.min_confidence is not None else preset.default_min_confidence
+                limit_per_sentence = request.limit_per_sentence or preset.default_limit_per_sentence
+                candidates = []
+                candidate_counts_by_anchor: dict[str, int] = {}
+                for candidate in preset.calibration_candidates:
+                    if candidate.confidence < confidence_floor:
+                        continue
+                    anchor_count = candidate_counts_by_anchor.get(candidate.sentence_contains, 0)
+                    if anchor_count >= limit_per_sentence:
+                        continue
+                    candidates.append(asdict(candidate))
+                    candidate_counts_by_anchor[candidate.sentence_contains] = anchor_count + 1
+                generated = storage.seed_calibration_suggestions(
+                    project_id,
+                    imported["document_id"],
+                    candidates,
+                    preset_id=preset.id,
+                )
+            else:
+                generated = storage.generate_suggestions(
+                    project_id,
+                    imported["document_id"],
+                    request.limit_per_sentence or preset.default_limit_per_sentence,
+                    request.min_confidence if request.min_confidence is not None else preset.default_min_confidence,
+                )
             suggestion_result = {
                 "suggestions_created": generated["suggestions_created"],
                 "suggestion_run_id": generated["run_id"],

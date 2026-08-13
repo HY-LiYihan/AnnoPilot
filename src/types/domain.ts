@@ -303,6 +303,7 @@ export type SamplePreset = {
   tag_count: number
   default_limit_per_sentence: number
   default_min_confidence: number
+  calibration_candidate_count: number
 }
 
 export type SamplePresetListPayload = {

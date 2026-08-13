@@ -4,6 +4,15 @@ from dataclasses import dataclass
 from typing import Any
 
 
+@dataclass(frozen=True)
+class CalibrationCandidate:
+    sentence_contains: str
+    text: str
+    tag_id: str
+    confidence: float
+    evidence_text: str | None = None
+
+
 APPRAISAL_ENGAGEMENT_TAG_SCHEMA: dict[str, Any] = {
     "schema_version": "annopilot.tag_schema.v1",
     "record_type": "tag_schema",
@@ -216,6 +225,51 @@ Of course, one regional project cannot prove a full energy transition, yet analy
 """
 
 
+APPRAISAL_ENGAGEMENT_CALIBRATION_TEXT = """The audit clearly shows where reviewers disagree, but it may also show only one pilot case.
+The memo allegedly claimed the model proves accuracy; however, the results only suggest improvement.
+The reviewer said the label is stable, yet the same evidence clearly shows uncertainty.
+Of course, a calibration set cannot prove every label boundary; nevertheless, it demonstrates why review routing matters.
+
+审计记录清楚显示复核者在哪里分歧，但它也可能只显示一个试点案例。
+备忘录据称声称模型证明了准确率；然而，结果只是提示有所改善。
+复核者表示这个标签很稳定，不过同一证据清楚显示仍有不确定性。
+当然，一个校准样本不能证明所有标签边界；不过，它证明为什么复核路由很重要。
+"""
+
+
+APPRAISAL_ENGAGEMENT_CALIBRATION_CANDIDATES = (
+    CalibrationCandidate("audit clearly shows", "clearly", "engagement_proclaim_pronounce", 0.96, "clearly"),
+    CalibrationCandidate("audit clearly shows", "clearly shows", "engagement_proclaim_endorse", 0.88, "clearly shows"),
+    CalibrationCandidate("audit clearly shows", "shows", "engagement_proclaim_endorse", 0.98, "shows"),
+    CalibrationCandidate("may also show", "may", "engagement_entertain", 0.98, "may"),
+    CalibrationCandidate("may also show", "but", "engagement_disclaim_counter", 0.98, "but"),
+    CalibrationCandidate("allegedly claimed", "allegedly claimed", "engagement_attribute_distance", 0.92, "allegedly claimed"),
+    CalibrationCandidate("allegedly claimed", "claimed", "engagement_attribute_acknowledge", 0.76, "claimed"),
+    CalibrationCandidate("only suggest improvement", "however", "engagement_disclaim_counter", 0.98, "however"),
+    CalibrationCandidate("only suggest improvement", "suggest", "engagement_entertain", 0.84, "suggest"),
+    CalibrationCandidate("same evidence clearly shows", "clearly", "engagement_proclaim_pronounce", 0.96, "clearly"),
+    CalibrationCandidate("same evidence clearly shows", "clearly shows", "engagement_proclaim_endorse", 0.88, "clearly shows"),
+    CalibrationCandidate("calibration set cannot prove", "Of course", "engagement_proclaim_concur", 0.98, "Of course"),
+    CalibrationCandidate("calibration set cannot prove", "cannot", "engagement_disclaim_deny", 0.98, "cannot"),
+    CalibrationCandidate("nevertheless", "nevertheless", "engagement_disclaim_counter", 0.98, "nevertheless"),
+    CalibrationCandidate("review routing matters", "demonstrates", "engagement_proclaim_endorse", 0.98, "demonstrates"),
+    CalibrationCandidate("审计记录清楚显示", "清楚", "engagement_proclaim_pronounce", 0.96, "清楚"),
+    CalibrationCandidate("审计记录清楚显示", "清楚显示", "engagement_proclaim_endorse", 0.88, "清楚显示"),
+    CalibrationCandidate("审计记录清楚显示", "显示", "engagement_proclaim_endorse", 0.98, "显示"),
+    CalibrationCandidate("它也可能只显示", "可能", "engagement_entertain", 0.98, "可能"),
+    CalibrationCandidate("据称声称", "据称声称", "engagement_attribute_distance", 0.92, "据称声称"),
+    CalibrationCandidate("据称声称", "声称", "engagement_attribute_acknowledge", 0.76, "声称"),
+    CalibrationCandidate("结果只是提示", "然而", "engagement_disclaim_counter", 0.98, "然而"),
+    CalibrationCandidate("结果只是提示", "提示", "engagement_entertain", 0.84, "提示"),
+    CalibrationCandidate("同一证据清楚显示", "清楚", "engagement_proclaim_pronounce", 0.96, "清楚"),
+    CalibrationCandidate("同一证据清楚显示", "清楚显示", "engagement_proclaim_endorse", 0.88, "清楚显示"),
+    CalibrationCandidate("一个校准样本不能证明", "当然", "engagement_proclaim_concur", 0.98, "当然"),
+    CalibrationCandidate("一个校准样本不能证明", "不能", "engagement_disclaim_deny", 0.98, "不能"),
+    CalibrationCandidate("不过，它证明", "不过", "engagement_disclaim_counter", 0.98, "不过"),
+    CalibrationCandidate("复核路由很重要", "证明", "engagement_proclaim_endorse", 0.98, "证明"),
+)
+
+
 @dataclass(frozen=True)
 class SamplePreset:
     id: str
@@ -227,6 +281,7 @@ class SamplePreset:
     language_pair: str
     default_limit_per_sentence: int = 10
     default_min_confidence: float = 0.98
+    calibration_candidates: tuple[CalibrationCandidate, ...] = ()
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -238,6 +293,7 @@ class SamplePreset:
             "tag_count": len(self.tag_schema["tags"]),
             "default_limit_per_sentence": self.default_limit_per_sentence,
             "default_min_confidence": self.default_min_confidence,
+            "calibration_candidate_count": len(self.calibration_candidates),
         }
 
 
@@ -340,6 +396,18 @@ BUILTIN_SAMPLE_PRESETS = {
         text=APPRAISAL_ENGAGEMENT_CLIMATE_ENERGY_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
+    ),
+    "appraisal-engagement-calibration-cn-en": SamplePreset(
+        id="appraisal-engagement-calibration-cn-en",
+        title="Engagement Goldsmith/Rosetta 校准样例",
+        description="内置重叠 span、相邻候选和中英边界冲突，用于测试 Goldsmith review queue、Rosetta consistency 和 Prodigy bundle。",
+        filename="appraisal-engagement-calibration-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_CALIBRATION_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+        default_limit_per_sentence=20,
+        default_min_confidence=0.75,
+        calibration_candidates=APPRAISAL_ENGAGEMENT_CALIBRATION_CANDIDATES,
     ),
 }
 

@@ -1290,6 +1290,7 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
             "appraisal-engagement-health-science-cn-en",
             "appraisal-engagement-ai-education-cn-en",
             "appraisal-engagement-climate-energy-cn-en",
+            "appraisal-engagement-calibration-cn-en",
         ]
         assert [preset["id"] for preset in presets] == expected_preset_ids
         assert all(preset["tag_count"] == 9 for preset in presets)
@@ -1307,7 +1308,11 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
             assert loaded_preset["suggestion_run_id"].startswith("run_")
             assert loaded_preset["suggestions_created"] > 0
             assert sum(loaded_preset["source_counts"].values()) == loaded_preset["suggestions_created"]
-            assert loaded_preset["source_counts"] == {"lexical_exact": loaded_preset["suggestions_created"]}
+            if preset_id == "appraisal-engagement-calibration-cn-en":
+                assert loaded_preset["preset"]["calibration_candidate_count"] == loaded_preset["suggestions_created"]
+                assert loaded_preset["source_counts"] == {"calibration_seed": loaded_preset["suggestions_created"]}
+            else:
+                assert loaded_preset["source_counts"] == {"lexical_exact": loaded_preset["suggestions_created"]}
 
             auto_accept_response = client.post(
                 f"/api/projects/default/documents/{loaded_preset['document_id']}/suggestions/auto-accept",
@@ -1359,6 +1364,56 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         assert loaded_by_id["appraisal-engagement-health-science-cn-en"]["suggestions_created"] >= 20
         assert loaded_by_id["appraisal-engagement-ai-education-cn-en"]["suggestions_created"] >= 20
         assert loaded_by_id["appraisal-engagement-climate-energy-cn-en"]["suggestions_created"] >= 20
+        assert loaded_by_id["appraisal-engagement-calibration-cn-en"]["suggestions_created"] >= 20
+
+
+def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        load_response = client.post("/api/projects/default/sample-presets/appraisal-engagement-calibration-cn-en/load")
+        assert load_response.status_code == 200
+        loaded = load_response.json()
+        document_id = loaded["document_id"]
+
+        assert loaded["filename"] == "appraisal-engagement-calibration-cn-en.txt"
+        assert loaded["sentence_count"] == 8
+        assert loaded["suggestions_created"] == loaded["preset"]["calibration_candidate_count"]
+        assert loaded["source_counts"] == {"calibration_seed": loaded["suggestions_created"]}
+        assert loaded["confidence_counts"]["high"] > 0
+        assert loaded["confidence_counts"]["medium"] > 0
+
+        queue = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith&limit=8").json()
+        assert queue["items"]
+        assert any(item["candidate_disagreement_score"] > 0 for item in queue["items"])
+        assert queue["items"][0]["risk_score"] >= queue["items"][-1]["risk_score"]
+
+        consistency_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.consistency-scores.jsonl")
+        assert consistency_response.status_code == 200
+        consistency_lines = [json.loads(line) for line in consistency_response.text.splitlines()]
+        assert any(line["overlap_conflict_rate"] > 0 for line in consistency_lines)
+        assert any(line["pairwise_span_f1"] < 1 for line in consistency_lines)
+        assert any(
+            candidate["overlap_conflict_count"] > 0
+            for line in consistency_lines
+            for candidate in line["candidate_scores"]
+        )
+
+        candidate_runs_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.candidate-runs.jsonl")
+        assert candidate_runs_response.status_code == 200
+        candidate_runs = [json.loads(line) for line in candidate_runs_response.text.splitlines()]
+        assert len(candidate_runs) == loaded["suggestions_created"]
+        assert any(run["meta"]["consistency"]["overlap_conflict_rate"] > 0 for run in candidate_runs)
+        assert all(run["schema_version"] == "rosetta.prodigy_candidate.v1" for run in candidate_runs)
+
+        events_response = client.get("/api/projects/default/events.jsonl")
+        assert events_response.status_code == 200
+        events = [json.loads(line) for line in events_response.text.splitlines()]
+        generated_events = [event for event in events if event["type"] == "suggestions.generated"]
+        assert generated_events[-1]["recipe"] == "goldsmith_rosetta_calibration"
+        assert generated_events[-1]["source_counts"] == {"calibration_seed": loaded["suggestions_created"]}
 
 
 def test_appraisal_engagement_review_context_includes_guidelines(tmp_path: Path) -> None:
