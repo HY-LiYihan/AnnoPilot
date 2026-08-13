@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import sqlite3
 import threading
 import uuid
@@ -13,8 +13,15 @@ from .db.connection import configure_connection, connect_database
 from .db.migrations import migrate_database
 from .events import EventOutbox, clear_project_runtime_rows, event_replay_issue, has_import_snapshot
 from .repositories import DocumentQueryRepository, RunQueryRepository, TagQueryRepository
-from .services import AnnotationService, AuditService, ExportService, SuggestionDecisionService, SuggestionService, TagService
-from .text_processing import SentenceSpan, normalize_text, split_sentences, tokenize_sentence
+from .services import (
+    AnnotationService,
+    AuditService,
+    DocumentService,
+    ExportService,
+    SuggestionDecisionService,
+    SuggestionService,
+    TagService,
+)
 
 
 DEFAULT_PROJECT_ID = "default"
@@ -104,6 +111,21 @@ class AnnotationStorage:
             legacy_seeded_tags=LEGACY_SEEDED_TAGS,
             tag_colors=TAG_COLORS,
             tag_schema_version=TAG_SCHEMA_VERSION,
+            not_found_error=NotFoundError,
+            validation_error=ValidationError,
+        )
+        self.document_service = DocumentService(
+            self.connect,
+            new_id=self._new_id,
+            now=self._now,
+            enqueue_event=self._enqueue_event,
+            flush_event_outbox=self.flush_event_outbox,
+            seed_tags=self.tag_service.seed_tags,
+            get_tags=self.get_tags,
+            get_document_summary=self.get_document_summary,
+            default_session_id=DEFAULT_SESSION_ID,
+            human_actor_id=HUMAN_ACTOR_ID,
+            max_txt_bytes=MAX_TXT_BYTES,
             not_found_error=NotFoundError,
             validation_error=ValidationError,
         )
@@ -205,112 +227,10 @@ class AnnotationStorage:
         return connect_database(self.database_path)
 
     def import_txt(self, project_id: str, filename: str, data: bytes) -> dict[str, Any]:
-        text = self._decode_txt_payload(data)
-        sentences = split_sentences(text)
-        if not sentences:
-            raise ValidationError("TXT file does not contain annotatable sentences.")
-
-        document_id = self._new_id("doc")
-        now = self._now()
-        imported_sentence_records, token_count = self._build_sentence_records(sentences)
-
-        with self.connect() as conn:
-            conn.execute("BEGIN")
-            self.tag_service.seed_tags(conn, project_id)
-            conn.execute(
-                """
-                INSERT INTO documents (id, project_id, filename, text, created_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (document_id, project_id, filename, text, now),
-            )
-            self._insert_sentence_records(conn, document_id, imported_sentence_records)
-            self._enqueue_event(
-                conn,
-                project_id,
-                {
-                    "type": "document.imported",
-                    "snapshot_version": "annopilot.import_snapshot.v1",
-                    "document_id": document_id,
-                    "filename": filename,
-                    "created_at": now,
-                    "text": text,
-                    "text_sha256": self._text_sha256(text),
-                    "sentence_count": len(sentences),
-                    "token_count": token_count,
-                    "sentences": imported_sentence_records,
-                },
-            )
-            conn.commit()
-
-        self.flush_event_outbox(project_id)
-
-        return {
-            "document_id": document_id,
-            "filename": filename,
-            "sentence_count": len(sentences),
-            "token_count": token_count,
-            "tags": self.get_tags(project_id),
-        }
+        return self.document_service.import_txt(project_id, filename, data)
 
     def merge_txt(self, project_id: str, document_id: str, filename: str, data: bytes) -> dict[str, Any]:
-        incoming_text = self._decode_txt_payload(data)
-        incoming_sentences = split_sentences(incoming_text)
-        if not incoming_sentences:
-            raise ValidationError("TXT file does not contain annotatable sentences.")
-
-        now = self._now()
-        with self.connect() as conn:
-            conn.execute("BEGIN")
-            self.tag_service.seed_tags(conn, project_id)
-            document = conn.execute(
-                "SELECT id, filename, text, created_at FROM documents WHERE id = ? AND project_id = ?",
-                (document_id, project_id),
-            ).fetchone()
-            if document is None:
-                raise NotFoundError("Document not found.")
-
-            existing_text = document["text"]
-            separator = "" if not existing_text else "\n\n"
-            merged_text = f"{existing_text}{separator}{incoming_text}"
-            char_offset = len(existing_text) + len(separator)
-            index_offset = int(
-                conn.execute(
-                    "SELECT COALESCE(MAX(sentence_index), -1) + 1 AS next_index FROM sentences WHERE document_id = ?",
-                    (document_id,),
-                ).fetchone()["next_index"]
-            )
-            appended_sentence_records, appended_token_count = self._build_sentence_records(
-                incoming_sentences,
-                index_offset=index_offset,
-                char_offset=char_offset,
-            )
-
-            conn.execute("UPDATE documents SET text = ? WHERE id = ?", (merged_text, document_id))
-            self._insert_sentence_records(conn, document_id, appended_sentence_records)
-            snapshot = self._document_import_snapshot(conn, project_id, document_id)
-            self._enqueue_event(
-                conn,
-                project_id,
-                {
-                    **snapshot,
-                    "merge_source_filename": filename,
-                    "merge_sentence_count": len(appended_sentence_records),
-                    "merge_token_count": appended_token_count,
-                    "merged_at": now,
-                },
-            )
-            conn.commit()
-
-        self.flush_event_outbox(project_id)
-        summary = self.get_document_summary(project_id, document_id)
-        return {
-            "document_id": document_id,
-            "filename": summary["document"]["filename"],
-            "sentence_count": summary["document"]["sentence_count"],
-            "token_count": summary["document"]["token_count"],
-            "tags": summary["tags"],
-        }
+        return self.document_service.merge_txt(project_id, document_id, filename, data)
 
     def list_documents(self, project_id: str, limit: int = 50) -> dict[str, Any]:
         return self.document_queries.list_documents(project_id, limit=limit)
@@ -322,32 +242,7 @@ class AnnotationStorage:
         return self.document_queries.get_document_summary(project_id, document_id)
 
     def set_session_cursor(self, project_id: str, document_id: str, current_sentence_index: int) -> dict[str, Any]:
-        with self.connect() as conn:
-            document = conn.execute(
-                "SELECT id FROM documents WHERE id = ? AND project_id = ?",
-                (document_id, project_id),
-            ).fetchone()
-            if document is None:
-                raise NotFoundError("Document not found.")
-            sentence_count = conn.execute(
-                "SELECT COUNT(*) AS count FROM sentences WHERE document_id = ?",
-                (document_id,),
-            ).fetchone()["count"]
-            if current_sentence_index < 0 or current_sentence_index >= int(sentence_count or 0):
-                raise ValidationError("Session cursor is outside the document sentence range.")
-            now = self._now()
-            conn.execute(
-                """
-                INSERT INTO annotation_sessions (id, project_id, document_id, actor_id, current_sentence_index, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(project_id, document_id, id) DO UPDATE SET
-                  actor_id = excluded.actor_id,
-                  current_sentence_index = excluded.current_sentence_index,
-                  updated_at = excluded.updated_at
-                """,
-                (DEFAULT_SESSION_ID, project_id, document_id, HUMAN_ACTOR_ID, current_sentence_index, now),
-            )
-        return {"session": self._get_document_session(project_id, document_id)}
+        return self.document_service.set_session_cursor(project_id, document_id, current_sentence_index)
 
     def get_document_sentences(self, project_id: str, document_id: str, offset: int = 0, limit: int = 50) -> dict[str, Any]:
         return self.document_queries.get_document_sentences(project_id, document_id, offset=offset, limit=limit)
@@ -990,34 +885,6 @@ class AnnotationStorage:
     def _get_tags(self, conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:
         return self.tag_service.list_tags_from_conn(conn, project_id)
 
-    def _get_document_session(self, project_id: str, document_id: str) -> dict[str, Any]:
-        with self.connect() as conn:
-            return self._get_session(conn, project_id, document_id)
-
-    @staticmethod
-    def _get_session(conn: sqlite3.Connection, project_id: str, document_id: str) -> dict[str, Any]:
-        row = conn.execute(
-            """
-            SELECT id, actor_id, current_sentence_index, updated_at
-            FROM annotation_sessions
-            WHERE project_id = ? AND document_id = ? AND id = ?
-            """,
-            (project_id, document_id, DEFAULT_SESSION_ID),
-        ).fetchone()
-        if row is None:
-            return {
-                "id": DEFAULT_SESSION_ID,
-                "actor_id": HUMAN_ACTOR_ID,
-                "current_sentence_index": None,
-                "updated_at": None,
-            }
-        return {
-            "id": row["id"],
-            "actor_id": row["actor_id"],
-            "current_sentence_index": int(row["current_sentence_index"]),
-            "updated_at": row["updated_at"],
-        }
-
     @staticmethod
     def _unique_shortcut(preferred: str | None, used: set[str]) -> str:
         normalized = str(preferred).strip() if preferred is not None else ""
@@ -1184,10 +1051,6 @@ class AnnotationStorage:
     def _ranges_overlap(start_a: int, end_a: int, start_b: int, end_b: int) -> bool:
         return start_a <= end_b and end_a >= start_b
 
-    @staticmethod
-    def _text_sha256(text: str) -> str:
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
     @classmethod
     def _event_replay_issue(cls, event: dict[str, Any]) -> str | None:
         return event_replay_issue(event)
@@ -1200,153 +1063,6 @@ class AnnotationStorage:
     def _row_dict(row: sqlite3.Row, exclude: set[str] | None = None) -> dict[str, Any]:
         excluded = exclude or set()
         return {key: row[key] for key in row.keys() if key not in excluded}
-
-    @staticmethod
-    def _decode_txt_payload(data: bytes) -> str:
-        if len(data) > MAX_TXT_BYTES:
-            raise ValidationError("TXT file is larger than the 10 MB limit.")
-        try:
-            text = normalize_text(data.decode("utf-8"))
-        except UnicodeDecodeError as exc:
-            raise ValidationError("TXT file must be valid UTF-8.") from exc
-        if not text.strip():
-            raise ValidationError("TXT file is empty.")
-        return text
-
-    def _build_sentence_records(
-        self,
-        sentences: list[SentenceSpan],
-        *,
-        index_offset: int = 0,
-        char_offset: int = 0,
-    ) -> tuple[list[dict[str, Any]], int]:
-        records: list[dict[str, Any]] = []
-        token_count = 0
-        for sentence in sentences:
-            adjusted_sentence = SentenceSpan(
-                index=sentence.index + index_offset,
-                text=sentence.text,
-                start=sentence.start + char_offset,
-                end=sentence.end + char_offset,
-            )
-            sentence_id = self._new_id("sent")
-            token_records = [
-                {
-                    "id": self._new_id("tok"),
-                    "token_index": token.index,
-                    "text": token.text,
-                    "start_char": token.start,
-                    "end_char": token.end,
-                }
-                for token in tokenize_sentence(adjusted_sentence)
-            ]
-            token_count += len(token_records)
-            records.append(
-                {
-                    "id": sentence_id,
-                    "sentence_index": adjusted_sentence.index,
-                    "text": adjusted_sentence.text,
-                    "start_char": adjusted_sentence.start,
-                    "end_char": adjusted_sentence.end,
-                    "tokens": token_records,
-                }
-            )
-        return records, token_count
-
-    @staticmethod
-    def _insert_sentence_records(conn: sqlite3.Connection, document_id: str, records: list[dict[str, Any]]) -> None:
-        for sentence in records:
-            conn.execute(
-                """
-                INSERT INTO sentences (id, document_id, sentence_index, text, start_char, end_char, completed)
-                VALUES (?, ?, ?, ?, ?, ?, 0)
-                """,
-                (
-                    sentence["id"],
-                    document_id,
-                    sentence["sentence_index"],
-                    sentence["text"],
-                    sentence["start_char"],
-                    sentence["end_char"],
-                ),
-            )
-            conn.executemany(
-                """
-                INSERT INTO tokens (id, sentence_id, token_index, text, start_char, end_char)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        token["id"],
-                        sentence["id"],
-                        token["token_index"],
-                        token["text"],
-                        token["start_char"],
-                        token["end_char"],
-                    )
-                    for token in sentence["tokens"]
-                ],
-            )
-
-    @classmethod
-    def _document_import_snapshot(cls, conn: sqlite3.Connection, project_id: str, document_id: str) -> dict[str, Any]:
-        document = conn.execute(
-            "SELECT id, filename, text, created_at FROM documents WHERE id = ? AND project_id = ?",
-            (document_id, project_id),
-        ).fetchone()
-        if document is None:
-            raise NotFoundError("Document not found.")
-        sentence_rows = conn.execute(
-            """
-            SELECT id, sentence_index, text, start_char, end_char
-            FROM sentences
-            WHERE document_id = ?
-            ORDER BY sentence_index
-            """,
-            (document_id,),
-        ).fetchall()
-        sentence_ids = [row["id"] for row in sentence_rows]
-        tokens_by_sentence: dict[str, list[dict[str, Any]]] = {}
-        if sentence_ids:
-            placeholders = ",".join("?" for _ in sentence_ids)
-            token_rows = conn.execute(
-                f"""
-                SELECT id, sentence_id, token_index, text, start_char, end_char
-                FROM tokens
-                WHERE sentence_id IN ({placeholders})
-                ORDER BY sentence_id, token_index
-                """,
-                sentence_ids,
-            ).fetchall()
-            for token in token_rows:
-                tokens_by_sentence.setdefault(token["sentence_id"], []).append(
-                    cls._row_dict(token, exclude={"sentence_id"})
-                )
-
-        sentence_records = [
-            {
-                "id": row["id"],
-                "sentence_index": row["sentence_index"],
-                "text": row["text"],
-                "start_char": row["start_char"],
-                "end_char": row["end_char"],
-                "tokens": tokens_by_sentence.get(row["id"], []),
-            }
-            for row in sentence_rows
-        ]
-        token_count = sum(len(sentence["tokens"]) for sentence in sentence_records)
-        return {
-            "type": "document.imported",
-            "snapshot_version": "annopilot.import_snapshot.v1",
-            "document_id": document["id"],
-            "filename": document["filename"],
-            "created_at": document["created_at"],
-            "text": document["text"],
-            "text_sha256": cls._text_sha256(document["text"]),
-            "sentence_count": len(sentence_records),
-            "token_count": token_count,
-            "sentences": sentence_records,
-        }
 
     @staticmethod
     def _new_id(prefix: str) -> str:

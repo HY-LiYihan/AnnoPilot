@@ -25,6 +25,7 @@ backend/app/
     audit.py
     exports.py
   services/               # transactions, validation, event-producing workflows
+    documents.py
     annotations.py
     suggestion_decisions.py
     suggestions.py
