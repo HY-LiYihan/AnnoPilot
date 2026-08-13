@@ -2086,7 +2086,27 @@ kbd {
   font-weight: 850;
 }
 
-.review-queue-row em {
+.review-risk-reasons {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.review-risk-reasons em {
+  padding: 2px 6px;
+  border: 1px solid rgba(196, 90, 46, 0.18);
+  border-radius: 999px;
+  color: #8a3a1c;
+  background: #fff6ed;
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.review-queue-row > em {
   flex: 0 0 auto;
   padding: 4px 7px;
   border-radius: 999px;

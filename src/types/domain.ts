@@ -116,6 +116,7 @@ export type ReviewQueueItem = {
   judge_review_risk_score: number
   candidate_disagreement_score: number
   risk_score: number
+  risk_reason_codes: string[]
   review_route: 'position' | 'uncertain' | 'risk' | 'calibration' | string
   first_suggestion: SuggestionDef | null
 }

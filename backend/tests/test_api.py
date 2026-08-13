@@ -2434,6 +2434,7 @@ def test_review_queue_goldsmith_uses_llm_review_risk_signal(tmp_path: Path) -> N
         assert [item["id"] for item in by_goldsmith["items"]] == [first_sentence["id"], second_sentence["id"]]
         assert round(by_goldsmith["items"][0]["lexical_risk_score"], 2) == 0.02
         assert by_goldsmith["items"][0]["llm_review_risk_score"] == 1.0
+        assert by_goldsmith["items"][0]["risk_reason_codes"] == ["llm_reject"]
         assert round(by_goldsmith["items"][0]["risk_score"], 2) == 1.02
         assert round(by_goldsmith["items"][1]["risk_score"], 2) == 0.52
         assert by_goldsmith["items"][0]["first_suggestion"]["id"] == "sg-llm-reject"
@@ -2451,6 +2452,7 @@ def test_review_queue_goldsmith_uses_llm_review_risk_signal(tmp_path: Path) -> N
         assert review_queue_lines[0]["sentence_id"] == first_sentence["id"]
         assert round(review_queue_lines[0]["lexical_risk_score"], 2) == 0.02
         assert review_queue_lines[0]["llm_review_risk_score"] == 1.0
+        assert review_queue_lines[0]["risk_reason_codes"] == ["llm_reject"]
         assert round(review_queue_lines[0]["risk_score"], 2) == 1.02
         assert review_queue_lines[0]["first_suggestion"]["latest_review"]["recommendation"] == "reject"
 
@@ -2562,6 +2564,12 @@ def test_review_queue_goldsmith_uses_judge_review_risk_signal(tmp_path: Path) ->
         assert round(by_goldsmith["items"][0]["lexical_risk_score"], 2) == 0.01
         assert by_goldsmith["items"][0]["llm_review_risk_score"] == 0.0
         assert by_goldsmith["items"][0]["judge_review_risk_score"] == 0.82
+        assert by_goldsmith["items"][0]["risk_reason_codes"] == [
+            "judge_needs_review",
+            "judge_boundary",
+            "judge_missing_span",
+        ]
+        assert by_goldsmith["items"][1]["risk_reason_codes"] == ["low_confidence", "dense_candidates"]
         assert round(by_goldsmith["items"][0]["risk_score"], 2) == 0.83
         assert round(by_goldsmith["items"][1]["risk_score"], 2) == 0.52
         assert by_goldsmith["items"][0]["first_suggestion"]["id"] == "sg-judge-risk"
@@ -2574,6 +2582,11 @@ def test_review_queue_goldsmith_uses_judge_review_risk_signal(tmp_path: Path) ->
         review_queue_lines = [json.loads(line) for line in review_queue_export.text.splitlines()]
         assert review_queue_lines[0]["sentence_id"] == first_sentence["id"]
         assert review_queue_lines[0]["judge_review_risk_score"] == 0.82
+        assert review_queue_lines[0]["risk_reason_codes"] == [
+            "judge_needs_review",
+            "judge_boundary",
+            "judge_missing_span",
+        ]
         assert round(review_queue_lines[0]["risk_score"], 2) == 0.83
 
 

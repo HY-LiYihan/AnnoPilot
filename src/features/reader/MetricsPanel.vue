@@ -194,6 +194,11 @@ function riskBreakdownText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
   return parts.length ? ` · ${parts.join(' · ')}` : ''
 }
 
+function riskReasonLabels(item: ReviewQueueItem, labels: UiLabels['metrics']) {
+  const reasonLabels = labels.riskReasonLabels as Record<string, string>
+  return item.risk_reason_codes.slice(0, 4).map((code) => reasonLabels[code] ?? code)
+}
+
 function shortHash(value: string) {
   return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value
 }
@@ -443,6 +448,9 @@ function shortHash(value: string) {
           <span>
             <strong>#{{ item.index + 1 }} · {{ labels.suggestionsCount(item.suggestion_count) }}</strong>
             <small>{{ queuePreviewText(item, labels, reviewQueueOrder) }}</small>
+            <span v-if="item.risk_reason_codes.length" class="review-risk-reasons" aria-hidden="true">
+              <em v-for="reason in riskReasonLabels(item, labels)" :key="reason">{{ reason }}</em>
+            </span>
           </span>
           <em>{{ labels.go }}</em>
         </button>

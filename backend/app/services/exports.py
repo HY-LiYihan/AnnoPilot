@@ -352,6 +352,7 @@ class ExportService:
                 "judge_review_risk_score": item.get("judge_review_risk_score", 0.0),
                 "candidate_disagreement_score": item.get("candidate_disagreement_score", 0.0),
                 "risk_score": item["risk_score"],
+                "risk_reason_codes": item.get("risk_reason_codes", []),
                 "review_route": item["review_route"],
                 "first_suggestion": self._export_goldsmith_suggestion(item.get("first_suggestion")),
                 "meta": {

@@ -650,30 +650,32 @@ class DocumentQueryRepository:
                 for row in suggestion_rows:
                     first_suggestion_by_sentence.setdefault(row["sentence_id"], self._suggestion_row_dict(row))
 
-        return {
-            "items": [
-                {
-                    "id": row["id"],
-                    "index": row["sentence_index"],
-                    "text": row["text"],
-                    "suggestion_count": row["suggestion_count"],
-                    "priority_score": float(row["min_confidence"] or 0),
-                    "min_confidence": float(row["min_confidence"] or 0),
-                    "lexical_risk_score": float(row["lexical_risk_score"] or 0),
-                    "llm_review_risk_score": float(row["llm_review_risk_score"] or 0),
-                    "judge_review_risk_score": float(row["judge_review_risk_score"] or 0),
-                    "candidate_disagreement_score": float(row["candidate_disagreement_score"] or 0),
-                    "risk_score": float(row["risk_score"] or 0),
-                    "review_route": review_routes.get(
-                        row["id"],
-                        "risk" if normalized_order in {"goldsmith", "hybrid"} else normalized_order,
-                    ),
-                    "first_suggestion": first_suggestion_by_sentence.get(row["id"]),
-                }
-                for row in sentence_rows
-            ],
-            "total": int(total or 0),
-        }
+        items = []
+        for row in sentence_rows:
+            first_suggestion = first_suggestion_by_sentence.get(row["id"])
+            review_route = review_routes.get(
+                row["id"],
+                "risk" if normalized_order in {"goldsmith", "hybrid"} else normalized_order,
+            )
+            item = {
+                "id": row["id"],
+                "index": row["sentence_index"],
+                "text": row["text"],
+                "suggestion_count": row["suggestion_count"],
+                "priority_score": float(row["min_confidence"] or 0),
+                "min_confidence": float(row["min_confidence"] or 0),
+                "lexical_risk_score": float(row["lexical_risk_score"] or 0),
+                "llm_review_risk_score": float(row["llm_review_risk_score"] or 0),
+                "judge_review_risk_score": float(row["judge_review_risk_score"] or 0),
+                "candidate_disagreement_score": float(row["candidate_disagreement_score"] or 0),
+                "risk_score": float(row["risk_score"] or 0),
+                "review_route": review_route,
+                "first_suggestion": first_suggestion,
+            }
+            item["risk_reason_codes"] = self._review_queue_risk_reason_codes(item, first_suggestion)
+            items.append(item)
+
+        return {"items": items, "total": int(total or 0)}
 
     @staticmethod
     def _llm_review_risk_sql(alias: str = "rev") -> str:
@@ -691,6 +693,60 @@ class DocumentQueryRepository:
     @classmethod
     def _combined_review_risk_sql(cls, alias: str = "rev") -> str:
         return f"({cls._llm_review_risk_sql(alias)} + {cls._judge_review_risk_sql(alias)})"
+
+    @staticmethod
+    def _review_queue_risk_reason_codes(item: dict[str, Any], first_suggestion: dict[str, Any] | None) -> list[str]:
+        codes: list[str] = []
+        latest_review = (first_suggestion or {}).get("latest_review") or {}
+        judge = latest_review.get("judge") or {}
+        recommendation = latest_review.get("recommendation")
+        error_types = set(judge.get("error_types") or []) if isinstance(judge, dict) else set()
+        risk_flags = set(judge.get("risk_flags") or []) if isinstance(judge, dict) else set()
+
+        if item.get("review_route") == "calibration":
+            codes.append("calibration_sample")
+        if float(item.get("candidate_disagreement_score") or 0.0) > 0:
+            codes.append("candidate_conflict")
+        if float(item.get("llm_review_risk_score") or 0.0) > 0:
+            if recommendation == "reject":
+                codes.append("llm_reject")
+            elif recommendation == "uncertain":
+                codes.append("llm_uncertain")
+            else:
+                codes.append("llm_review_risk")
+        if float(item.get("judge_review_risk_score") or 0.0) > 0:
+            if isinstance(judge, dict) and judge.get("needs_review") is True:
+                codes.append("judge_needs_review")
+            boundary_score = DocumentQueryRepository._float_or_default(judge.get("boundary_score") if isinstance(judge, dict) else None, 1.0)
+            missed_span_risk = DocumentQueryRepository._float_or_default(judge.get("missed_span_risk") if isinstance(judge, dict) else None, 0.0)
+            extra_span_risk = DocumentQueryRepository._float_or_default(judge.get("extra_span_risk") if isinstance(judge, dict) else None, 0.0)
+            overall_score = DocumentQueryRepository._float_or_default(judge.get("overall_score") if isinstance(judge, dict) else None, 1.0)
+            if boundary_score <= 0.65 or {"boundary_too_wide", "boundary_too_narrow"} & error_types:
+                codes.append("judge_boundary")
+            if missed_span_risk >= 0.5 or "missed_span" in error_types or "possible_under_annotation" in risk_flags:
+                codes.append("judge_missing_span")
+            if extra_span_risk >= 0.5 or "extra_span" in error_types or "possible_over_annotation" in risk_flags:
+                codes.append("judge_extra_span")
+            if overall_score <= 0.75:
+                codes.append("judge_low_score")
+            if not any(code.startswith("judge_") for code in codes):
+                codes.append("judge_risk")
+        if float(item.get("lexical_risk_score") or 0.0) > 0:
+            if float(item.get("min_confidence") or 0.0) < MEDIUM_CONFIDENCE_THRESHOLD:
+                codes.append("low_confidence")
+            if int(item.get("suggestion_count") or 0) >= 2:
+                codes.append("dense_candidates")
+        if not codes and item.get("review_route") == "uncertain":
+            codes.append("uncertain_confidence")
+        return list(dict.fromkeys(codes))
+
+    @staticmethod
+    def _float_or_default(value: Any, default: float) -> float:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return default
+        return number
 
     @staticmethod
     def _candidate_disagreement_score_sql(sentence_alias: str = "s") -> str:

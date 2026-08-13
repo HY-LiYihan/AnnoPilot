@@ -266,6 +266,7 @@ class ReviewQueueItemResponse(BaseModel):
     judge_review_risk_score: float = 0.0
     candidate_disagreement_score: float = 0.0
     risk_score: float
+    risk_reason_codes: list[str] = Field(default_factory=list)
     review_route: str = "risk"
     first_suggestion: Optional[SuggestionResponse] = None
 
