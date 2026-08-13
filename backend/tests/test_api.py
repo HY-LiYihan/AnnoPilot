@@ -1313,6 +1313,115 @@ def test_appraisal_engagement_review_context_includes_guidelines(tmp_path: Path)
     assert context["suggestion"]["tag_examples"]
 
 
+def test_appraisal_engagement_human_review_session_exports_prodigy_and_goldsmith_bundle(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage, suggestion_reviewer=FakeSuggestionReviewer())) as client:
+        load_response = client.post("/api/projects/default/sample-presets/appraisal-engagement-finance-investor-cn-en/load")
+        assert load_response.status_code == 200
+        loaded = load_response.json()
+        document_id = loaded["document_id"]
+        assert loaded["suggestions_created"] >= 20
+
+        queue_response = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith&limit=10")
+        assert queue_response.status_code == 200
+        queue = queue_response.json()
+        assert queue["total"] > 0
+        rejected_suggestion = queue["items"][0]["first_suggestion"]
+        rejected_suggestion_id = rejected_suggestion["id"]
+
+        review_response = client.post(f"/api/projects/default/suggestions/{rejected_suggestion_id}/llm-review")
+        assert review_response.status_code == 200
+        review = review_response.json()
+        assert review["recommendation"] == "accept"
+        assert review["model"] == "fake-gpt5.5"
+
+        reject_response = client.post(f"/api/projects/default/suggestions/{rejected_suggestion_id}/reject")
+        assert reject_response.status_code == 200
+        assert reject_response.json()["rejected"] is True
+
+        document_after_reject = client.get(f"/api/projects/default/documents/{document_id}").json()
+        pending_suggestions = [
+            suggestion
+            for sentence in document_after_reject["sentences"]
+            for suggestion in sentence["suggestions"]
+            if suggestion["id"] != rejected_suggestion_id
+        ]
+        assert pending_suggestions
+        accepted_suggestion = pending_suggestions[0]
+
+        accept_response = client.post(f"/api/projects/default/suggestions/{accepted_suggestion['id']}/accept")
+        assert accept_response.status_code == 200
+        accepted_payload = accept_response.json()
+        assert accepted_payload["accepted"] is True
+        accepted_annotation = next(
+            annotation for annotation in accepted_payload["annotations"] if annotation["source_suggestion_id"] == accepted_suggestion["id"]
+        )
+        assert accepted_annotation["source"] == "accepted_suggestion"
+
+        prodigy_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl")
+        assert prodigy_response.status_code == 200
+        prodigy_lines = [json.loads(line) for line in prodigy_response.text.splitlines()]
+        assert any(line["_view_id"] == "ner_manual" for line in prodigy_lines)
+        assert any(
+            span["label"] == accepted_annotation["tag_name"]
+            and line["text"][span["start"] : span["end"]] == accepted_annotation["text"]
+            for line in prodigy_lines
+            for span in line["spans"]
+        )
+        assert any(
+            source["source"] == "accepted_suggestion" and source["source_suggestion_id"] == accepted_suggestion["id"]
+            for line in prodigy_lines
+            for source in line["meta"]["annotation_sources"]
+        )
+
+        choices_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.human-choices.jsonl")
+        assert choices_response.status_code == 200
+        choices = [json.loads(line) for line in choices_response.text.splitlines()]
+        choices_by_id = {choice["suggestion_id"]: choice for choice in choices}
+        assert choices_by_id[rejected_suggestion_id]["human_decision"] == "reject"
+        assert choices_by_id[rejected_suggestion_id]["latest_review"]["recommendation"] == "accept"
+        assert choices_by_id[rejected_suggestion_id]["disagreement"] is True
+        assert choices_by_id[accepted_suggestion["id"]]["human_decision"] == "accept"
+        assert choices_by_id[accepted_suggestion["id"]]["span"]["text"] == accepted_annotation["text"]
+
+        hard_examples_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.hard-examples.jsonl")
+        assert hard_examples_response.status_code == 200
+        hard_examples = [json.loads(line) for line in hard_examples_response.text.splitlines()]
+        rejected_hard_example = next(example for example in hard_examples if example["suggestion_id"] == rejected_suggestion_id)
+        assert rejected_hard_example["schema_version"] == "annopilot.goldsmith_hard_examples.v1"
+        assert rejected_hard_example["hard_example_reasons"] == ["llm_human_disagreement", "human_rejected_suggestion"]
+        assert rejected_hard_example["human_decision"] == "reject"
+
+        boundary_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.boundary-feedback.jsonl")
+        assert boundary_response.status_code == 200
+        boundary_feedback = [json.loads(line) for line in boundary_response.text.splitlines()]
+        rejected_boundary = next(item for item in boundary_feedback if item["suggestion_id"] == rejected_suggestion_id)
+        assert rejected_boundary["schema_version"] == "annopilot.goldsmith_boundary_feedback.v1"
+        assert rejected_boundary["source_type"] == "human_choice"
+        assert rejected_boundary["feedback_polarity"] == "negative"
+        assert rejected_boundary["latest_review"]["recommendation"] == "accept"
+
+        candidate_runs_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.candidate-runs.jsonl")
+        assert candidate_runs_response.status_code == 200
+        candidate_runs = [json.loads(line) for line in candidate_runs_response.text.splitlines()]
+        assert candidate_runs
+        assert candidate_runs[0]["schema_version"] == "rosetta.prodigy_candidate.v1"
+        assert candidate_runs[0]["meta"]["rosetta_reference"] == "candidate_runs.jsonl"
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert manifest["metrics"]["calibration_count"] == 1
+        assert manifest["metrics"]["calibration_disagreement_count"] == 1
+        assert manifest["metrics"]["calibration_error_rate"] == 1.0
+        assert manifest["artifacts"]["prodigy_jsonl"]["schema_version"] == "prodigy.ner_manual.compat.v1"
+        assert manifest["artifacts"]["goldsmith_human_choices_jsonl"]["line_count"] == 2
+        assert manifest["artifacts"]["goldsmith_hard_examples_jsonl"]["line_count"] >= 1
+        assert manifest["artifacts"]["goldsmith_boundary_feedback_jsonl"]["line_count"] >= 1
+        assert manifest["artifacts"]["goldsmith_candidate_runs_jsonl"]["schema_version"] == "rosetta.prodigy_candidate.v1"
+
+
 def test_suggestion_review_context_includes_same_label_boundary_feedback(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",
