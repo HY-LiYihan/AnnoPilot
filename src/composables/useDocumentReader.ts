@@ -31,11 +31,9 @@ import {
   reviewSentenceSuggestions,
   reviewSuggestion,
 } from '../api/suggestions'
-import { createTag, deleteTag as deleteProjectTag, fetchTags, importTagSchema, renameTag as renameProjectTag } from '../api/tags'
 import {
   ACTIVE_DOCUMENT_KEY,
   PROJECT_ID,
-  fallbackTags,
   type AnnotationImportSummary,
   type AuditSummary,
   type AnnotationRun,
@@ -53,12 +51,12 @@ import {
   type SessionState,
   type SuggestionDef,
   type SuggestionReview,
-  type TagDef,
   type TxtImportMode,
 } from '../types/domain'
 import { normalizedRange, useTokenSelection } from './useTokenSelection'
 import { useReaderKeyboardShortcuts } from './useReaderKeyboardShortcuts'
 import { useReaderExports } from './useReaderExports'
+import { useReaderTags } from './useReaderTags'
 
 const SENTENCE_WINDOW_SIZE = 60
 const SENTENCE_WINDOW_PADDING = 20
@@ -101,7 +99,6 @@ function emptyMetrics(): Metrics {
 }
 
 export function useDocumentReader() {
-  const tags = ref<TagDef[]>(fallbackTags)
   const samplePresets = ref<SamplePreset[]>([])
   const documents = ref<DocumentListItem[]>([])
   const documentMeta = ref<DocumentMeta | null>(null)
@@ -110,7 +107,6 @@ export function useDocumentReader() {
   const sentenceQueue = ref<SentenceQueueItem[]>([])
   const loadedWindow = ref({ offset: 0, limit: 0, total: 0 })
   const metrics = ref<Metrics>(emptyMetrics())
-  const selectedTagId = ref(fallbackTags[0]?.id ?? '')
   const currentSentenceIndex = ref(0)
   const suggestionLimit = ref(6)
   const suggestionMinConfidence = ref(0.7)
@@ -134,9 +130,30 @@ export function useDocumentReader() {
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
   let interactiveRefreshSerial = 0
 
+  const {
+    addTag,
+    deleteTag,
+    findMonoglossTag,
+    handleTagSchemaImport,
+    loadProjectTags,
+    renameTag,
+    selectedTag,
+    selectedTagId,
+    setTags,
+    tags,
+  } = useReaderTags({
+    currentSentenceIndex,
+    documentMeta,
+    isSaving,
+    loadDocument,
+    loadSentenceWindow,
+    readerError,
+    refreshAuditSummary,
+    refreshDocumentSummary,
+  })
+
   const selection = useTokenSelection(sentences)
   const currentSentence = computed(() => sentences.value.find((sentence) => sentence.index === currentSentenceIndex.value) ?? null)
-  const selectedTag = computed(() => tags.value.find((tagItem) => tagItem.id === selectedTagId.value) ?? tags.value[0] ?? null)
   const progressPercent = computed(() => Math.min(Math.max(metrics.value.progress * 100, 0), 100))
   const reviewedSummary = computed(() => `${metrics.value.completed_count} / ${metrics.value.sentence_count || 0}`)
   const reviewSummary = computed(() => `${metrics.value.suggestion_count} 待确认`)
@@ -235,8 +252,7 @@ export function useDocumentReader() {
       const imported = shouldMerge && documentMeta.value
         ? await mergeTxt(PROJECT_ID, documentMeta.value.id, file)
         : await importTxt(PROJECT_ID, file)
-      tags.value = imported.tags
-      selectedTagId.value = imported.tags[0]?.id ?? selectedTagId.value
+      setTags(imported.tags, 'first')
       selection.clearSelection()
       window.localStorage.setItem(ACTIVE_DOCUMENT_KEY, imported.document_id)
       await loadDocument(imported.document_id, shouldMerge)
@@ -302,8 +318,7 @@ export function useDocumentReader() {
     lastUndoAction.value = null
     try {
       const loaded = await loadSamplePresetApi(PROJECT_ID, presetId)
-      tags.value = loaded.tags
-      selectedTagId.value = loaded.tags[0]?.id ?? selectedTagId.value
+      setTags(loaded.tags, 'first')
       selection.clearSelection()
       window.localStorage.setItem(ACTIVE_DOCUMENT_KEY, loaded.document_id)
       await loadDocument(loaded.document_id)
@@ -327,8 +342,7 @@ export function useDocumentReader() {
   function applyDocumentSummary(payload: DocumentSummaryPayload) {
     documentMeta.value = payload.document
     activeSession.value = payload.session
-    tags.value = payload.tags
-    selectedTagId.value = tags.value.find((tagItem) => tagItem.id === selectedTagId.value)?.id ?? tags.value[0]?.id ?? ''
+    setTags(payload.tags)
     metrics.value = payload.metrics
     sentenceQueue.value = payload.queue
     loadedWindow.value.total = payload.metrics.sentence_count
@@ -342,16 +356,6 @@ export function useDocumentReader() {
       0,
       payload.queue.find((sentence) => !sentence.completed)?.index ?? 0,
     )
-  }
-
-  async function loadProjectTags() {
-    try {
-      const payload = await fetchTags(PROJECT_ID)
-      tags.value = payload.tags
-      selectedTagId.value = tags.value.find((tagItem) => tagItem.id === selectedTagId.value)?.id ?? tags.value[0]?.id ?? ''
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not load project tags.'
-    }
   }
 
   async function refreshDocumentSummary() {
@@ -490,15 +494,6 @@ export function useDocumentReader() {
     selectedTagId.value = tag.id
     const created = await createSentenceAnnotation(sentence, firstToken.token_index, lastToken.token_index, tag.id)
     if (created) await completeCurrentSentence('accept')
-  }
-
-  function findMonoglossTag() {
-    return tags.value.find((tag) =>
-      tag.id === 'engagement_monogloss' ||
-        tag.id.toLowerCase().includes('monogloss') ||
-        tag.name.toLowerCase().includes('monogloss') ||
-        tag.name.includes('单声'),
-    ) ?? null
   }
 
   function setActiveSuggestionTarget(suggestion: SuggestionDef) {
@@ -715,123 +710,6 @@ export function useDocumentReader() {
 
   function handleTagClick(tagId: string) {
     void applyTagToSelection(tagId)
-  }
-
-  async function addTag(name: string, description = '') {
-    if (isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      const payload = await createTag(PROJECT_ID, name, description)
-      tags.value = [...tags.value, payload.tag]
-      selectedTagId.value = payload.tag.id
-      await refreshAuditSummary()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not create tag.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function renameTag(tag: TagDef, name: string, description?: string | null, examples?: string[]) {
-    if (isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      const payload = await renameProjectTag(PROJECT_ID, tag.id, name, description, examples)
-      tags.value = tags.value.map((tagItem) => (tagItem.id === tag.id ? payload.tag : tagItem))
-      if (documentMeta.value) {
-        await refreshDocumentSummary()
-        await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
-      }
-      await refreshAuditSummary()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not rename tag.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function handleTagSchemaImport(file: File) {
-    if (isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      const schema = parseTagSchemaImportPayload(await file.text())
-      const payload = await importTagSchema(PROJECT_ID, schema)
-      tags.value = payload.tags
-      selectedTagId.value = tags.value.find((tagItem) => tagItem.id === selectedTagId.value)?.id ?? tags.value[0]?.id ?? ''
-      if (documentMeta.value) {
-        await refreshDocumentSummary()
-        await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
-      }
-      await refreshAuditSummary()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not import tag schema.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  function parseTagSchemaImportPayload(text: string) {
-    const trimmed = text.trim()
-    if (!trimmed) throw new Error('Tag schema file is empty.')
-
-    try {
-      return extractTagSchemaRecord(JSON.parse(trimmed))
-    } catch (error) {
-      if (!(error instanceof SyntaxError)) throw error
-      const records = trimmed
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line, index) => {
-          try {
-            return JSON.parse(line)
-          } catch {
-            throw new Error(`Invalid JSONL tag schema at line ${index + 1}.`)
-          }
-        })
-      return extractTagSchemaRecord(records)
-    }
-  }
-
-  function extractTagSchemaRecord(payload: unknown) {
-    if (Array.isArray(payload)) {
-      const record = payload.find((item) => isTagSchemaRecord(item))
-      if (record) return record
-      throw new Error('JSONL file must include an annopilot.tag_schema.v1 record.')
-    }
-    if (isTagSchemaRecord(payload)) return payload
-    throw new Error('Tag schema must use annopilot.tag_schema.v1 format.')
-  }
-
-  function isTagSchemaRecord(payload: unknown): payload is Record<string, unknown> {
-    return Boolean(
-      payload &&
-        typeof payload === 'object' &&
-        (payload as Record<string, unknown>).schema_version === 'annopilot.tag_schema.v1' &&
-        (payload as Record<string, unknown>).record_type === 'tag_schema',
-    )
-  }
-
-  async function deleteTag(tag: TagDef) {
-    if (isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      await deleteProjectTag(PROJECT_ID, tag.id)
-      if (documentMeta.value) {
-        await loadDocument(documentMeta.value.id, true)
-      } else {
-        tags.value = tags.value.filter((tagItem) => tagItem.id !== tag.id)
-        selectedTagId.value = tags.value.find((tagItem) => tagItem.id === selectedTagId.value)?.id ?? tags.value[0]?.id ?? ''
-      }
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not delete tag.'
-    } finally {
-      isSaving.value = false
-    }
   }
 
   async function applyTagToSelection(tagId: string) {
