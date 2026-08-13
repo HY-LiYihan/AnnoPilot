@@ -39,6 +39,7 @@ TASK_SCHEMA_VERSION = "annopilot.task.v1"
 EXPORT_MANIFEST_SCHEMA_VERSION = "annopilot.export_manifest.v1"
 PRODIGY_EXPORT_SCHEMA_VERSION = "prodigy.ner_manual.compat.v1"
 PRODIGY_SPANS_EXPORT_SCHEMA_VERSION = "prodigy.spans_manual.compat.v1"
+PRODIGY_LABELS_SCHEMA_VERSION = "annopilot.prodigy_labels.v1"
 TAG_SCHEMA_VERSION = "annopilot.tag_schema.v1"
 RUN_PROVENANCE_SCHEMA_VERSION = "annopilot.run_provenance.v1"
 GOLDSMITH_REVIEW_QUEUE_SCHEMA_VERSION = "annopilot.goldsmith_review_queue.v1"
@@ -230,6 +231,7 @@ class AnnotationStorage:
             export_manifest_schema_version=EXPORT_MANIFEST_SCHEMA_VERSION,
             prodigy_export_schema_version=PRODIGY_EXPORT_SCHEMA_VERSION,
             prodigy_spans_export_schema_version=PRODIGY_SPANS_EXPORT_SCHEMA_VERSION,
+            prodigy_labels_schema_version=PRODIGY_LABELS_SCHEMA_VERSION,
             tag_schema_version=TAG_SCHEMA_VERSION,
             event_schema_version=EVENT_SCHEMA_VERSION,
             run_provenance_schema_version=RUN_PROVENANCE_SCHEMA_VERSION,
@@ -350,6 +352,9 @@ class AnnotationStorage:
 
     def export_prodigy_spans_document_lines(self, project_id: str, document_id: str) -> list[str]:
         return self.export_service.export_prodigy_spans_document_lines(project_id, document_id)
+
+    def export_prodigy_labels(self, project_id: str) -> dict[str, Any]:
+        return self.export_service.export_prodigy_labels(project_id)
 
     def export_manifest(self, project_id: str, document_id: str) -> dict[str, Any]:
         return self.export_service.export_manifest(project_id, document_id)

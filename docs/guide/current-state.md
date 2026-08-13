@@ -102,6 +102,7 @@ GET    /api/projects/{project_id}/documents/{document_id}/export.goldsmith.candi
 GET    /api/projects/{project_id}/documents/{document_id}/export.manifest.json
 GET    /api/projects/{project_id}/events.jsonl
 GET    /api/projects/{project_id}/tags/schema.json
+GET    /api/projects/{project_id}/tags/prodigy-labels.json
 ```
 
 当前 backend 还负责 production static serving：当 `STATIC_DIR` 存在时，FastAPI 会 serve `/assets` 和 Vue SPA history fallback。

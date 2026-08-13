@@ -10,6 +10,7 @@ import {
   goldsmithReviewQueueExportUrl,
   manifestExportUrl,
   prodigyExportUrl,
+  prodigyLabelsExportUrl,
   prodigySpansExportUrl,
   tagSchemaExportUrl,
 } from '../api/documents'
@@ -38,6 +39,10 @@ export function useReaderExports(options: ReaderExportOptions) {
 
   function exportProdigySpansJsonl() {
     withDocument(prodigySpansExportUrl)
+  }
+
+  function exportProdigyLabelsJson() {
+    window.location.href = prodigyLabelsExportUrl(PROJECT_ID)
   }
 
   function exportManifestJson() {
@@ -92,6 +97,7 @@ export function useReaderExports(options: ReaderExportOptions) {
     exportGoldsmithReviewQueueJsonl,
     exportJsonl,
     exportManifestJson,
+    exportProdigyLabelsJson,
     exportProdigyJsonl,
     exportProdigySpansJsonl,
     exportRunProvenanceJson,

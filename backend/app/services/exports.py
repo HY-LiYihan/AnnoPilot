@@ -26,6 +26,7 @@ class ExportService:
         export_manifest_schema_version: str,
         prodigy_export_schema_version: str,
         prodigy_spans_export_schema_version: str,
+        prodigy_labels_schema_version: str,
         tag_schema_version: str,
         event_schema_version: str,
         run_provenance_schema_version: str,
@@ -51,6 +52,7 @@ class ExportService:
         self.export_manifest_schema_version = export_manifest_schema_version
         self.prodigy_export_schema_version = prodigy_export_schema_version
         self.prodigy_spans_export_schema_version = prodigy_spans_export_schema_version
+        self.prodigy_labels_schema_version = prodigy_labels_schema_version
         self.tag_schema_version = tag_schema_version
         self.event_schema_version = event_schema_version
         self.run_provenance_schema_version = run_provenance_schema_version
@@ -117,11 +119,45 @@ class ExportService:
     def export_prodigy_spans_document_lines(self, project_id: str, document_id: str) -> list[str]:
         return self._export_prodigy_document_lines(project_id, document_id, view_id="spans_manual")
 
+    def export_prodigy_labels(self, project_id: str) -> dict[str, Any]:
+        tag_schema = self.export_tag_schema(project_id)
+        labels = [tag["name"] for tag in tag_schema["tags"]]
+        payload = {
+            "schema_version": self.prodigy_labels_schema_version,
+            "record_type": "prodigy_labels",
+            "generated_at": self.now(),
+            "project_id": project_id,
+            "tag_schema_sha256": tag_schema["content_sha256"],
+            "label_count": len(labels),
+            "labels": labels,
+            "labels_csv": ",".join(labels),
+            "label_definitions": [
+                {
+                    "id": tag["id"],
+                    "name": tag["name"],
+                    "description": tag.get("description"),
+                    "examples": tag.get("examples", []),
+                    "shortcut": tag.get("shortcut"),
+                    "color": tag.get("color"),
+                }
+                for tag in tag_schema["tags"]
+            ],
+            "command_templates": {},
+        }
+        payload["command_templates"] = {
+            "ner_manual": f'prodigy ner.manual <dataset> blank:en <document>.prodigy.jsonl --label "{payload["labels_csv"]}"',
+            "spans_manual": f'prodigy spans.manual <dataset> blank:en <document>.prodigy.spans.jsonl --label "{payload["labels_csv"]}"',
+        }
+        payload["content_sha256"] = self._payload_sha256(self._prodigy_labels_content_payload(payload))
+        return payload
+
     def export_manifest(self, project_id: str, document_id: str) -> dict[str, Any]:
         document = self.get_document(project_id, document_id)
         task_lines = self.export_document_lines(project_id, document_id)
         prodigy_lines = self.export_prodigy_document_lines(project_id, document_id)
         prodigy_spans_lines = self.export_prodigy_spans_document_lines(project_id, document_id)
+        prodigy_labels_payload = self.export_prodigy_labels(project_id)
+        prodigy_labels_line = json.dumps(prodigy_labels_payload, ensure_ascii=False, sort_keys=True) + "\n"
         goldsmith_queue_lines = self.export_goldsmith_review_queue_lines(project_id, document_id, order="hybrid", limit=100)
         goldsmith_choices_lines = self.export_goldsmith_human_choices_lines(project_id, document_id)
         goldsmith_hard_example_lines = self.export_goldsmith_hard_examples_lines(project_id, document_id)
@@ -179,6 +215,12 @@ class ExportService:
                     filename=f"{document_id}.prodigy.spans.jsonl",
                     schema_version=self.prodigy_spans_export_schema_version,
                     lines=prodigy_spans_lines,
+                ),
+                "prodigy_labels_json": self._artifact_summary(
+                    filename=f"{project_id}-prodigy-labels.json",
+                    schema_version=self.prodigy_labels_schema_version,
+                    lines=[prodigy_labels_line],
+                    content_sha256=prodigy_labels_payload["content_sha256"],
                 ),
                 "events_jsonl": self._artifact_summary(
                     filename=f"{project_id}-events.jsonl",
@@ -837,6 +879,15 @@ class ExportService:
                 if isinstance(artifact, dict) and artifact.get("content_sha256"):
                     artifact.pop("sha256", None)
         return payload
+
+    @staticmethod
+    def _prodigy_labels_content_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        return json.loads(
+            json.dumps(
+                {key: value for key, value in payload.items() if key not in {"generated_at", "content_sha256"}},
+                ensure_ascii=False,
+            )
+        )
 
     @staticmethod
     def _export_goldsmith_suggestion(suggestion: dict[str, Any] | None) -> dict[str, Any] | None:

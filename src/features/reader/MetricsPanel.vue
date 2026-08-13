@@ -22,6 +22,7 @@ const emit = defineEmits<{
   export: []
   'export-prodigy': []
   'export-prodigy-spans': []
+  'export-prodigy-labels': []
   'export-manifest': []
   'export-events': []
   'export-tag-schema': []
@@ -214,6 +215,11 @@ function shortHash(value: string) {
 
       <button class="export-button secondary compact" :disabled="!documentMeta" @click="emit('export-prodigy-spans')">
         {{ labels.exportProdigySpans }}
+        <Download :size="17" aria-hidden="true" />
+      </button>
+
+      <button class="export-button secondary compact" @click="emit('export-prodigy-labels')">
+        {{ labels.exportProdigyLabels }}
         <Download :size="17" aria-hidden="true" />
       </button>
 

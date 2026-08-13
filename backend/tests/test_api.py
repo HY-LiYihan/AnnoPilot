@@ -264,6 +264,19 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert "usage_count" not in tag_schema["tags"][0]
         assert prodigy_lines[0]["meta"]["tag_schema"]["content_sha256"] == tag_schema["content_sha256"]
 
+        prodigy_labels_response = client.get("/api/projects/default/tags/prodigy-labels.json")
+        assert prodigy_labels_response.status_code == 200
+        assert prodigy_labels_response.headers["content-disposition"] == 'attachment; filename="default-prodigy-labels.json"'
+        prodigy_labels = prodigy_labels_response.json()
+        assert prodigy_labels["schema_version"] == "annopilot.prodigy_labels.v1"
+        assert prodigy_labels["record_type"] == "prodigy_labels"
+        assert len(prodigy_labels["content_sha256"]) == 64
+        assert prodigy_labels["tag_schema_sha256"] == tag_schema["content_sha256"]
+        assert prodigy_labels["labels"] == ["动词"]
+        assert prodigy_labels["labels_csv"] == "动词"
+        assert prodigy_labels["label_definitions"] == prodigy_lines[0]["meta"]["tag_schema"]["labels"]
+        assert '--label "动词"' in prodigy_labels["command_templates"]["ner_manual"]
+
         manifest_response = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json")
         assert manifest_response.status_code == 200
         assert manifest_response.headers["content-disposition"] == f'attachment; filename="{document_id}.manifest.json"'
@@ -299,6 +312,8 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert manifest["artifacts"]["prodigy_jsonl"]["sha256"] == hashlib.sha256(prodigy_export_response.text.encode("utf-8")).hexdigest()
         assert manifest["artifacts"]["prodigy_spans_jsonl"]["schema_version"] == "prodigy.spans_manual.compat.v1"
         assert manifest["artifacts"]["prodigy_spans_jsonl"]["sha256"] == hashlib.sha256(prodigy_spans_export_response.text.encode("utf-8")).hexdigest()
+        assert manifest["artifacts"]["prodigy_labels_json"]["schema_version"] == "annopilot.prodigy_labels.v1"
+        assert manifest["artifacts"]["prodigy_labels_json"]["content_sha256"] == prodigy_labels["content_sha256"]
         assert manifest["artifacts"]["events_jsonl"]["sha256"] == hashlib.sha256(event_export_response.text.encode("utf-8")).hexdigest()
         assert manifest["artifacts"]["tag_schema_json"]["schema_version"] == "annopilot.tag_schema.v1"
         assert manifest["artifacts"]["tag_schema_json"]["line_count"] == 1

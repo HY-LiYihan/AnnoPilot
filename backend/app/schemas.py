@@ -646,6 +646,20 @@ class TagSchemaExportResponse(BaseModel):
     tags: list[TagSchemaItemResponse]
 
 
+class ProdigyLabelsExportResponse(BaseModel):
+    schema_version: str
+    record_type: str
+    generated_at: str
+    content_sha256: str
+    project_id: str
+    tag_schema_sha256: str
+    label_count: int
+    labels: list[str]
+    labels_csv: str
+    label_definitions: list[TagSchemaItemResponse]
+    command_templates: dict[str, str]
+
+
 class AcceptSuggestionResponse(BaseModel):
     accepted: bool
     annotations: list[AnnotationResponse]

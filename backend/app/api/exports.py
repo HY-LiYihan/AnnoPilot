@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from ..schemas import ExportManifestResponse, TagSchemaExportResponse
+from ..schemas import ExportManifestResponse, ProdigyLabelsExportResponse, TagSchemaExportResponse
 from ..storage import AnnotationStorage, NotFoundError, ValidationError
 from .dependencies import get_storage
 
@@ -173,3 +173,13 @@ def export_tag_schema(
     schema = storage.export_tag_schema(project_id)
     headers = {"Content-Disposition": f'attachment; filename="{project_id}-tag-schema.json"'}
     return JSONResponse(schema, headers=headers)
+
+
+@router.get("/tags/prodigy-labels.json", response_model=ProdigyLabelsExportResponse)
+def export_prodigy_labels(
+    project_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> JSONResponse:
+    labels = storage.export_prodigy_labels(project_id)
+    headers = {"Content-Disposition": f'attachment; filename="{project_id}-prodigy-labels.json"'}
+    return JSONResponse(labels, headers=headers)

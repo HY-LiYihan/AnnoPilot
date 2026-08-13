@@ -129,6 +129,10 @@ export function prodigySpansExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.prodigy.spans.jsonl`
 }
 
+export function prodigyLabelsExportUrl(projectId: string) {
+  return `/api/projects/${projectId}/tags/prodigy-labels.json`
+}
+
 export function goldsmithReviewQueueExportUrl(projectId: string, documentId: string, order: ReviewQueueOrder = 'hybrid') {
   const params = new URLSearchParams({ order, limit: '100' })
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.review-queue.jsonl?${params.toString()}`

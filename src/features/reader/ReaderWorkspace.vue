@@ -182,6 +182,7 @@ const {
   tokenStyle,
   exportJsonl,
   exportProdigyJsonl,
+  exportProdigyLabelsJson,
   exportProdigySpansJsonl,
   handleAnnotationImport,
   exportManifestJson,
@@ -398,6 +399,7 @@ async function confirmProjectReset() {
         @export="exportJsonl"
         @export-prodigy="exportProdigyJsonl"
         @export-prodigy-spans="exportProdigySpansJsonl"
+        @export-prodigy-labels="exportProdigyLabelsJson"
         @import-annotations="handleAnnotationImport"
         @review-sentence="setCurrentSentence"
         @review-order-change="setReviewQueueOrder"

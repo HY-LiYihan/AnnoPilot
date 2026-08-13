@@ -252,6 +252,7 @@ GET /api/projects/{project_id}/documents/{document_id}/export.manifest.json
 GET /api/projects/{project_id}/runs/{run_id}/provenance.json
 GET /api/projects/{project_id}/events.jsonl
 GET /api/projects/{project_id}/tags/schema.json
+GET /api/projects/{project_id}/tags/prodigy-labels.json
 ```
 
 Product UI 使用 `summary` 读取全局 metrics、tags 和 sentence-dot state，使用 `sentences` 读取 paged reader window，使用 `review-queue` 读取右侧待审任务列表。Summary metrics 会输出 document-level `annotation_label_counts` 和 live pending `suggestion_label_counts`，同时输出 `suggestion_status_counts`、LLM latest review 的 `suggestion_review_counts` / `reviewed_suggestion_count`，并对当前可处理的 pending suggestions 输出 `suggestion_source_counts` 和 `suggestion_confidence_counts`，因此右侧运行状态无需加载全文 sentence window 也能展示 Engagement label coverage、待审队列质量和评审分布。Review queue 支持 `order=position`、`order=random`、`order=uncertain`、`order=goldsmith` 和 `order=hybrid`；`random` 提供稳定伪随机 baseline，`uncertain` 按句内最低 Character RAG confidence 优先，`goldsmith` 按词面低置信、句内候选密度、latest LLM review 风险和候选标签/边界冲突综合优先，`hybrid` 保留高风险优先并插入少量高置信且无 LLM 风险的 `calibration` 抽检样本。队列 item 返回 `min_confidence`、`lexical_risk_score`、`llm_review_risk_score`、`candidate_disagreement_score`、`risk_score`、`review_route` 和兼容字段 `priority_score=min_confidence`，其中 latest LLM review 为 `reject` / `uncertain` 的 pending suggestions 会提高 `llm_review_risk_score`，同句候选之间的 label 或 boundary 冲突会提高 `candidate_disagreement_score`。UI 在 `goldsmith` / `hybrid` 风险项显示综合 `risk_score` 和 risk breakdown，在 `hybrid` 抽检项显示校准置信度。旧的 full document endpoint 仍保留，用于兼容和 export-adjacent workflows。
@@ -291,5 +292,5 @@ Prodigy JSONL 提供 `ner_manual` 和 `spans_manual` 两种兼容导出，并写
 
 - SQLite 可从 JSONL artifacts rebuild。
 - Import、annotation、suggestion、LLM review 和后续 batch run 都有可重放 event。
-- Export manifest 记录 source run ids、annotation import history、schema version、artifact hashes、`prodigy_readiness`、event actor/type audit summary、timestamp 和稳定 content hash。
+- Export manifest 记录 source run ids、annotation import history、schema version、artifact hashes、`prodigy_readiness`、`prodigy_labels_json`、event actor/type audit summary、timestamp 和稳定 content hash。
 - Project data 可以作为 portable artifact 迁移或归档。
