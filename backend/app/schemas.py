@@ -285,6 +285,7 @@ class ReviewEfficiencyPointResponse(BaseModel):
     cumulative_disagreements: int
     disagreement: bool
     route: str
+    risk_reason_codes: list[str] = Field(default_factory=list)
 
 
 class ReviewEfficiencyCurveResponse(BaseModel):
@@ -294,6 +295,8 @@ class ReviewEfficiencyCurveResponse(BaseModel):
     early_reviewed_count: int
     early_disagreement_count: int
     first_disagreement_rank: Optional[int] = None
+    reason_counts: dict[str, int] = Field(default_factory=dict)
+    disagreement_reason_counts: dict[str, int] = Field(default_factory=dict)
     points: list[ReviewEfficiencyPointResponse] = Field(default_factory=list)
 
 

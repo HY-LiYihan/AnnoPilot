@@ -99,7 +99,16 @@ function efficiencySummary(metrics: Metrics, labels: UiLabels['metrics']) {
       return `${label} ${curve.early_disagreement_count}/${curve.early_reviewed_count}`
     })
     .filter(Boolean)
+  const topReason = topDisagreementReason(curves.goldsmith?.disagreement_reason_counts, labels)
+  if (topReason) parts.push(topReason)
   return parts.length ? `${labels.errorDiscovery}: ${parts.join(' · ')}` : ''
+}
+
+function topDisagreementReason(counts: Record<string, number> | undefined, labels: UiLabels['metrics']) {
+  const [topReason, count] = Object.entries(counts ?? {}).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0] ?? []
+  if (!topReason || !count) return ''
+  const reasonLabels = labels.riskReasonLabels as Record<string, string>
+  return `${labels.topRiskReason} ${reasonLabels[topReason] ?? topReason} ${count}`
 }
 
 function confidenceSummary(counts: Record<string, number> | undefined, labels: UiLabels['metrics']) {

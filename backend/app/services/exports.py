@@ -387,6 +387,7 @@ class ExportService:
                 "suggestion_id": choice["id"],
                 "run_id": choice.get("run_id"),
                 "hard_example_reasons": reasons,
+                "risk_reason_codes": choice.get("risk_reason_codes", []),
                 "failure_note": self._hard_example_failure_note(choice, reasons),
                 "human_decision": choice["human_decision"],
                 "disagreement": choice["disagreement"],
@@ -495,6 +496,7 @@ class ExportService:
                 "human_decision": choice["human_decision"],
                 "suggestion_status": choice["status"],
                 "disagreement": choice["disagreement"],
+                "risk_reason_codes": choice.get("risk_reason_codes", []),
                 "span": {
                     "label": choice["tag_name"],
                     "label_id": choice["tag_id"],
@@ -1074,6 +1076,7 @@ class ExportService:
             "suggestion_id": suggestion["id"],
             "run_id": suggestion.get("run_id"),
             "hard_example_reasons": reasons,
+            "risk_reason_codes": suggestion.get("risk_reason_codes") or self._suggestion_risk_reason_codes(suggestion),
             "failure_note": failure_note,
             "human_decision": human_decision,
             "suggestion_status": suggestion.get("status"),
@@ -1105,6 +1108,43 @@ class ExportService:
         if float(suggestion.get("confidence") or 0.0) < self.medium_confidence_threshold:
             reasons.append("low_character_rag_confidence")
         return reasons
+
+    def _suggestion_risk_reason_codes(self, suggestion: dict[str, Any]) -> list[str]:
+        codes: list[str] = []
+        latest_review = suggestion.get("latest_review") or {}
+        judge = latest_review.get("judge") or {}
+        recommendation = latest_review.get("recommendation")
+        if recommendation == "reject":
+            codes.append("llm_reject")
+        elif recommendation == "uncertain":
+            codes.append("llm_uncertain")
+        if isinstance(judge, dict):
+            error_types = set(judge.get("error_types") or [])
+            risk_flags = set(judge.get("risk_flags") or [])
+            boundary_score = self._float_or_default(judge.get("boundary_score"), 1.0)
+            missed_span_risk = self._float_or_default(judge.get("missed_span_risk"), 0.0)
+            extra_span_risk = self._float_or_default(judge.get("extra_span_risk"), 0.0)
+            overall_score = self._float_or_default(judge.get("overall_score"), 1.0)
+            if judge.get("needs_review") is True:
+                codes.append("judge_needs_review")
+            if boundary_score <= 0.65 or {"boundary_too_wide", "boundary_too_narrow"} & error_types:
+                codes.append("judge_boundary")
+            if missed_span_risk >= 0.5 or "missed_span" in error_types or "possible_under_annotation" in risk_flags:
+                codes.append("judge_missing_span")
+            if extra_span_risk >= 0.5 or "extra_span" in error_types or "possible_over_annotation" in risk_flags:
+                codes.append("judge_extra_span")
+            if overall_score <= 0.75:
+                codes.append("judge_low_score")
+        if float(suggestion.get("confidence") or 0.0) < self.medium_confidence_threshold:
+            codes.append("low_confidence")
+        return list(dict.fromkeys(codes))
+
+    @staticmethod
+    def _float_or_default(value: Any, default: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
 
     @staticmethod
     def _pending_boundary_feedback_note(suggestion: dict[str, Any], reasons: list[str]) -> str:

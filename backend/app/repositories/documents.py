@@ -897,6 +897,10 @@ class DocumentQueryRepository:
                 "human_decision": human_decision,
                 "review_recommendation": row["recommendation"],
                 "judge_review_risk_score": judge_review_risk_score(row["judge_json"]),
+                "latest_review": {
+                    "recommendation": row["recommendation"],
+                    "judge": self._decode_json_object(row["judge_json"]),
+                },
                 "disagreement": human_decision != row["recommendation"],
             }
             items.append(item)
@@ -926,6 +930,18 @@ class DocumentQueryRepository:
                 ((1.0 - item["sentence_min_confidence"]) * item["sentence_suggestion_count"])
                 + float(item.get("judge_review_risk_score", 0.0))
                 + candidate_disagreement_score
+            )
+            item["risk_reason_codes"] = self._review_queue_risk_reason_codes(
+                {
+                    "review_route": "risk",
+                    "candidate_disagreement_score": item["candidate_disagreement_score"],
+                    "llm_review_risk_score": 0.0,
+                    "judge_review_risk_score": item["judge_review_risk_score"],
+                    "lexical_risk_score": (1.0 - item["sentence_min_confidence"]) * item["sentence_suggestion_count"],
+                    "min_confidence": item["sentence_min_confidence"],
+                    "suggestion_count": item["sentence_suggestion_count"],
+                },
+                {"latest_review": item["latest_review"]},
             )
 
         return {
@@ -1002,12 +1018,21 @@ class DocumentQueryRepository:
         cumulative_disagreements = 0
         first_disagreement_rank = None
         points = []
+        reason_counts: dict[str, int] = {}
+        disagreement_reason_counts: dict[str, int] = {}
         point_limit = 20
         for rank, item in enumerate(ordered_items, start=1):
+            risk_reason_codes = item.get("risk_reason_codes") or []
+            if item.get("review_route") == "calibration" and "calibration_sample" not in risk_reason_codes:
+                risk_reason_codes = ["calibration_sample", *risk_reason_codes]
+            for code in risk_reason_codes:
+                reason_counts[code] = reason_counts.get(code, 0) + 1
             if item["disagreement"]:
                 cumulative_disagreements += 1
                 if first_disagreement_rank is None:
                     first_disagreement_rank = rank
+                for code in risk_reason_codes:
+                    disagreement_reason_counts[code] = disagreement_reason_counts.get(code, 0) + 1
             if rank <= point_limit:
                 points.append(
                     {
@@ -1019,6 +1044,7 @@ class DocumentQueryRepository:
                         "cumulative_disagreements": cumulative_disagreements,
                         "disagreement": item["disagreement"],
                         "route": item.get("review_route") or ("risk" if order in {"goldsmith", "hybrid"} else order),
+                        "risk_reason_codes": risk_reason_codes,
                     }
                 )
         reviewed_count = len(ordered_items)
@@ -1030,6 +1056,8 @@ class DocumentQueryRepository:
             "early_reviewed_count": early_reviewed_count,
             "early_disagreement_count": sum(1 for item in ordered_items[:early_reviewed_count] if item["disagreement"]),
             "first_disagreement_rank": first_disagreement_rank,
+            "reason_counts": dict(sorted(reason_counts.items(), key=lambda entry: (-entry[1], entry[0]))),
+            "disagreement_reason_counts": dict(sorted(disagreement_reason_counts.items(), key=lambda entry: (-entry[1], entry[0]))),
             "points": points,
         }
 
@@ -1046,7 +1074,7 @@ class DocumentQueryRepository:
                 "created_at": row["review_created_at"],
             }
         human_decision = "accept" if row["status"] == "accepted" else "reject"
-        return {
+        suggestion = {
             "id": row["id"],
             "run_id": row["run_id"],
             "sentence_id": row["sentence_id"],
@@ -1077,6 +1105,27 @@ class DocumentQueryRepository:
             ),
             "created_at": row["created_at"],
         }
+        suggestion["risk_reason_codes"] = self._review_queue_risk_reason_codes(
+            {
+                "review_route": "risk",
+                "candidate_disagreement_score": 0.0,
+                "llm_review_risk_score": self._review_recommendation_risk_score((latest_review or {}).get("recommendation")),
+                "judge_review_risk_score": judge_review_risk_score(row["review_judge_json"]),
+                "lexical_risk_score": 1.0 - float(row["confidence"] or 0.0),
+                "min_confidence": float(row["confidence"] or 0.0),
+                "suggestion_count": 1,
+            },
+            {"latest_review": latest_review},
+        )
+        return suggestion
+
+    @staticmethod
+    def _review_recommendation_risk_score(recommendation: str | None) -> float:
+        if recommendation == "reject":
+            return LLM_REVIEW_REJECT_RISK_WEIGHT
+        if recommendation == "uncertain":
+            return LLM_REVIEW_UNCERTAIN_RISK_WEIGHT
+        return 0.0
 
     @staticmethod
     def _get_session(conn: sqlite3.Connection, project_id: str, document_id: str) -> dict[str, Any]:

@@ -132,6 +132,7 @@ export type ReviewEfficiencyPoint = {
   cumulative_disagreements: number
   disagreement: boolean
   route: string
+  risk_reason_codes: string[]
 }
 
 export type ReviewEfficiencyCurve = {
@@ -141,6 +142,8 @@ export type ReviewEfficiencyCurve = {
   early_reviewed_count: number
   early_disagreement_count: number
   first_disagreement_rank: number | null
+  reason_counts: Record<string, number>
+  disagreement_reason_counts: Record<string, number>
   points: ReviewEfficiencyPoint[]
 }
 

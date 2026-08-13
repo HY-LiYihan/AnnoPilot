@@ -2470,6 +2470,7 @@ def test_review_queue_goldsmith_uses_llm_review_risk_signal(tmp_path: Path) -> N
         assert boundary_feedback[0]["human_decision"] is None
         assert boundary_feedback[0]["latest_review"]["recommendation"] == "reject"
         assert boundary_feedback[0]["hard_example_reasons"] == ["llm_rejected_pending_suggestion"]
+        assert boundary_feedback[0]["risk_reason_codes"] == ["llm_reject"]
         assert "boundary feedback" in boundary_feedback[0]["failure_note"]
 
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
@@ -3167,6 +3168,7 @@ def test_llm_review_calibration_disagreement_is_measured(tmp_path: Path) -> None
         assert hard_examples[0]["human_decision"] == "reject"
         assert hard_examples[0]["disagreement"] is True
         assert hard_examples[0]["hard_example_reasons"] == ["llm_human_disagreement", "human_rejected_suggestion"]
+        assert hard_examples[0]["risk_reason_codes"] == ["judge_risk"]
         assert "negative example" in hard_examples[0]["failure_note"]
 
         boundary_feedback_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.boundary-feedback.jsonl")
@@ -3180,6 +3182,7 @@ def test_llm_review_calibration_disagreement_is_measured(tmp_path: Path) -> None
         assert boundary_feedback[0]["human_decision"] == "reject"
         assert boundary_feedback[0]["latest_review"]["recommendation"] == "accept"
         assert boundary_feedback[0]["hard_example_reasons"] == ["llm_human_disagreement", "human_rejected_suggestion"]
+        assert boundary_feedback[0]["risk_reason_codes"] == ["judge_risk"]
 
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert manifest["artifacts"]["goldsmith_hard_examples_jsonl"]["schema_version"] == "annopilot.goldsmith_hard_examples.v1"
@@ -3289,16 +3292,20 @@ def test_review_efficiency_curves_measure_error_discovery_by_queue_order(tmp_pat
         assert curves["random"]["early_disagreement_count"] == 2
         assert curves["goldsmith"]["first_disagreement_rank"] == 1
         assert curves["goldsmith"]["early_disagreement_count"] == 3
+        assert curves["goldsmith"]["reason_counts"] == {"low_confidence": 1}
+        assert curves["goldsmith"]["disagreement_reason_counts"] == {"low_confidence": 1}
         assert curves["hybrid"]["early_disagreement_count"] == 3
         assert [point["suggestion_id"] for point in curves["goldsmith"]["points"][:3]] == [
             "sug_efficiency_ddd",
             "sug_efficiency_eee",
             "sug_efficiency_fff",
         ]
+        assert curves["goldsmith"]["points"][0]["risk_reason_codes"] == ["low_confidence"]
         assert curves["goldsmith"]["points"][1]["cumulative_disagreements"] == 2
 
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert manifest["metrics"]["review_efficiency_curves"]["goldsmith"]["early_disagreement_count"] == 3
+        assert manifest["metrics"]["review_efficiency_curves"]["goldsmith"]["disagreement_reason_counts"] == {"low_confidence": 1}
 
 
 def test_review_efficiency_goldsmith_uses_candidate_disagreement_risk(tmp_path: Path) -> None:
@@ -3488,6 +3495,16 @@ def test_review_efficiency_goldsmith_uses_judge_review_risk(tmp_path: Path) -> N
 
         curves = client.get(f"/api/projects/default/documents/{document_id}/summary").json()["metrics"]["review_efficiency_curves"]
         assert curves["goldsmith"]["points"][0]["suggestion_id"] == "sug_curve_judge_risk"
+        assert curves["goldsmith"]["points"][0]["risk_reason_codes"] == [
+            "judge_needs_review",
+            "judge_boundary",
+            "judge_missing_span",
+        ]
+        assert curves["goldsmith"]["disagreement_reason_counts"] == {
+            "judge_boundary": 1,
+            "judge_missing_span": 1,
+            "judge_needs_review": 1,
+        }
         assert curves["goldsmith"]["first_disagreement_rank"] == 1
         assert curves["uncertain"]["points"][0]["suggestion_id"] == "sug_curve_low_confidence"
 
