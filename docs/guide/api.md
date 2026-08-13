@@ -30,7 +30,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/complete
 - `documents` 返回最近 runtime documents 的轻量索引，包含 progress、annotation count 和 pending suggestion count，供 frontend 切换已导入文档。
 - `summary` 返回 document meta、tags、metrics、全局 sentence queue 和当前 runtime session cursor，不返回完整 tokens；metrics 会包含 suggestion 的 `suggestion_status_counts`、`suggestion_review_counts` / `reviewed_suggestion_count`，以及 pending suggestion 的 `suggestion_source_counts` / `suggestion_confidence_counts`，用于快速判断当前待审队列质量、LLM 评审分布和已处理建议分布。
 - `sentences` 返回分页 sentence window，当前 API limit 上限为 200。
-- `review-queue` 返回未完成且存在 pending suggestions 的句子列表，以及每句第一条候选，供 UI 快速跳转待审任务；`order=random` 提供稳定伪随机 baseline，`order=uncertain` 会按最低 Character RAG confidence 优先排序，`order=goldsmith` 会按低置信度、句内候选密度和 latest LLM review 风险综合排序，`order=hybrid` 会保留高风险优先，同时插入少量高置信且无 LLM 风险的 `calibration` 抽检样本。队列 item 同时返回 `min_confidence`、`lexical_risk_score`、`llm_review_risk_score`、`risk_score` 和 `review_route`，其中 `lexical_risk_score=(1-min_confidence)×suggestion_count`，`risk_score=lexical_risk_score+llm_review_risk_score`；旧字段 `priority_score` 保持为 `min_confidence` 以兼容已有调用。
+- `review-queue` 返回未完成且存在 pending suggestions 的句子列表，以及每句第一条候选，供 UI 快速跳转待审任务；`order=random` 提供稳定伪随机 baseline，`order=uncertain` 会按最低 Character RAG confidence 优先排序，`order=goldsmith` 会按低置信度、句内候选密度、latest LLM review 风险和候选标签冲突综合排序，`order=hybrid` 会保留高风险优先，同时插入少量高置信且无 LLM 风险的 `calibration` 抽检样本。队列 item 同时返回 `min_confidence`、`lexical_risk_score`、`llm_review_risk_score`、`candidate_disagreement_score`、`risk_score` 和 `review_route`，其中 `lexical_risk_score=(1-min_confidence)×suggestion_count`，`candidate_disagreement_score` 表示同一句 pending candidates 在 label 或边界上互相冲突的强度，`risk_score=lexical_risk_score+llm_review_risk_score+candidate_disagreement_score`；旧字段 `priority_score` 保持为 `min_confidence` 以兼容已有调用。
 - `annotation-imports` 从 `events.jsonl` 读取最近的 JSONL annotation import history；frontend 用它在刷新页面后恢复最近导入摘要。
 - `session/cursor` 保存默认人工会话的当前句位置，用于刷新后恢复标注阅读器状态；该状态保存在 SQLite runtime，不写入 JSONL audit log。
 - `complete` 写入 `completed` 和 Prodigy-compatible `answer`，当前支持 `accept`、`ignore`、`reject`，以及 `completed=false` reopen 回 `pending`。
@@ -42,7 +42,7 @@ GET  /api/projects/{project_id}/sample-presets
 POST /api/projects/{project_id}/sample-presets/{preset_id}/load
 ```
 
-- `sample-presets` 返回后端内置的轻量样例索引；当前包含通用、新闻/政策、学术/方法、平台复核、客服反馈、合规/法律、社交舆情、财报/投资者沟通、医疗/科学传播九类 bilingual Engagement 样例。
+- `sample-presets` 返回后端内置的轻量样例索引；当前包含通用、新闻/政策、学术/方法、平台复核、客服反馈、合规/法律、社交舆情、财报/投资者沟通、医疗/科学传播、AI 教育十类 bilingual Engagement 样例。
 - `load` 会导入对应 label schema、导入 TXT 文档，并默认运行一次高置信 Character RAG suggestions；响应返回 document id、tag 列表、sentence/token 数量、suggestion run id 和本次候选统计。
 - 该接口不改变现有手动 `tags/schema/import`、`import-txt` 或 `suggestions/run` API，只是把演示/测试工作流合成一个快捷入口。
 
@@ -96,7 +96,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/suggestions/apply-llm-re
 - LLM review 使用 OpenAI-compatible `/chat/completions`，返回 `recommendation`、`confidence`、`rationale` 和 `context_sha256`；sentence-scoped endpoint 会批量评审当前句仍 pending 且未被已有 annotation 覆盖的 suggestions。
 - `apply-llm-review` 支持 document scope 和 sentence scope，会在一个 SQLite transaction 中应用 latest LLM recommendations：`accept` 创建 `accepted_suggestion` annotation，`reject` 更新 suggestion 状态，`uncertain` 或未评审 suggestions 保持 pending。
 - Document metrics 会输出 `calibration_count`、`calibration_disagreement_count` 和 `calibration_error_rate`：只统计已经有 human accept/reject 决策且有 latest LLM review 的 suggestions，用于估计 review routing / judge signal 与人工判断的错配率，不把 LLM judge score 当成真实 accuracy。
-- Document metrics 还会输出 `review_efficiency_curves`，按 `position`、`random`、`uncertain`、`goldsmith` 和 `hybrid` 回放已校准 suggestions 的累计错配发现曲线。每条 curve 包含总 review/disagreement 数、前 5 条发现错配数、首次发现错配 rank，以及最多前 20 个累计点，用来比较 Goldsmith risk routing 是否比 random baseline 更早发现人工错配。
+- Document metrics 还会输出 `review_efficiency_curves`，按 `position`、`random`、`uncertain`、`goldsmith` 和 `hybrid` 回放已校准 suggestions 的累计错配发现曲线。Goldsmith / hybrid 的风险排序会同时纳入低 confidence、句内候选密度和 `candidate_disagreement_score`，让候选标签或边界互相冲突的句子优先进入人工复核。每条 curve 包含总 review/disagreement 数、前 5 条发现错配数、首次发现错配 rank，以及最多前 20 个累计点，用来比较 Goldsmith risk routing 是否比 random baseline 更早发现人工错配。
 
 ## Runs And Audit
 
@@ -132,7 +132,7 @@ GET /api/projects/{project_id}/tags/schema.json
 
 - Task JSONL 使用 `annopilot.task.v1`，按 sentence 输出 tokens、spans、annotations、suggestions、answer、meta，并包含 Prodigy-style `_input_hash`、`_task_hash`、`_session_id`、`_annotator_id` 和 `_view_id`。
 - Prodigy JSONL 使用 `prodigy.ner_manual.compat.v1`，保持 `_view_id=ner_manual`、`_session_id`、`_annotator_id`、`_input_hash` 和 `_task_hash`；包含 annotations 但尚未人工 complete 的句子会以顶层 `answer=accept` 导出，原始 runtime answer 保留在 `meta.answer`。
-- Goldsmith review queue JSONL 使用 `annopilot.goldsmith_review_queue.v1`，按当前 `order` 导出待人工复核句子、rank、lexical / LLM / 综合 risk score、route 和首条 suggestion，可作为 Rosetta 风格 `human_review_queue.jsonl`。
+- Goldsmith review queue JSONL 使用 `annopilot.goldsmith_review_queue.v1`，按当前 `order` 导出待人工复核句子、rank、lexical / LLM / candidate conflict / 综合 risk score、route 和首条 suggestion，可作为 Rosetta 风格 `human_review_queue.jsonl`。
 - Goldsmith human choices JSONL 使用 `annopilot.goldsmith_human_choices.v1`，导出已被人工 accept/reject 的 suggestions、latest LLM review、是否错配和 span payload，可作为 Rosetta 风格 `human_choices.jsonl`。
 - Goldsmith hard examples JSONL 使用 `annopilot.goldsmith_hard_examples.v1`，从 human choices 中筛出人工拒绝、LLM/人工分歧、低置信或 LLM uncertain 样本，并附 `failure_note` 作为 Rosetta hard-example / boundary-feedback 输入。
 - Goldsmith boundary feedback JSONL 使用 `annopilot.goldsmith_boundary_feedback.v1`，合并 human hard examples 与仍 pending 但 latest LLM review 为 `reject` / `uncertain` 的候选，供下一轮 label boundary、负例和 bilingual examples 优化。

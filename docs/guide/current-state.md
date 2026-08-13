@@ -34,7 +34,7 @@ AnnoPilot 现在同时维护两个 surface：
 - LLM review context 会包含 tag description/examples、candidate tag definition、已有句内 annotations、同标签 boundary feedback 和 Engagement-specific boundary guidance；`context_sha256` 用于审计当次复核依据。
 - 当前句可用 `Tab` / `Shift+Tab` 在 suggestions 间切换活跃 `Y/N target`，键盘 `Y` 接受活跃候选、`N` 拒绝活跃候选；`A` / `X` 仍用于当前句批量接受 / 拒绝。
 - 当前句 `A` / `X` 走 sentence-scoped batch endpoint，在一个 SQLite transaction 中处理该句所有 pending suggestions，避免前端逐条循环写入。
-- 支持独立 review queue API 和右侧 review queue 列表，可按原文位置、稳定随机 baseline、低 confidence、Goldsmith risk 或 hybrid calibration 排序；Goldsmith / hybrid 会把 latest LLM review 的 `reject` / `uncertain` 作为额外风险信号；summary metrics 会直接展示建议状态、LLM 评审推荐分布、待审建议来源、置信度分布和 human-calibrated error discovery 曲线；处理完当前句建议后会自动跳到下一句待确认，保留 `R` 快捷键手动跳转。
+- 支持独立 review queue API 和右侧 review queue 列表，可按原文位置、稳定随机 baseline、低 confidence、Goldsmith risk 或 hybrid calibration 排序；Goldsmith / hybrid 会把 latest LLM review 的 `reject` / `uncertain` 和同句 candidate label/boundary conflict 作为额外风险信号；summary metrics 会直接展示建议状态、LLM 评审推荐分布、待审建议来源、置信度分布和 human-calibrated error discovery 曲线；处理完当前句建议后会自动跳到下一句待确认，保留 `R` 快捷键手动跳转。
 - 支持导出 task JSONL、Prodigy `ner_manual` / `spans_manual` JSONL、Goldsmith/Rosetta-style review queue、human choices、hard examples、boundary feedback、consistency scores 与 candidate runs JSONL、manifest JSON、events JSONL 和 Character RAG run provenance JSON。
 
 当前 backend 和 frontend 已支持 Prodigy / AnnoPilot style annotations JSONL 导入，入口位于右侧 metrics/export panel。
