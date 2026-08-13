@@ -14,21 +14,6 @@ import {
   updateDocumentCursor,
 } from '../api/documents'
 import {
-  acceptSuggestion,
-  acceptSentenceSuggestions,
-  applyDocumentSuggestionReviews,
-  applySentenceSuggestionReviews,
-  autoAnnotateSuggestions,
-  autoAcceptSuggestions,
-  autoRejectSuggestions,
-  generateSentenceSuggestions,
-  generateSuggestions,
-  rejectSuggestion,
-  rejectSentenceSuggestions,
-  reviewSentenceSuggestions,
-  reviewSuggestion,
-} from '../api/suggestions'
-import {
   ACTIVE_DOCUMENT_KEY,
   PROJECT_ID,
   type AnnotationDef,
@@ -43,7 +28,6 @@ import {
   type SentenceQueueItem,
   type SessionState,
   type SuggestionDef,
-  type SuggestionReview,
   type TxtImportMode,
 } from '../types/domain'
 import { normalizedRange, useTokenSelection } from './useTokenSelection'
@@ -51,6 +35,7 @@ import { useReaderKeyboardShortcuts } from './useReaderKeyboardShortcuts'
 import { useReaderExports } from './useReaderExports'
 import { useReaderTags } from './useReaderTags'
 import { useReaderAudit } from './useReaderAudit'
+import { useReaderSuggestions } from './useReaderSuggestions'
 
 const SENTENCE_WINDOW_SIZE = 60
 const SENTENCE_WINDOW_PADDING = 20
@@ -102,8 +87,6 @@ export function useDocumentReader() {
   const loadedWindow = ref({ offset: 0, limit: 0, total: 0 })
   const metrics = ref<Metrics>(emptyMetrics())
   const currentSentenceIndex = ref(0)
-  const suggestionLimit = ref(6)
-  const suggestionMinConfidence = ref(0.7)
   const isUploading = ref(false)
   const isSaving = ref(false)
   const isSuggesting = ref(false)
@@ -112,8 +95,6 @@ export function useDocumentReader() {
   const reviewQueueDetails = ref<ReviewQueueItem[]>([])
   const reviewQueueTotal = ref(0)
   const reviewQueueOrder = ref<ReviewQueueOrder>('position')
-  const suggestionReviews = ref<Record<string, SuggestionReview>>({})
-  const reviewingSuggestionId = ref('')
   const lastUndoAction = ref<UndoableSpanAction | null>(null)
   const activeSuggestionId = ref('')
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
@@ -191,6 +172,47 @@ export function useDocumentReader() {
   const undoLabel = computed(() => lastUndoAction.value?.label ?? 'Undo span')
   const hasReviewQueue = computed(() => sentenceQueue.value.some((sentence) => !sentence.completed && sentence.suggestion_count > 0))
   const queueItems = computed(() => sentenceQueue.value)
+
+  const {
+    acceptCurrentSentenceSuggestions,
+    acceptSuggestedSpan,
+    applyCurrentSentenceSuggestionReviews,
+    applyDocumentSuggestionReviewsFromLlm,
+    autoAcceptDocumentSuggestions,
+    autoAnnotateDocument,
+    autoRejectDocumentSuggestions,
+    generateCurrentSentenceSuggestions,
+    generateDocumentSuggestions,
+    rejectCurrentSentenceSuggestions,
+    rejectSuggestedSpan,
+    resetSuggestionState,
+    restoreSuggestionReviews,
+    reviewCurrentSentenceSuggestions,
+    reviewingSuggestionId,
+    reviewSuggestedSpan,
+    setSuggestionLimit,
+    setSuggestionMinConfidence,
+    suggestionLimit,
+    suggestionMinConfidence,
+    suggestionReviews,
+  } = useReaderSuggestions({
+    activeSuggestions,
+    currentSentence,
+    currentSentenceIndex,
+    documentMeta,
+    isSaving,
+    isSuggesting,
+    jumpToNextReviewIfCurrentCleared,
+    loadDocument,
+    loadSentenceWindow,
+    metrics,
+    readerError,
+    refreshAuditSummary,
+    refreshDocumentSummary,
+    refreshRunHistory,
+    removeSuggestion,
+    replaceSentenceAnnotations,
+  })
 
   const readerExports = useReaderExports({
     documentMeta,
@@ -628,48 +650,6 @@ export function useDocumentReader() {
     }
   }
 
-  async function generateDocumentSuggestions() {
-    if (!documentMeta.value || isSuggesting.value) return
-    isSuggesting.value = true
-    readerError.value = ''
-    try {
-      await generateSuggestions(PROJECT_ID, documentMeta.value.id, suggestionLimit.value, suggestionMinConfidence.value)
-      await loadDocument(documentMeta.value.id, true)
-      await refreshRunHistory()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not generate suggestions.'
-    } finally {
-      isSuggesting.value = false
-    }
-  }
-
-  async function generateCurrentSentenceSuggestions() {
-    const sentence = currentSentence.value
-    if (!documentMeta.value || !sentence || isSuggesting.value) return
-    isSuggesting.value = true
-    readerError.value = ''
-    try {
-      await generateSentenceSuggestions(PROJECT_ID, documentMeta.value.id, sentence.id, suggestionLimit.value, suggestionMinConfidence.value)
-      await refreshDocumentSummary()
-      await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
-      await refreshRunHistory()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not generate current sentence suggestions.'
-    } finally {
-      isSuggesting.value = false
-    }
-  }
-
-  function setSuggestionLimit(value: number) {
-    const rounded = Math.round(Number.isFinite(value) ? value : suggestionLimit.value)
-    suggestionLimit.value = Math.min(Math.max(rounded, 1), 20)
-  }
-
-  function setSuggestionMinConfidence(value: number) {
-    const numericValue = Number.isFinite(value) ? value : suggestionMinConfidence.value
-    suggestionMinConfidence.value = Math.min(Math.max(numericValue, 0), 1)
-  }
-
   function setSentenceElement(sentenceId: string, element: unknown) {
     sentenceElements.value[sentenceId] = element as HTMLElement | null
   }
@@ -837,220 +817,6 @@ export function useDocumentReader() {
     }
   }
 
-  async function acceptSuggestedSpan(suggestion: SuggestionDef) {
-    if (isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      const payload = await acceptSuggestion(PROJECT_ID, suggestion.id)
-      replaceSentenceAnnotations(suggestionSentenceId(suggestion), payload.annotations)
-      removeSuggestion(suggestion.id)
-      await refreshDocumentSummary()
-      await refreshAuditSummary()
-      jumpToNextReviewIfCurrentCleared()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not accept suggestion.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function acceptCurrentSentenceSuggestions() {
-    const sentence = currentSentence.value
-    if (!sentence || !activeSuggestions.value.length || isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      const payload = await acceptSentenceSuggestions(PROJECT_ID, sentence.id)
-      replaceSentenceAnnotations(sentence.id, payload.annotations)
-      await refreshDocumentSummary()
-      if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
-      await refreshAuditSummary()
-      jumpToNextReviewIfCurrentCleared()
-      if (payload.accepted === 0 && payload.skipped > 0) {
-        readerError.value = 'Current suggestions overlap existing annotations and were skipped.'
-      }
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not accept current suggestions.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function autoAcceptDocumentSuggestions() {
-    if (!documentMeta.value || metrics.value.suggestion_count === 0 || isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      const result = await autoAcceptSuggestions(PROJECT_ID, documentMeta.value.id, suggestionMinConfidence.value)
-      await loadDocument(documentMeta.value.id, true)
-      if (result.accepted === 0) {
-        readerError.value = `No suggestions met the ${Math.round(result.min_confidence * 100)}% threshold.`
-      }
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not auto-accept suggestions.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function autoAnnotateDocument() {
-    if (!documentMeta.value || isSaving.value || isSuggesting.value) return
-    isSaving.value = true
-    isSuggesting.value = true
-    readerError.value = ''
-    try {
-      const result = await autoAnnotateSuggestions(PROJECT_ID, documentMeta.value.id, suggestionLimit.value, suggestionMinConfidence.value)
-      await loadDocument(documentMeta.value.id, true)
-      await refreshRunHistory()
-      await refreshAuditSummary()
-      if (result.accepted === 0) {
-        readerError.value = `No character RAG spans met the ${Math.round(result.min_confidence * 100)}% threshold.`
-      }
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not auto-annotate document.'
-    } finally {
-      isSaving.value = false
-      isSuggesting.value = false
-    }
-  }
-
-  async function rejectSuggestedSpan(suggestion: SuggestionDef) {
-    if (isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      await rejectSuggestion(PROJECT_ID, suggestion.id)
-      removeSuggestion(suggestion.id)
-      await refreshDocumentSummary()
-      await refreshAuditSummary()
-      jumpToNextReviewIfCurrentCleared()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not reject suggestion.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function rejectCurrentSentenceSuggestions() {
-    const sentence = currentSentence.value
-    if (!sentence || !activeSuggestions.value.length || isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      await rejectSentenceSuggestions(PROJECT_ID, sentence.id)
-      await refreshDocumentSummary()
-      if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
-      await refreshAuditSummary()
-      jumpToNextReviewIfCurrentCleared()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not reject current suggestions.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function autoRejectDocumentSuggestions() {
-    if (!documentMeta.value || metrics.value.suggestion_count === 0 || isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      const result = await autoRejectSuggestions(PROJECT_ID, documentMeta.value.id)
-      await loadDocument(documentMeta.value.id, true)
-      if (result.rejected === 0) {
-        readerError.value = 'No pending suggestions to reject.'
-      }
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not auto-reject suggestions.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function reviewSuggestedSpan(suggestion: SuggestionDef) {
-    if (reviewingSuggestionId.value) return
-    reviewingSuggestionId.value = suggestion.id
-    readerError.value = ''
-    try {
-      const review = await reviewSuggestion(PROJECT_ID, suggestion.id)
-      suggestionReviews.value = { ...suggestionReviews.value, [suggestion.id]: review }
-      await refreshAuditSummary()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not review suggestion with LLM.'
-    } finally {
-      reviewingSuggestionId.value = ''
-    }
-  }
-
-  async function reviewCurrentSentenceSuggestions() {
-    const sentence = currentSentence.value
-    if (!sentence || !activeSuggestions.value.length || isSaving.value || reviewingSuggestionId.value) return
-    isSaving.value = true
-    reviewingSuggestionId.value = `sentence:${sentence.id}`
-    readerError.value = ''
-    try {
-      const payload = await reviewSentenceSuggestions(PROJECT_ID, sentence.id)
-      const nextReviews = { ...suggestionReviews.value }
-      for (const review of payload.reviews) nextReviews[review.suggestion_id] = review
-      suggestionReviews.value = nextReviews
-      await refreshDocumentSummary()
-      if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
-      await refreshAuditSummary()
-      if (payload.reviewed === 0) {
-        readerError.value = 'No pending suggestions to review in this sentence.'
-      }
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not review current suggestions with LLM.'
-    } finally {
-      isSaving.value = false
-      reviewingSuggestionId.value = ''
-    }
-  }
-
-  async function applyCurrentSentenceSuggestionReviews() {
-    const sentence = currentSentence.value
-    if (!sentence || !activeSuggestions.value.length || isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      const payload = await applySentenceSuggestionReviews(PROJECT_ID, sentence.id)
-      replaceSentenceAnnotations(sentence.id, payload.annotations)
-      await refreshDocumentSummary()
-      if (documentMeta.value) await loadSentenceWindow(documentMeta.value.id, currentSentenceIndex.value, true)
-      await refreshAuditSummary()
-      jumpToNextReviewIfCurrentCleared()
-      if (payload.accepted === 0 && payload.rejected === 0) {
-        readerError.value = 'No LLM accept/reject recommendations to apply in this sentence.'
-      } else if (payload.skipped > 0) {
-        readerError.value = `${payload.skipped} reviewed suggestions overlapped existing annotations and were skipped.`
-      }
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not apply LLM review recommendations.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  async function applyDocumentSuggestionReviewsFromLlm() {
-    if (!documentMeta.value || metrics.value.reviewed_suggestion_count === 0 || isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      const payload = await applyDocumentSuggestionReviews(PROJECT_ID, documentMeta.value.id)
-      await loadDocument(documentMeta.value.id, true)
-      await refreshAuditSummary()
-      if (payload.accepted === 0 && payload.rejected === 0) {
-        readerError.value = 'No LLM accept/reject recommendations to apply in this document.'
-      } else if (payload.skipped > 0) {
-        readerError.value = `${payload.skipped} reviewed suggestions overlapped existing annotations and were skipped.`
-      }
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not apply document LLM review recommendations.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
   function replaceSentenceAnnotations(sentenceId: string, annotations: AnnotationDef[]) {
     sentences.value = sentences.value.map((sentence) =>
       sentence.id === sentenceId ? { ...sentence, annotations, suggestions: withoutAnnotationOverlaps(sentence.suggestions, annotations) } : sentence,
@@ -1121,21 +887,6 @@ export function useDocumentReader() {
     )
   }
 
-  function suggestionSentenceId(suggestion: SuggestionDef) {
-    return suggestion.sentence_id
-  }
-
-  function restoreSuggestionReviews(sourceSentences: SentenceDef[]) {
-    const restored: Record<string, SuggestionReview> = {}
-    for (const sentence of sourceSentences) {
-      for (const suggestion of sentence.suggestions) {
-        if (!suggestion.latest_review) continue
-        restored[suggestion.id] = { suggestion_id: suggestion.id, ...suggestion.latest_review }
-      }
-    }
-    suggestionReviews.value = restored
-  }
-
   async function resetProjectData() {
     if (isResetting.value) return
     isResetting.value = true
@@ -1151,8 +902,7 @@ export function useDocumentReader() {
       metrics.value = emptyMetrics()
       currentSentenceIndex.value = 0
       activeSuggestionId.value = ''
-      suggestionReviews.value = {}
-      reviewingSuggestionId.value = ''
+      resetSuggestionState()
       lastUndoAction.value = null
       sentenceElements.value = {}
       resetAuditState()
