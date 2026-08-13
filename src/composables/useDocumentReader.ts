@@ -1,6 +1,5 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { createAnnotation, deleteAnnotation } from '../api/annotations'
-import { fetchAnnotationImports, fetchAuditSummary, previewRebuild } from '../api/audit'
 import {
   completeSentence,
   fetchDocuments,
@@ -8,14 +7,12 @@ import {
   fetchDocumentSummary,
   fetchReviewQueue,
   fetchSamplePresets,
-  importAnnotationsJsonl,
   importTxt,
   loadSamplePreset as loadSamplePresetApi,
   mergeTxt,
   resetProject,
   updateDocumentCursor,
 } from '../api/documents'
-import { fetchRuns } from '../api/runs'
 import {
   acceptSuggestion,
   acceptSentenceSuggestions,
@@ -34,15 +31,11 @@ import {
 import {
   ACTIVE_DOCUMENT_KEY,
   PROJECT_ID,
-  type AnnotationImportSummary,
-  type AuditSummary,
-  type AnnotationRun,
   type AnnotationDef,
   type DocumentMeta,
   type DocumentListItem,
   type DocumentSummaryPayload,
   type Metrics,
-  type RebuildPreview,
   type ReviewQueueItem,
   type ReviewQueueOrder,
   type SamplePreset,
@@ -57,6 +50,7 @@ import { normalizedRange, useTokenSelection } from './useTokenSelection'
 import { useReaderKeyboardShortcuts } from './useReaderKeyboardShortcuts'
 import { useReaderExports } from './useReaderExports'
 import { useReaderTags } from './useReaderTags'
+import { useReaderAudit } from './useReaderAudit'
 
 const SENTENCE_WINDOW_SIZE = 60
 const SENTENCE_WINDOW_PADDING = 20
@@ -114,21 +108,35 @@ export function useDocumentReader() {
   const isSaving = ref(false)
   const isSuggesting = ref(false)
   const isResetting = ref(false)
-  const isVerifyingRebuild = ref(false)
   const readerError = ref('')
-  const auditSummary = ref<AuditSummary | null>(null)
-  const rebuildPreview = ref<RebuildPreview | null>(null)
-  const runHistory = ref<AnnotationRun[]>([])
   const reviewQueueDetails = ref<ReviewQueueItem[]>([])
   const reviewQueueTotal = ref(0)
   const reviewQueueOrder = ref<ReviewQueueOrder>('position')
   const suggestionReviews = ref<Record<string, SuggestionReview>>({})
   const reviewingSuggestionId = ref('')
-  const lastAnnotationImport = ref<AnnotationImportSummary | null>(null)
   const lastUndoAction = ref<UndoableSpanAction | null>(null)
   const activeSuggestionId = ref('')
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
   let interactiveRefreshSerial = 0
+
+  const {
+    auditSummary,
+    handleAnnotationImport,
+    isVerifyingRebuild,
+    lastAnnotationImport,
+    rebuildPreview,
+    refreshAnnotationImportHistory,
+    refreshAuditSummary,
+    refreshRunHistory,
+    resetAuditState,
+    runHistory,
+    verifyRebuildPreview,
+  } = useReaderAudit({
+    documentMeta,
+    isUploading,
+    loadDocument,
+    readerError,
+  })
 
   const {
     addTag,
@@ -1145,11 +1153,9 @@ export function useDocumentReader() {
       activeSuggestionId.value = ''
       suggestionReviews.value = {}
       reviewingSuggestionId.value = ''
-      lastAnnotationImport.value = null
       lastUndoAction.value = null
       sentenceElements.value = {}
-      rebuildPreview.value = null
-      runHistory.value = []
+      resetAuditState()
       reviewQueueDetails.value = []
       reviewQueueTotal.value = 0
       selection.clearSelection()
@@ -1160,64 +1166,6 @@ export function useDocumentReader() {
       readerError.value = error instanceof Error ? error.message : 'Could not reset project.'
     } finally {
       isResetting.value = false
-    }
-  }
-
-  async function handleAnnotationImport(file: File) {
-    if (!documentMeta.value || isUploading.value) return
-    isUploading.value = true
-    readerError.value = ''
-    try {
-      const imported = await importAnnotationsJsonl(PROJECT_ID, documentMeta.value.id, file)
-      await loadDocument(documentMeta.value.id, true)
-      await refreshAuditSummary()
-      await refreshRunHistory()
-      lastAnnotationImport.value = { ...imported, import_filename: file.name }
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not import annotation JSONL.'
-    } finally {
-      isUploading.value = false
-    }
-  }
-
-  async function refreshAuditSummary() {
-    try {
-      auditSummary.value = await fetchAuditSummary(PROJECT_ID)
-    } catch {
-      auditSummary.value = null
-    }
-  }
-
-  async function refreshAnnotationImportHistory(documentId: string) {
-    try {
-      const payload = await fetchAnnotationImports(PROJECT_ID, documentId, 1)
-      const latestImport = payload.imports[0]
-      lastAnnotationImport.value = latestImport ? { ...latestImport, import_filename: latestImport.import_filename || latestImport.filename } : null
-    } catch {
-      lastAnnotationImport.value = null
-    }
-  }
-
-  async function verifyRebuildPreview() {
-    if (isVerifyingRebuild.value) return
-    isVerifyingRebuild.value = true
-    readerError.value = ''
-    try {
-      rebuildPreview.value = await previewRebuild(PROJECT_ID)
-      await refreshAuditSummary()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not verify rebuild.'
-    } finally {
-      isVerifyingRebuild.value = false
-    }
-  }
-
-  async function refreshRunHistory() {
-    try {
-      const payload = await fetchRuns(PROJECT_ID, documentMeta.value?.id, 5)
-      runHistory.value = payload.runs
-    } catch {
-      runHistory.value = []
     }
   }
 
