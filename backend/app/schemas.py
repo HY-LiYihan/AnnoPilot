@@ -294,6 +294,13 @@ class ReviewEfficiencyCurveResponse(BaseModel):
     points: list[ReviewEfficiencyPointResponse] = Field(default_factory=list)
 
 
+class LabelCountResponse(BaseModel):
+    tag_id: str
+    name: str
+    color: str
+    count: int
+
+
 class MetricsResponse(BaseModel):
     sentence_count: int
     completed_count: int
@@ -301,6 +308,8 @@ class MetricsResponse(BaseModel):
     progress: float
     annotation_count: int
     suggestion_count: int = 0
+    annotation_label_counts: list[LabelCountResponse] = Field(default_factory=list)
+    suggestion_label_counts: list[LabelCountResponse] = Field(default_factory=list)
     suggestion_status_counts: dict[str, int] = Field(default_factory=dict)
     suggestion_source_counts: dict[str, int] = Field(default_factory=dict)
     suggestion_confidence_counts: dict[str, int] = Field(default_factory=dict)

@@ -1847,6 +1847,59 @@ kbd {
   font-weight: 900;
 }
 
+.label-mix-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label-mix-list.compact {
+  gap: 5px;
+}
+
+.label-mix-heading {
+  margin-top: 2px;
+  color: #526560;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.label-mix-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--label-color) 42%, #d6d2c9);
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--label-color) 72%, #1f2926);
+  background: color-mix(in srgb, var(--label-color) 10%, #ffffff);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.label-mix-pill.empty {
+  opacity: 0.48;
+  filter: grayscale(0.35);
+}
+
+.label-mix-pill em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal;
+}
+
+.label-mix-pill strong {
+  flex: 0 0 auto;
+  color: inherit;
+  font-size: 0.72rem;
+}
+
 .progress-card {
   margin-top: 14px;
   padding: 16px;

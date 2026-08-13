@@ -1279,6 +1279,11 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         summary = summary_response.json()
         assert summary["metrics"]["annotation_count"] >= 20
         assert summary["metrics"]["suggestion_status_counts"]["accepted"] >= 20
+        annotation_label_counts = {item["name"]: item["count"] for item in summary["metrics"]["annotation_label_counts"]}
+        assert annotation_label_counts["Entertain 可能化"] > 0
+        assert annotation_label_counts["Disclaim Counter 转折反驳"] > 0
+        assert all("tag_id" in item and "color" in item for item in summary["metrics"]["annotation_label_counts"])
+        assert summary["metrics"]["suggestion_label_counts"] == []
         assert [tag["id"] for tag in summary["tags"]] == [tag["id"] for tag in loaded["tags"]]
 
         assert loaded_by_id["appraisal-engagement-platform-review-cn-en"]["suggestions_created"] >= 20

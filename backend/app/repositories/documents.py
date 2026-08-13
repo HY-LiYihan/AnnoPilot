@@ -190,6 +190,23 @@ class DocumentQueryRepository:
                 """,
                 (document_id,),
             ).fetchall()
+            suggestion_tag_count_rows = conn.execute(
+                """
+                SELECT sg.tag_id, COUNT(*) AS count
+                FROM annotation_suggestions sg
+                JOIN sentences s ON s.id = sg.sentence_id
+                WHERE s.document_id = ? AND sg.status = 'pending'
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM annotations a
+                    WHERE a.sentence_id = sg.sentence_id
+                      AND a.start_token_index <= sg.end_token_index
+                      AND a.end_token_index >= sg.start_token_index
+                  )
+                GROUP BY sg.tag_id
+                """,
+                (document_id,),
+            ).fetchall()
             review_count_rows = conn.execute(
                 """
                 SELECT rev.recommendation, COUNT(*) AS count
@@ -275,6 +292,7 @@ class DocumentQueryRepository:
         tag_counts = {row["tag_id"]: row["count"] for row in tag_count_rows}
         for tag in tags:
             tag["count"] = tag_counts.get(tag["id"], 0)
+        suggestion_tag_counts = {row["tag_id"]: row["count"] for row in suggestion_tag_count_rows}
         visible_suggestion_metrics = [self._row_dict(row) for row in suggestion_metric_rows]
         suggestion_status_counts = {"pending": 0, "accepted": 0, "rejected": 0}
         for row in suggestion_status_rows:
@@ -301,6 +319,8 @@ class DocumentQueryRepository:
                 "progress": completed_count / sentence_count if sentence_count else 0,
                 "annotation_count": annotation_count,
                 "suggestion_count": suggestion_count,
+                "annotation_label_counts": self._label_counts(tags, tag_counts, include_zero=True),
+                "suggestion_label_counts": self._label_counts(tags, suggestion_tag_counts),
                 "suggestion_status_counts": suggestion_status_counts,
                 "suggestion_source_counts": self._suggestion_source_counts(visible_suggestion_metrics),
                 "suggestion_confidence_counts": self._suggestion_confidence_counts(visible_suggestion_metrics),
@@ -1005,6 +1025,22 @@ class DocumentQueryRepository:
     def _row_dict(row: sqlite3.Row, exclude: set[str] | None = None) -> dict[str, Any]:
         excluded = exclude or set()
         return {key: row[key] for key in row.keys() if key not in excluded}
+
+    @staticmethod
+    def _label_counts(tags: list[dict[str, Any]], counts: dict[str, int], include_zero: bool = False) -> list[dict[str, Any]]:
+        rows = [
+            {
+                "tag_id": tag["id"],
+                "name": tag["name"],
+                "color": tag["color"],
+                "count": int(counts.get(tag["id"], 0) or 0),
+                "tag_index": index,
+            }
+            for index, tag in enumerate(tags)
+            if include_zero or int(counts.get(tag["id"], 0) or 0) > 0
+        ]
+        rows.sort(key=lambda row: (-row["count"], row["tag_index"]))
+        return [{key: value for key, value in row.items() if key != "tag_index"} for row in rows]
 
     def _suggestion_row_dict(self, row: sqlite3.Row, exclude: set[str] | None = None) -> dict[str, Any]:
         review_keys = {

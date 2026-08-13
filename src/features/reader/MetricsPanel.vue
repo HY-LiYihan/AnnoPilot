@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { BarChart3, DatabaseZap, Download, Keyboard, MousePointer2, RotateCw, Route, Sparkles, Target, Trash2, Upload } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
-import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder } from '../../types/domain'
+import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, LabelCount, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder } from '../../types/domain'
 
 defineProps<{
   labels: UiLabels['metrics']
@@ -115,6 +115,14 @@ function confidenceBucketOrder(bucket: string) {
   return { high: 0, medium: 1, low: 2 }[bucket as 'high' | 'medium' | 'low'] ?? 3
 }
 
+function visibleLabelCounts(counts: LabelCount[], limit = 9) {
+  return counts.slice(0, limit)
+}
+
+function labelMixTitle(item: LabelCount, labels: UiLabels['metrics']) {
+  return `${item.name}: ${labels.labelCount(item.count)}`
+}
+
 function reviewOrder(recommendation: string) {
   return { accept: 0, reject: 1, uncertain: 2 }[recommendation as 'accept' | 'reject' | 'uncertain'] ?? 3
 }
@@ -208,6 +216,22 @@ function shortHash(value: string) {
         <span>{{ labels.annotatedSpans }}</span>
         <strong>{{ metrics.annotation_count }}</strong>
         <small>{{ labels.persisted }}</small>
+        <small v-if="metrics.annotation_count > 0 && metrics.annotation_label_counts.length" class="label-mix-heading">
+          {{ labels.annotationLabelMix }}
+        </small>
+        <div v-if="metrics.annotation_count > 0 && metrics.annotation_label_counts.length" class="label-mix-list" :aria-label="labels.annotationLabelMix">
+          <span
+            v-for="item in visibleLabelCounts(metrics.annotation_label_counts)"
+            :key="item.tag_id"
+            class="label-mix-pill"
+            :class="{ empty: item.count === 0 }"
+            :style="{ '--label-color': item.color }"
+            :title="labelMixTitle(item, labels)"
+          >
+            <em>{{ item.name }}</em>
+            <strong>{{ item.count }}</strong>
+          </span>
+        </div>
       </article>
       <article class="metric-card">
         <Sparkles :size="22" aria-hidden="true" />
@@ -219,6 +243,21 @@ function shortHash(value: string) {
           <template v-if="sourceSummary(metrics.suggestion_source_counts, labels)"> · {{ labels.sourceMix }} {{ sourceSummary(metrics.suggestion_source_counts, labels) }}</template>
           <template v-if="confidenceSummary(metrics.suggestion_confidence_counts, labels)"> · {{ labels.confidenceMix }} {{ confidenceSummary(metrics.suggestion_confidence_counts, labels) }}</template>
         </small>
+        <small v-if="metrics.suggestion_label_counts.length" class="label-mix-heading">
+          {{ labels.suggestionLabelMix }}
+        </small>
+        <div v-if="metrics.suggestion_label_counts.length" class="label-mix-list compact" :aria-label="labels.suggestionLabelMix">
+          <span
+            v-for="item in visibleLabelCounts(metrics.suggestion_label_counts, 6)"
+            :key="item.tag_id"
+            class="label-mix-pill"
+            :style="{ '--label-color': item.color }"
+            :title="labelMixTitle(item, labels)"
+          >
+            <em>{{ item.name }}</em>
+            <strong>{{ item.count }}</strong>
+          </span>
+        </div>
       </article>
       <article class="metric-card" :class="{ warning: auditSummary?.rebuild_status === 'needs_attention' }">
         <DatabaseZap :size="22" aria-hidden="true" />

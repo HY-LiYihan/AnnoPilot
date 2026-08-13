@@ -129,6 +129,13 @@ export type ReviewEfficiencyCurve = {
   points: ReviewEfficiencyPoint[]
 }
 
+export type LabelCount = {
+  tag_id: string
+  name: string
+  color: string
+  count: number
+}
+
 export type DocumentMeta = {
   id: string
   filename: string
@@ -152,6 +159,8 @@ export type Metrics = {
   progress: number
   annotation_count: number
   suggestion_count: number
+  annotation_label_counts: LabelCount[]
+  suggestion_label_counts: LabelCount[]
   suggestion_status_counts: Record<string, number>
   suggestion_source_counts: Record<string, number>
   suggestion_confidence_counts: Record<string, number>
