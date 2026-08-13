@@ -1,6 +1,5 @@
 import { computed, onMounted, ref } from 'vue'
 import {
-  completeSentence,
   fetchDocuments,
   fetchDocumentSummary,
   fetchSamplePresets,
@@ -33,6 +32,7 @@ import { useReaderSuggestions } from './useReaderSuggestions'
 import { useReaderAnnotationActions } from './useReaderAnnotationActions'
 import { useReaderSentenceWindow } from './useReaderSentenceWindow'
 import { useReaderReviewQueue } from './useReaderReviewQueue'
+import { useReaderSentenceCompletion } from './useReaderSentenceCompletion'
 
 function emptyMetrics(): Metrics {
   return {
@@ -73,7 +73,6 @@ export function useDocumentReader() {
   const readerError = ref('')
   const activeSuggestionId = ref('')
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
-  let interactiveRefreshSerial = 0
 
   const selection = useTokenSelection(sentences)
   let restoreSuggestionReviewsForLoadedSentences = (_sentences: SentenceDef[]) => {}
@@ -171,6 +170,27 @@ export function useDocumentReader() {
     currentSentenceIndex,
     documentMeta,
     sentenceQueue,
+    setCurrentSentence,
+  })
+
+  const {
+    completeCurrentSentence,
+    reopenCurrentSentence,
+  } = useReaderSentenceCompletion({
+    applyDocumentSummary,
+    currentSentence,
+    currentSentenceIndex,
+    documentMeta,
+    documents,
+    isSaving,
+    loadDocumentList,
+    metrics,
+    readerError,
+    refreshAuditSummary,
+    refreshDocumentSummary,
+    refreshReviewQueue,
+    sentenceQueue,
+    sentences,
     setCurrentSentence,
   })
 
@@ -447,106 +467,6 @@ export function useDocumentReader() {
     }
     if (!activeSuggestions.value.some((suggestion) => suggestion.id === activeSuggestionId.value)) {
       activeSuggestionId.value = activeSuggestions.value[0].id
-    }
-  }
-
-  async function completeCurrentSentence(answer: 'accept' | 'reject' | 'ignore' = 'accept') {
-    const sentence = currentSentence.value
-    if (!sentence || isSaving.value) return
-    const previousCompleted = sentence.completed
-    const previousAnswer = sentence.answer
-    const previousIndex = currentSentenceIndex.value
-    const nextIndex = Math.min(sentence.index + 1, Math.max(metrics.value.sentence_count - 1, 0))
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      applyLocalSentenceCompletion(sentence.id, true, answer)
-      updateLocalCompletionMetrics(previousCompleted, previousAnswer, true, answer)
-      setCurrentSentence(nextIndex, 'auto')
-      await completeSentence(PROJECT_ID, sentence.id, true, answer)
-      void refreshAfterInteractiveSave()
-    } catch (error) {
-      applyLocalSentenceCompletion(sentence.id, previousCompleted, previousAnswer)
-      updateLocalCompletionMetrics(true, answer, previousCompleted, previousAnswer)
-      setCurrentSentence(previousIndex, 'auto')
-      readerError.value = error instanceof Error ? error.message : 'Could not complete sentence.'
-    } finally {
-      isSaving.value = false
-    }
-  }
-
-  function applyLocalSentenceCompletion(sentenceId: string, completed: boolean, answer: string) {
-    sentences.value = sentences.value.map((item) =>
-      item.id === sentenceId ? { ...item, completed, answer } : item,
-    )
-    sentenceQueue.value = sentenceQueue.value.map((item) =>
-      item.id === sentenceId ? { ...item, completed, answer } : item,
-    )
-  }
-
-  function updateLocalCompletionMetrics(
-    previousCompleted: boolean,
-    previousAnswer: string,
-    nextCompleted: boolean,
-    nextAnswer: string,
-  ) {
-    const nextAnswerCounts = { ...metrics.value.answer_counts }
-    const previousBucket = previousCompleted ? previousAnswer : 'pending'
-    const nextBucket = nextCompleted ? nextAnswer : 'pending'
-    nextAnswerCounts[previousBucket] = Math.max((nextAnswerCounts[previousBucket] ?? 0) - 1, 0)
-    nextAnswerCounts[nextBucket] = (nextAnswerCounts[nextBucket] ?? 0) + 1
-    const completedDelta = (nextCompleted ? 1 : 0) - (previousCompleted ? 1 : 0)
-    const completedCount = Math.min(
-      Math.max(metrics.value.completed_count + completedDelta, 0),
-      metrics.value.sentence_count,
-    )
-    const progress = metrics.value.sentence_count ? completedCount / metrics.value.sentence_count : 0
-    metrics.value = {
-      ...metrics.value,
-      completed_count: completedCount,
-      progress,
-      answer_counts: nextAnswerCounts,
-    }
-    documents.value = documents.value.map((document) =>
-      document.id === documentMeta.value?.id
-        ? { ...document, completed_count: completedCount, progress }
-        : document,
-    )
-  }
-
-  async function refreshAfterInteractiveSave() {
-    const refreshSerial = ++interactiveRefreshSerial
-    try {
-      if (!documentMeta.value) return
-      const payload = await fetchDocumentSummary(PROJECT_ID, documentMeta.value.id)
-      if (refreshSerial !== interactiveRefreshSerial) return
-      applyDocumentSummary(payload)
-      await loadDocumentList()
-      await refreshReviewQueue()
-      await refreshAuditSummary()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not refresh workspace status.'
-    }
-  }
-
-  async function reopenCurrentSentence() {
-    const sentence = currentSentence.value
-    if (!sentence || isSaving.value) return
-    isSaving.value = true
-    readerError.value = ''
-    try {
-      await completeSentence(PROJECT_ID, sentence.id, false, 'pending')
-      sentence.completed = false
-      sentence.answer = 'pending'
-      sentenceQueue.value = sentenceQueue.value.map((item) =>
-        item.id === sentence.id ? { ...item, completed: false, answer: 'pending' } : item,
-      )
-      await refreshDocumentSummary()
-      await refreshAuditSummary()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not reopen sentence.'
-    } finally {
-      isSaving.value = false
     }
   }
 
