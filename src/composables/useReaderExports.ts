@@ -1,0 +1,100 @@
+import type { Ref } from 'vue'
+import {
+  documentExportUrl,
+  eventsExportUrl,
+  goldsmithBoundaryFeedbackExportUrl,
+  goldsmithCandidateRunsExportUrl,
+  goldsmithConsistencyScoresExportUrl,
+  goldsmithHardExamplesExportUrl,
+  goldsmithHumanChoicesExportUrl,
+  goldsmithReviewQueueExportUrl,
+  manifestExportUrl,
+  prodigyExportUrl,
+  prodigySpansExportUrl,
+  tagSchemaExportUrl,
+} from '../api/documents'
+import { runProvenanceExportUrl } from '../api/runs'
+import { PROJECT_ID, type DocumentMeta, type ReviewQueueOrder } from '../types/domain'
+
+type ReaderExportOptions = {
+  documentMeta: Ref<DocumentMeta | null>
+  reviewQueueOrder: Ref<ReviewQueueOrder>
+  onEventsExport?: () => void | Promise<void>
+}
+
+export function useReaderExports(options: ReaderExportOptions) {
+  function withDocument(exportUrl: (projectId: string, documentId: string) => string) {
+    if (!options.documentMeta.value) return
+    window.location.href = exportUrl(PROJECT_ID, options.documentMeta.value.id)
+  }
+
+  function exportJsonl() {
+    withDocument(documentExportUrl)
+  }
+
+  function exportProdigyJsonl() {
+    withDocument(prodigyExportUrl)
+  }
+
+  function exportProdigySpansJsonl() {
+    withDocument(prodigySpansExportUrl)
+  }
+
+  function exportManifestJson() {
+    withDocument(manifestExportUrl)
+  }
+
+  function exportEventsJsonl() {
+    window.location.href = eventsExportUrl(PROJECT_ID)
+    void options.onEventsExport?.()
+  }
+
+  function exportTagSchemaJson() {
+    window.location.href = tagSchemaExportUrl(PROJECT_ID)
+  }
+
+  function exportRunProvenanceJson(runId: string) {
+    window.location.href = runProvenanceExportUrl(PROJECT_ID, runId)
+  }
+
+  function exportGoldsmithReviewQueueJsonl() {
+    if (!options.documentMeta.value) return
+    window.location.href = goldsmithReviewQueueExportUrl(PROJECT_ID, options.documentMeta.value.id, options.reviewQueueOrder.value)
+  }
+
+  function exportGoldsmithHumanChoicesJsonl() {
+    withDocument(goldsmithHumanChoicesExportUrl)
+  }
+
+  function exportGoldsmithHardExamplesJsonl() {
+    withDocument(goldsmithHardExamplesExportUrl)
+  }
+
+  function exportGoldsmithBoundaryFeedbackJsonl() {
+    withDocument(goldsmithBoundaryFeedbackExportUrl)
+  }
+
+  function exportGoldsmithConsistencyScoresJsonl() {
+    withDocument(goldsmithConsistencyScoresExportUrl)
+  }
+
+  function exportGoldsmithCandidateRunsJsonl() {
+    withDocument(goldsmithCandidateRunsExportUrl)
+  }
+
+  return {
+    exportEventsJsonl,
+    exportGoldsmithBoundaryFeedbackJsonl,
+    exportGoldsmithCandidateRunsJsonl,
+    exportGoldsmithConsistencyScoresJsonl,
+    exportGoldsmithHardExamplesJsonl,
+    exportGoldsmithHumanChoicesJsonl,
+    exportGoldsmithReviewQueueJsonl,
+    exportJsonl,
+    exportManifestJson,
+    exportProdigyJsonl,
+    exportProdigySpansJsonl,
+    exportRunProvenanceJson,
+    exportTagSchemaJson,
+  }
+}

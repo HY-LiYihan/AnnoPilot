@@ -3,31 +3,19 @@ import { createAnnotation, deleteAnnotation } from '../api/annotations'
 import { fetchAnnotationImports, fetchAuditSummary, previewRebuild } from '../api/audit'
 import {
   completeSentence,
-  documentExportUrl,
-  eventsExportUrl,
   fetchDocuments,
   fetchDocumentSentences,
   fetchDocumentSummary,
   fetchReviewQueue,
   fetchSamplePresets,
-  goldsmithBoundaryFeedbackExportUrl,
-  goldsmithCandidateRunsExportUrl,
-  goldsmithConsistencyScoresExportUrl,
-  goldsmithHardExamplesExportUrl,
-  goldsmithHumanChoicesExportUrl,
-  goldsmithReviewQueueExportUrl,
   importAnnotationsJsonl,
   importTxt,
   loadSamplePreset as loadSamplePresetApi,
-  manifestExportUrl,
   mergeTxt,
-  prodigyExportUrl,
-  prodigySpansExportUrl,
   resetProject,
-  tagSchemaExportUrl,
   updateDocumentCursor,
 } from '../api/documents'
-import { fetchRuns, runProvenanceExportUrl } from '../api/runs'
+import { fetchRuns } from '../api/runs'
 import {
   acceptSuggestion,
   acceptSentenceSuggestions,
@@ -70,6 +58,7 @@ import {
 } from '../types/domain'
 import { normalizedRange, useTokenSelection } from './useTokenSelection'
 import { useReaderKeyboardShortcuts } from './useReaderKeyboardShortcuts'
+import { useReaderExports } from './useReaderExports'
 
 const SENTENCE_WINDOW_SIZE = 60
 const SENTENCE_WINDOW_PADDING = 20
@@ -177,6 +166,27 @@ export function useDocumentReader() {
   const undoLabel = computed(() => lastUndoAction.value?.label ?? 'Undo span')
   const hasReviewQueue = computed(() => sentenceQueue.value.some((sentence) => !sentence.completed && sentence.suggestion_count > 0))
   const queueItems = computed(() => sentenceQueue.value)
+
+  const readerExports = useReaderExports({
+    documentMeta,
+    reviewQueueOrder,
+    onEventsExport: refreshAuditSummary,
+  })
+  const {
+    exportEventsJsonl,
+    exportGoldsmithBoundaryFeedbackJsonl,
+    exportGoldsmithCandidateRunsJsonl,
+    exportGoldsmithConsistencyScoresJsonl,
+    exportGoldsmithHardExamplesJsonl,
+    exportGoldsmithHumanChoicesJsonl,
+    exportGoldsmithReviewQueueJsonl,
+    exportJsonl,
+    exportManifestJson,
+    exportProdigyJsonl,
+    exportProdigySpansJsonl,
+    exportRunProvenanceJson,
+    exportTagSchemaJson,
+  } = readerExports
 
   useReaderKeyboardShortcuts({
     acceptCurrentSentenceSuggestions,
@@ -1248,21 +1258,6 @@ export function useDocumentReader() {
     }
   }
 
-  function exportJsonl() {
-    if (!documentMeta.value) return
-    window.location.href = documentExportUrl(PROJECT_ID, documentMeta.value.id)
-  }
-
-  function exportProdigyJsonl() {
-    if (!documentMeta.value) return
-    window.location.href = prodigyExportUrl(PROJECT_ID, documentMeta.value.id)
-  }
-
-  function exportProdigySpansJsonl() {
-    if (!documentMeta.value) return
-    window.location.href = prodigySpansExportUrl(PROJECT_ID, documentMeta.value.id)
-  }
-
   async function handleAnnotationImport(file: File) {
     if (!documentMeta.value || isUploading.value) return
     isUploading.value = true
@@ -1278,54 +1273,6 @@ export function useDocumentReader() {
     } finally {
       isUploading.value = false
     }
-  }
-
-  function exportManifestJson() {
-    if (!documentMeta.value) return
-    window.location.href = manifestExportUrl(PROJECT_ID, documentMeta.value.id)
-  }
-
-  function exportEventsJsonl() {
-    window.location.href = eventsExportUrl(PROJECT_ID)
-    void refreshAuditSummary()
-  }
-
-  function exportTagSchemaJson() {
-    window.location.href = tagSchemaExportUrl(PROJECT_ID)
-  }
-
-  function exportRunProvenanceJson(runId: string) {
-    window.location.href = runProvenanceExportUrl(PROJECT_ID, runId)
-  }
-
-  function exportGoldsmithReviewQueueJsonl() {
-    if (!documentMeta.value) return
-    window.location.href = goldsmithReviewQueueExportUrl(PROJECT_ID, documentMeta.value.id, reviewQueueOrder.value)
-  }
-
-  function exportGoldsmithHumanChoicesJsonl() {
-    if (!documentMeta.value) return
-    window.location.href = goldsmithHumanChoicesExportUrl(PROJECT_ID, documentMeta.value.id)
-  }
-
-  function exportGoldsmithHardExamplesJsonl() {
-    if (!documentMeta.value) return
-    window.location.href = goldsmithHardExamplesExportUrl(PROJECT_ID, documentMeta.value.id)
-  }
-
-  function exportGoldsmithBoundaryFeedbackJsonl() {
-    if (!documentMeta.value) return
-    window.location.href = goldsmithBoundaryFeedbackExportUrl(PROJECT_ID, documentMeta.value.id)
-  }
-
-  function exportGoldsmithConsistencyScoresJsonl() {
-    if (!documentMeta.value) return
-    window.location.href = goldsmithConsistencyScoresExportUrl(PROJECT_ID, documentMeta.value.id)
-  }
-
-  function exportGoldsmithCandidateRunsJsonl() {
-    if (!documentMeta.value) return
-    window.location.href = goldsmithCandidateRunsExportUrl(PROJECT_ID, documentMeta.value.id)
   }
 
   async function refreshAuditSummary() {
