@@ -204,6 +204,18 @@ Of course, one semester cannot prove long-term learning gains, yet the committee
 """
 
 
+APPRAISAL_ENGAGEMENT_CLIMATE_ENERGY_TEXT = """The ministry said the offshore wind plan may lower emissions, but it does not guarantee cheaper power this winter.
+According to grid operators, the new storage data clearly shows fewer peak-hour shortages and demonstrates why backup capacity is still needed.
+Some industry groups allegedly claimed the timetable was unrealistic; however, the climate council does not accept that conclusion.
+Of course, one regional project cannot prove a full energy transition, yet analysts argue it suggests which investments deserve faster review.
+
+能源部门表示，海上风电计划可能降低排放，但它并不能保证今年冬天电价更低。
+电网运营方指出，新的储能数据清楚显示高峰时段缺口减少，并证明为什么仍然需要备用容量。
+一些行业组织据称声称该时间表不现实；然而，气候委员会并不接受这种结论。
+当然，一个区域项目不能证明完整的能源转型，不过分析人士认为它提示哪些投资值得更快复核。
+"""
+
+
 @dataclass(frozen=True)
 class SamplePreset:
     id: str
@@ -317,6 +329,15 @@ BUILTIN_SAMPLE_PRESETS = {
         description="面向 AI 辅导、教育政策和课堂试点评估的中英 engagement 线索，适合练习 cautious expansion、bias claim、human guidance 和 evidence framing。",
         filename="appraisal-engagement-ai-education-cn-en.txt",
         text=APPRAISAL_ENGAGEMENT_AI_EDUCATION_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-climate-energy-cn-en": SamplePreset(
+        id="appraisal-engagement-climate-energy-cn-en",
+        title="Engagement 气候/能源样例",
+        description="面向气候政策、能源转型和基础设施争议的中英 engagement 线索，适合练习 hedging、industry claims、countering 和 evidence-backed planning。",
+        filename="appraisal-engagement-climate-energy-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_CLIMATE_ENERGY_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
     ),

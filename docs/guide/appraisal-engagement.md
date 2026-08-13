@@ -17,6 +17,8 @@ samples/appraisal-engagement-legal-compliance-cn-en.txt
 samples/appraisal-engagement-social-opinion-cn-en.txt
 samples/appraisal-engagement-finance-investor-cn-en.txt
 samples/appraisal-engagement-health-science-cn-en.txt
+samples/appraisal-engagement-ai-education-cn-en.txt
+samples/appraisal-engagement-climate-energy-cn-en.txt
 ```
 
 Web UI 空白阅读器中也会显示同一组内置样例按钮；点击后会自动加载 schema、TXT，并运行一次高置信 Character RAG suggestions。
@@ -37,7 +39,7 @@ Web UI 空白阅读器中也会显示同一组内置样例按钮；点击后会�
 
 ## 建议工作流
 
-1. 在空白阅读器中选择一个内置样例：通用标注流程、新闻/政策叙事、学术/方法讨论、平台复核、客服反馈、合规/法律、社交舆情、财报/投资者沟通，或医疗/科学传播场景。
+1. 在空白阅读器中选择一个内置样例：通用标注流程、新闻/政策叙事、学术/方法讨论、平台复核、客服反馈、合规/法律、社交舆情、财报/投资者沟通、医疗/科学传播、AI 教育，或气候/能源转型场景。
 2. 如果想手动复现，也可以左侧导入 `samples/appraisal-engagement-tag-schema.json`，再在中间导入任一 `samples/appraisal-engagement-*.txt`。
 3. 人工 accept/reject suggestions：accept 会生成 `source=accepted_suggestion` annotation；human reject 和 latest LLM review `reject` 都会成为同 label 的 negative example，下一轮 Character RAG 会避开同一错误 span；已 LLM-reviewed 的 pending suggestions 会保留等待人工决策。
 4. 对 Monogloss 或整句断言，可直接按 `M` 创建整句 Monogloss span、完成当前句并前进；需要先微调标签时，也可按 `S` 先把当前整句设为 pending span，再按对应数字快捷键或点击左侧 label 应用标签。

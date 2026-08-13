@@ -1224,6 +1224,7 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
             "appraisal-engagement-finance-investor-cn-en",
             "appraisal-engagement-health-science-cn-en",
             "appraisal-engagement-ai-education-cn-en",
+            "appraisal-engagement-climate-energy-cn-en",
         ]
         assert [preset["id"] for preset in presets] == expected_preset_ids
         assert all(preset["tag_count"] == 9 for preset in presets)
@@ -1287,6 +1288,7 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         assert loaded_by_id["appraisal-engagement-finance-investor-cn-en"]["suggestions_created"] >= 20
         assert loaded_by_id["appraisal-engagement-health-science-cn-en"]["suggestions_created"] >= 20
         assert loaded_by_id["appraisal-engagement-ai-education-cn-en"]["suggestions_created"] >= 20
+        assert loaded_by_id["appraisal-engagement-climate-energy-cn-en"]["suggestions_created"] >= 20
 
 
 def test_appraisal_engagement_review_context_includes_guidelines(tmp_path: Path) -> None:
