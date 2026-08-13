@@ -168,6 +168,30 @@ Of course, one viral thread cannot prove platform-wide harm, yet it suggests whi
 """
 
 
+APPRAISAL_ENGAGEMENT_FINANCE_INVESTOR_TEXT = """The CFO said margin may recover next quarter, but the guidance does not guarantee free cash flow growth.
+According to management, the retention data clearly shows enterprise demand is stabilizing and demonstrates pricing discipline.
+Some analysts reportedly claimed the backlog was overstated; however, the company does not confirm that interpretation.
+Of course, one strong quarter cannot prove a durable turnaround, yet the board argues the new controls reduce execution risk.
+
+财务负责人表示，利润率可能在下个季度恢复，但该指引并不能保证自由现金流增长。
+管理层指出，留存数据清楚显示企业需求正在稳定，并证明定价纪律有所改善。
+一些分析师据称声称积压订单被夸大；然而，公司并不确认这种解读。
+当然，一个强劲季度不能证明持久转型，不过董事会认为新的控制措施降低了执行风险。
+"""
+
+
+APPRAISAL_ENGAGEMENT_HEALTH_SCIENCE_TEXT = """The health agency said the booster may reduce severe cases, but it does not eliminate infection risk.
+According to the trial report, the data clearly shows stronger protection in older adults and demonstrates a lower hospitalization rate.
+Some commentators allegedly claimed the warning was exaggerated; however, the review does not support that conclusion.
+Of course, one study cannot settle every clinical question, yet the authors argue it suggests which groups need follow-up.
+
+卫生机构表示，加强针可能减少重症病例，但它并不能消除感染风险。
+试验报告指出，数据清楚显示老年人保护力更强，并证明住院率较低。
+一些评论者据称声称该警告被夸大；然而，复核并不支持这种结论。
+当然，一项研究不能解决所有临床问题，不过作者认为它提示哪些群体需要随访。
+"""
+
+
 @dataclass(frozen=True)
 class SamplePreset:
     id: str
@@ -256,7 +280,25 @@ BUILTIN_SAMPLE_PRESETS = {
         text=APPRAISAL_ENGAGEMENT_SOCIAL_OPINION_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
-    )
+    ),
+    "appraisal-engagement-finance-investor-cn-en": SamplePreset(
+        id="appraisal-engagement-finance-investor-cn-en",
+        title="Engagement 财报/投资者沟通样例",
+        description="面向财报电话会、管理层指引和分析师质疑的中英 engagement 线索，适合练习 guidance、evidence、denial 和 risk framing。",
+        filename="appraisal-engagement-finance-investor-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_FINANCE_INVESTOR_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-health-science-cn-en": SamplePreset(
+        id="appraisal-engagement-health-science-cn-en",
+        title="Engagement 医疗/科学传播样例",
+        description="面向公共卫生、试验结果和风险传播的中英 engagement 线索，适合练习 hedging、endorsement、claim distancing 和 clinical uncertainty。",
+        filename="appraisal-engagement-health-science-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_HEALTH_SCIENCE_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
 }
 
 

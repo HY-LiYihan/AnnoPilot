@@ -42,7 +42,7 @@ GET  /api/projects/{project_id}/sample-presets
 POST /api/projects/{project_id}/sample-presets/{preset_id}/load
 ```
 
-- `sample-presets` 返回后端内置的轻量样例索引；当前包含通用、新闻/政策、学术/方法、平台复核、客服反馈五类 bilingual Engagement 样例。
+- `sample-presets` 返回后端内置的轻量样例索引；当前包含通用、新闻/政策、学术/方法、平台复核、客服反馈、合规/法律、社交舆情、财报/投资者沟通、医疗/科学传播九类 bilingual Engagement 样例。
 - `load` 会导入对应 label schema、导入 TXT 文档，并默认运行一次高置信 Character RAG suggestions；响应返回 document id、tag 列表、sentence/token 数量、suggestion run id 和本次候选统计。
 - 该接口不改变现有手动 `tags/schema/import`、`import-txt` 或 `suggestions/run` API，只是把演示/测试工作流合成一个快捷入口。
 
