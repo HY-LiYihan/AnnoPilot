@@ -11,6 +11,7 @@ import {
   fetchReviewQueue,
   fetchSamplePresets,
   goldsmithBoundaryFeedbackExportUrl,
+  goldsmithCandidateRunsExportUrl,
   goldsmithConsistencyScoresExportUrl,
   goldsmithHardExamplesExportUrl,
   goldsmithHumanChoicesExportUrl,
@@ -1265,6 +1266,11 @@ export function useDocumentReader() {
     window.location.href = goldsmithConsistencyScoresExportUrl(PROJECT_ID, documentMeta.value.id)
   }
 
+  function exportGoldsmithCandidateRunsJsonl() {
+    if (!documentMeta.value) return
+    window.location.href = goldsmithCandidateRunsExportUrl(PROJECT_ID, documentMeta.value.id)
+  }
+
   async function refreshAuditSummary() {
     try {
       auditSummary.value = await fetchAuditSummary(PROJECT_ID)
@@ -1405,6 +1411,7 @@ export function useDocumentReader() {
     exportGoldsmithHardExamplesJsonl,
     exportGoldsmithBoundaryFeedbackJsonl,
     exportGoldsmithConsistencyScoresJsonl,
+    exportGoldsmithCandidateRunsJsonl,
     verifyRebuildPreview,
     resetProjectData,
     refreshAuditSummary,

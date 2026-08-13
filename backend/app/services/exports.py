@@ -34,6 +34,7 @@ class ExportService:
         goldsmith_hard_examples_schema_version: str,
         goldsmith_boundary_feedback_schema_version: str,
         goldsmith_consistency_scores_schema_version: str,
+        goldsmith_candidate_runs_schema_version: str,
         medium_confidence_threshold: float,
     ) -> None:
         self.get_document = get_document
@@ -58,6 +59,7 @@ class ExportService:
         self.goldsmith_hard_examples_schema_version = goldsmith_hard_examples_schema_version
         self.goldsmith_boundary_feedback_schema_version = goldsmith_boundary_feedback_schema_version
         self.goldsmith_consistency_scores_schema_version = goldsmith_consistency_scores_schema_version
+        self.goldsmith_candidate_runs_schema_version = goldsmith_candidate_runs_schema_version
         self.medium_confidence_threshold = medium_confidence_threshold
 
     def export_document_lines(self, project_id: str, document_id: str) -> list[str]:
@@ -125,6 +127,7 @@ class ExportService:
         goldsmith_hard_example_lines = self.export_goldsmith_hard_examples_lines(project_id, document_id)
         goldsmith_boundary_feedback_lines = self.export_goldsmith_boundary_feedback_lines(project_id, document_id)
         goldsmith_consistency_score_lines = self.export_goldsmith_consistency_scores_lines(project_id, document_id)
+        goldsmith_candidate_run_lines = self.export_goldsmith_candidate_runs_lines(project_id, document_id)
         event_lines = self.export_event_lines(project_id)
         audit_summary = self.audit_project(project_id)
         tag_schema_payload = self.export_tag_schema(project_id)
@@ -211,6 +214,11 @@ class ExportService:
                     filename=f"{document_id}.goldsmith.consistency-scores.jsonl",
                     schema_version=self.goldsmith_consistency_scores_schema_version,
                     lines=goldsmith_consistency_score_lines,
+                ),
+                "goldsmith_candidate_runs_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.candidate-runs.jsonl",
+                    schema_version=self.goldsmith_candidate_runs_schema_version,
+                    lines=goldsmith_candidate_run_lines,
                 ),
             },
         }
@@ -452,6 +460,66 @@ class ExportService:
             lines.append(json.dumps(line, ensure_ascii=False) + "\n")
         return lines
 
+    def export_goldsmith_candidate_runs_lines(self, project_id: str, document_id: str) -> list[str]:
+        document = self.get_document(project_id, document_id)
+        generated_at = self.now()
+        lines = []
+        for sentence in document["sentences"]:
+            tokens = [self._export_prodigy_token(token, sentence["text"], sentence["start_char"]) for token in sentence["tokens"]]
+            for index, suggestion in enumerate(sentence.get("suggestions", []), start=1):
+                local_start = int(suggestion["start_char"]) - int(sentence["start_char"])
+                local_end = int(suggestion["end_char"]) - int(sentence["start_char"])
+                span = {
+                    "id": f"T{index}",
+                    "start": local_start,
+                    "end": local_end,
+                    "token_start": suggestion["start_token_index"],
+                    "token_end": suggestion["end_token_index"],
+                    "text": sentence["text"][local_start:local_end],
+                    "label": suggestion["tag_name"],
+                    "label_id": suggestion["tag_id"],
+                    "implicit": False,
+                }
+                latest_review = suggestion.get("latest_review") or {}
+                line = {
+                    "schema_version": self.goldsmith_candidate_runs_schema_version,
+                    "record_type": "prodigy_candidate",
+                    "generated_at": generated_at,
+                    "sample_id": sentence["id"],
+                    "candidate_id": suggestion["id"],
+                    "text": sentence["text"],
+                    "tokens": tokens,
+                    "spans": [span],
+                    "relations": [],
+                    "runtime_annotation": {
+                        "format": "inline_markup.v1",
+                        "annotation_markup": self._inline_span_markup(sentence["text"], local_start, local_end, suggestion["tag_name"]),
+                    },
+                    "answer": None,
+                    "explanation": self._candidate_explanation(suggestion),
+                    "model_confidence": suggestion["confidence"],
+                    "uncertainty_reason": self._candidate_uncertainty_reason(suggestion),
+                    "meta": {
+                        "source": "annopilot",
+                        "artifact": "candidate_runs.jsonl",
+                        "rosetta_reference": "candidate_runs.jsonl",
+                        "project_id": project_id,
+                        "document_id": document_id,
+                        "sentence_id": sentence["id"],
+                        "sentence_index": sentence["index"],
+                        "suggestion_id": suggestion["id"],
+                        "run_id": suggestion.get("run_id"),
+                        "tag_id": suggestion["tag_id"],
+                        "candidate_source": suggestion.get("source"),
+                        "evidence_text": suggestion.get("evidence_text"),
+                        "match_key": suggestion.get("match_key"),
+                        "evidence_match_key": suggestion.get("evidence_match_key"),
+                        "latest_review": latest_review or None,
+                    },
+                }
+                lines.append(json.dumps(line, ensure_ascii=False) + "\n")
+        return lines
+
     def _goldsmith_consistency_score(self, suggestions: list[dict[str, Any]]) -> dict[str, Any]:
         signatures = [self._suggestion_signature(suggestion) for suggestion in suggestions]
         signature_counts: dict[str, int] = {}
@@ -583,6 +651,35 @@ class ExportService:
             "high_confidence_sample": "High confidence with no overlap conflict or negative LLM review signal; sample for audit.",
         }
         return reasons[route]
+
+    @staticmethod
+    def _inline_span_markup(text: str, start: int, end: int, label: str) -> str:
+        return f"{text[:start]}[{text[start:end]}]{{{label}}}{text[end:]}"
+
+    @staticmethod
+    def _candidate_explanation(suggestion: dict[str, Any]) -> str:
+        parts = [f"AnnoPilot candidate from {suggestion.get('source', 'unknown')} retrieval."]
+        if suggestion.get("evidence_text"):
+            parts.append(f"Matched evidence: {suggestion['evidence_text']}.")
+        latest_review = suggestion.get("latest_review") or {}
+        if latest_review.get("recommendation"):
+            parts.append(f"Latest LLM review: {latest_review['recommendation']}.")
+        if latest_review.get("rationale"):
+            parts.append(str(latest_review["rationale"]))
+        return " ".join(parts)
+
+    @staticmethod
+    def _candidate_uncertainty_reason(suggestion: dict[str, Any]) -> str:
+        latest_review = suggestion.get("latest_review") or {}
+        recommendation = latest_review.get("recommendation")
+        if recommendation == "reject":
+            return "Latest LLM review rejects this candidate; route for expert calibration."
+        if recommendation == "uncertain":
+            return "Latest LLM review is uncertain; use as a boundary case."
+        confidence = float(suggestion.get("confidence") or 0.0)
+        if confidence < 0.75:
+            return "Character RAG confidence is below the medium threshold."
+        return "Candidate has no negative LLM review signal."
 
     def _export_prodigy_document_lines(self, project_id: str, document_id: str, view_id: str) -> list[str]:
         document = self.get_document(project_id, document_id)

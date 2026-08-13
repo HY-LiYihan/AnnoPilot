@@ -150,6 +150,10 @@ export function goldsmithConsistencyScoresExportUrl(projectId: string, documentI
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.consistency-scores.jsonl`
 }
 
+export function goldsmithCandidateRunsExportUrl(projectId: string, documentId: string) {
+  return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.candidate-runs.jsonl`
+}
+
 export function manifestExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.manifest.json`
 }

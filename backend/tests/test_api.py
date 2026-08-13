@@ -1555,6 +1555,22 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert consistency_candidate_ids.issubset({suggestion["id"] for suggestion in suggestions})
         assert consistency_lines[0]["meta"]["rosetta_reference"] == "consistency_scores.jsonl"
 
+        candidate_runs_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.candidate-runs.jsonl")
+        assert candidate_runs_response.status_code == 200
+        assert candidate_runs_response.headers["content-disposition"] == f'attachment; filename="{document_id}.goldsmith.candidate-runs.jsonl"'
+        candidate_runs = [json.loads(line) for line in candidate_runs_response.text.splitlines()]
+        assert candidate_runs
+        assert candidate_runs[0]["schema_version"] == "rosetta.prodigy_candidate.v1"
+        assert candidate_runs[0]["record_type"] == "prodigy_candidate"
+        assert candidate_runs[0]["sample_id"]
+        assert candidate_runs[0]["candidate_id"] in {suggestion["id"] for suggestion in suggestions}
+        assert candidate_runs[0]["answer"] is None
+        assert candidate_runs[0]["spans"][0]["text"] == candidate_runs[0]["text"][candidate_runs[0]["spans"][0]["start"] : candidate_runs[0]["spans"][0]["end"]]
+        assert candidate_runs[0]["spans"][0]["label"]
+        assert "[" in candidate_runs[0]["runtime_annotation"]["annotation_markup"]
+        assert candidate_runs[0]["model_confidence"] >= 0.98
+        assert candidate_runs[0]["meta"]["rosetta_reference"] == "candidate_runs.jsonl"
+
         accepted = client.post(f"/api/projects/default/suggestions/{suggestions[0]['id']}/accept")
         assert accepted.status_code == 200
         assert accepted.json()["accepted"] is True
@@ -1674,6 +1690,7 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["filename"].endswith(".provenance.json")
         assert manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["content_sha256"] == provenance["content_sha256"]
         assert manifest["artifacts"]["goldsmith_consistency_scores_jsonl"]["schema_version"] == "annopilot.goldsmith_consistency_scores.v1"
+        assert manifest["artifacts"]["goldsmith_candidate_runs_jsonl"]["schema_version"] == "rosetta.prodigy_candidate.v1"
         second_manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert second_manifest["run_provenance_artifacts"][suggestion_payload["run_id"]]["content_sha256"] == provenance["content_sha256"]
 
