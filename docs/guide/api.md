@@ -138,7 +138,7 @@ GET /api/projects/{project_id}/tags/schema.json
 - Goldsmith boundary feedback JSONL 使用 `annopilot.goldsmith_boundary_feedback.v1`，合并 human hard examples 与仍 pending 但 latest LLM review 为 `reject` / `uncertain` 的候选，供下一轮 label boundary、负例和 bilingual examples 优化。
 - Goldsmith consistency scores JSONL 使用 `annopilot.goldsmith_consistency_scores.v1`，对当前可见 pending suggestions 输出 sentence-level `score / agreement / exact_match_rate / review_route / candidate_scores`，作为 Rosetta `consistency_scores.jsonl` 的轻量代理产物；后续可替换为真正 k-run self-consistency 而不改下游文件名语义。
 - Goldsmith candidate runs JSONL 使用 Rosetta `rosetta.prodigy_candidate.v1`，把当前 pending suggestions 转成候选标注记录，包含 Prodigy-style `text/tokens/spans`、inline markup、model confidence、review metadata、Rosetta `high/medium/low` route、uncertainty score 和句内 consistency 摘要，可作为 Rosetta `candidate_runs.jsonl` 或候选选择题式人工复核输入。
-- Manifest JSON 使用 `annopilot.export_manifest.v1`，记录 artifact hashes、source run ids、annotation import history、run provenance summaries、live queue metrics 和 event audit，并提供排除生成时间的稳定 `content_sha256`。
+- Manifest JSON 使用 `annopilot.export_manifest.v1`，记录 artifact hashes、source run ids、annotation import history、run provenance summaries、live queue metrics、`prodigy_readiness` 和 event audit，并提供排除生成时间的稳定 `content_sha256`。`prodigy_readiness` 会输出 `ready/status/blockers`、句子完成数、label coverage、pending suggestions 和 Prodigy schema versions，用于在归档前判断是否仍需人工复核或补标。
 - Events JSONL 是 project-level audit trail。
 - `annotations.imported` event 会保存逐行 `source_record_results` manifest，用于审计外部 JSONL 每条记录的 hash、匹配状态、目标 sentence、answer 和 Prodigy-style source metadata。
 - Tag schema JSON 使用 `annopilot.tag_schema.v1`，包含 label 定义、准则说明和 Character RAG lexical examples。

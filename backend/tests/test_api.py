@@ -264,6 +264,16 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         ).hexdigest()
         assert manifest["document"]["id"] == document_id
         assert manifest["metrics"]["answer_counts"] == {"accept": 1, "reject": 0, "ignore": 0, "pending": 1}
+        assert manifest["prodigy_readiness"]["ready"] is False
+        assert manifest["prodigy_readiness"]["status"] == "needs_attention"
+        assert manifest["prodigy_readiness"]["blockers"] == ["incomplete_sentences"]
+        assert manifest["prodigy_readiness"]["sentence_count"] == 2
+        assert manifest["prodigy_readiness"]["completed_sentence_count"] == 1
+        assert manifest["prodigy_readiness"]["pending_suggestion_count"] == 0
+        assert manifest["prodigy_readiness"]["formats"] == {
+            "ner_manual": "prodigy.ner_manual.compat.v1",
+            "spans_manual": "prodigy.spans_manual.compat.v1",
+        }
         assert manifest["annotation_source_counts"] == {"human": 1}
         assert manifest["source_run_ids"] == []
         assert manifest["annotation_imports"] == []
@@ -1813,6 +1823,10 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert sum(manifest["metrics"]["suggestion_confidence_counts"].values()) == len(suggestions) - 2
         assert manifest["metrics"]["suggestion_review_counts"] == {"accept": 0, "reject": 0, "uncertain": 0}
         assert manifest["metrics"]["reviewed_suggestion_count"] == 0
+        assert manifest["prodigy_readiness"]["ready"] is False
+        assert "pending_suggestions" in manifest["prodigy_readiness"]["blockers"]
+        assert manifest["prodigy_readiness"]["pending_suggestion_count"] == len(suggestions) - 2
+        assert manifest["prodigy_readiness"]["formats"]["ner_manual"] == "prodigy.ner_manual.compat.v1"
         assert manifest["annotation_source_counts"] == {"accepted_suggestion": 1}
         assert manifest["event_audit"]["event_types"]["suggestions.generated"] == 1
         assert manifest["event_audit"]["actor_type_counts"]["system"] >= 2

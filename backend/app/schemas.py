@@ -595,6 +595,20 @@ class ExportManifestAuditResponse(BaseModel):
     rebuild_status: str
 
 
+class ProdigyReadinessResponse(BaseModel):
+    ready: bool
+    status: str
+    blockers: list[str] = Field(default_factory=list)
+    sentence_count: int
+    completed_sentence_count: int
+    progress: float
+    annotation_count: int
+    covered_label_count: int
+    total_label_count: int
+    pending_suggestion_count: int
+    formats: dict[str, str]
+
+
 class ExportManifestResponse(BaseModel):
     schema_version: str
     record_type: str
@@ -602,6 +616,7 @@ class ExportManifestResponse(BaseModel):
     project_id: str
     document: DocumentMetaResponse
     metrics: MetricsResponse
+    prodigy_readiness: ProdigyReadinessResponse
     tag_count: int
     annotation_source_counts: dict[str, int]
     source_run_ids: list[str]

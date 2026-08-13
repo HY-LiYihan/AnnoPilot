@@ -156,6 +156,7 @@ class ExportService:
             "project_id": project_id,
             "document": document["document"],
             "metrics": document["metrics"],
+            "prodigy_readiness": self._prodigy_readiness(document["metrics"]),
             "tag_count": len(document["tags"]),
             "annotation_source_counts": dict(sorted(source_counts.items())),
             "source_run_ids": [run["id"] for run in runs],
@@ -1033,6 +1034,48 @@ class ExportService:
         if annotation.get("source_suggestion_id"):
             source["source_suggestion_id"] = annotation["source_suggestion_id"]
         return source
+
+    def _prodigy_readiness(self, metrics: dict[str, Any]) -> dict[str, Any]:
+        sentence_count = int(metrics.get("sentence_count") or 0)
+        completed_count = int(metrics.get("completed_count") or 0)
+        annotation_count = int(metrics.get("annotation_count") or 0)
+        progress = float(metrics.get("progress") or 0.0)
+        annotation_label_counts = metrics.get("annotation_label_counts") or []
+        suggestion_label_counts = metrics.get("suggestion_label_counts") or []
+        suggestion_status_counts = metrics.get("suggestion_status_counts") or {}
+        pending_suggestion_count = int(
+            suggestion_status_counts.get("pending")
+            if suggestion_status_counts.get("pending") is not None
+            else sum(int(item.get("count") or 0) for item in suggestion_label_counts)
+        )
+        covered_label_count = sum(1 for item in annotation_label_counts if int(item.get("count") or 0) > 0)
+        total_label_count = len(annotation_label_counts)
+        blockers = []
+        if sentence_count == 0:
+            blockers.append("no_sentences")
+        if completed_count < sentence_count:
+            blockers.append("incomplete_sentences")
+        if annotation_count == 0:
+            blockers.append("no_annotations")
+        if pending_suggestion_count > 0:
+            blockers.append("pending_suggestions")
+
+        return {
+            "ready": not blockers,
+            "status": "ready" if not blockers else "needs_attention",
+            "blockers": blockers,
+            "sentence_count": sentence_count,
+            "completed_sentence_count": completed_count,
+            "progress": progress,
+            "annotation_count": annotation_count,
+            "covered_label_count": covered_label_count,
+            "total_label_count": total_label_count,
+            "pending_suggestion_count": pending_suggestion_count,
+            "formats": {
+                "ner_manual": self.prodigy_export_schema_version,
+                "spans_manual": self.prodigy_spans_export_schema_version,
+            },
+        }
 
     @staticmethod
     def _export_prodigy_answer(sentence: dict[str, Any]) -> str:
