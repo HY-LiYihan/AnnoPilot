@@ -141,9 +141,18 @@ function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics'], or
   if (order === 'hybrid' && item.review_route === 'calibration') {
     score = `${labels.calibrationSample} ${Math.round(item.min_confidence * 100)}%`
   } else if (order === 'goldsmith' || order === 'hybrid') {
-    score = `${labels.riskScore} ${item.risk_score.toFixed(2)}`
+    score = `${labels.riskScore} ${item.risk_score.toFixed(2)}${riskBreakdownText(item, labels)}`
   }
   return suggestion ? `${suggestion.tag_name}: ${suggestion.text} · ${score}` : labels.queuePreviewFallback(item.suggestion_count)
+}
+
+function riskBreakdownText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
+  const parts = [
+    item.candidate_disagreement_score > 0 ? `${labels.candidateConflictRisk} ${item.candidate_disagreement_score.toFixed(2)}` : '',
+    item.llm_review_risk_score > 0 ? `${labels.llmReviewRisk} ${item.llm_review_risk_score.toFixed(2)}` : '',
+    item.lexical_risk_score > 0 ? `${labels.lexicalRisk} ${item.lexical_risk_score.toFixed(2)}` : '',
+  ].filter(Boolean)
+  return parts.length ? ` · ${parts.join(' · ')}` : ''
 }
 
 function shortHash(value: string) {
