@@ -147,7 +147,7 @@ def tokenize_sentence(sentence: SentenceSpan) -> list[TokenSpan]:
         token_start = i
         if _is_cjk(char):
             i += 1
-        elif char.isascii() and char.isdigit():
+        elif _starts_numeric_token(text, i):
             i = _consume_numeric_token(text, i)
         elif _is_word_char(char):
             i += 1
@@ -267,17 +267,27 @@ def _is_word_char(char: str) -> bool:
     return char.isascii() and (char.isalnum() or char in {"_", "'", "-"})
 
 
+def _starts_numeric_token(text: str, index: int) -> bool:
+    char = text[index]
+    if char.isdigit():
+        return True
+    return char in {"+", "-", "−", "﹣", "－"} and index + 1 < len(text) and text[index + 1].isdigit()
+
+
 def _consume_numeric_token(text: str, index: int) -> int:
     i = index
+    if i < len(text) and text[i] in {"+", "-", "−", "﹣", "－"}:
+        i += 1
+
     while i < len(text) and text[i].isdigit():
         i += 1
 
-    while i + 1 < len(text) and text[i] in {".", ","} and text[i + 1].isdigit():
+    while i + 1 < len(text) and text[i] in {".", ",", "．", "，"} and text[i + 1].isdigit():
         i += 1
         while i < len(text) and text[i].isdigit():
             i += 1
 
-    if i < len(text) and text[i] == "%":
+    if i < len(text) and text[i] in {"%", "％"}:
         i += 1
 
     if i + 1 < len(text) and text[i] == "-" and text[i + 1].isascii() and text[i + 1].isalnum():

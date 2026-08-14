@@ -43,6 +43,22 @@ def test_tokenization_keeps_decimal_percent_and_model_names_together() -> None:
     ]
 
 
+def test_tokenization_keeps_signed_and_fullwidth_numeric_tokens_together() -> None:
+    text = "报告称收入增长3.5％，但利润率为-3.5%，另一个指标是１２．５％。"
+    sentence = SentenceSpan(index=0, text=text, start=0, end=len(text))
+
+    tokens = tokenize_sentence(sentence)
+
+    assert "3.5％" in [token.text for token in tokens]
+    assert "-3.5%" in [token.text for token in tokens]
+    assert "１２．５％" in [token.text for token in tokens]
+    assert [(token.text, token.start, token.end) for token in tokens if token.text in {"3.5％", "-3.5%", "１２．５％"}] == [
+        ("3.5％", 7, 11),
+        ("-3.5%", 17, 22),
+        ("１２．５％", 29, 34),
+    ]
+
+
 def test_empty_text_has_no_sentences() -> None:
     assert split_sentences("\n\n   ") == []
 
