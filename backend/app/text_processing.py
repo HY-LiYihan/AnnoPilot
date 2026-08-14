@@ -147,6 +147,8 @@ def tokenize_sentence(sentence: SentenceSpan) -> list[TokenSpan]:
         token_start = i
         if _is_cjk(char):
             i += 1
+        elif char.isascii() and char.isdigit():
+            i = _consume_numeric_token(text, i)
         elif _is_word_char(char):
             i += 1
             while i < len(text) and _is_word_char(text[i]):
@@ -263,3 +265,24 @@ def _is_cjk(char: str) -> bool:
 
 def _is_word_char(char: str) -> bool:
     return char.isascii() and (char.isalnum() or char in {"_", "'", "-"})
+
+
+def _consume_numeric_token(text: str, index: int) -> int:
+    i = index
+    while i < len(text) and text[i].isdigit():
+        i += 1
+
+    while i + 1 < len(text) and text[i] in {".", ","} and text[i + 1].isdigit():
+        i += 1
+        while i < len(text) and text[i].isdigit():
+            i += 1
+
+    if i < len(text) and text[i] == "%":
+        i += 1
+
+    if i + 1 < len(text) and text[i] == "-" and text[i + 1].isascii() and text[i + 1].isalnum():
+        i += 1
+        while i < len(text) and _is_word_char(text[i]):
+            i += 1
+
+    return i

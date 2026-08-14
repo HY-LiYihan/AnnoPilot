@@ -26,6 +26,23 @@ def test_token_offsets_are_document_offsets() -> None:
     assert tokens[2].start == 24
 
 
+def test_tokenization_keeps_decimal_percent_and_model_names_together() -> None:
+    text = "Revenue rose 3.5% on model 5.5-low."
+    sentence = SentenceSpan(index=0, text=text, start=0, end=len(text))
+
+    tokens = tokenize_sentence(sentence)
+
+    assert [(token.text, token.start, token.end) for token in tokens] == [
+        ("Revenue", 0, 7),
+        ("rose", 8, 12),
+        ("3.5%", 13, 17),
+        ("on", 18, 20),
+        ("model", 21, 26),
+        ("5.5-low", 27, 34),
+        (".", 34, 35),
+    ]
+
+
 def test_empty_text_has_no_sentences() -> None:
     assert split_sentences("\n\n   ") == []
 

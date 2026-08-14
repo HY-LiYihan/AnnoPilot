@@ -116,7 +116,7 @@ GET    /api/projects/{project_id}/tags/prodigy-labels.json
 
 - `normalize_text`：统一换行符。
 - `split_sentences`：支持英文句号、中文 `。！？`、英文 `?!` 和换行 boundary，连续终止标点如 `？！` 会保留为同一句句尾，并避免把 `U.S.`、`Dr.` 等常见英文缩写误切为独立句子。
-- `tokenize_sentence`：生成 document-level offsets，支持 CJK character token、ASCII word token 和 punctuation token。
+- `tokenize_sentence`：生成 document-level offsets，支持 CJK character token、ASCII word token、数字/小数/百分比 token 和 punctuation token。
 
 这让当前 reader 可以处理中英混合文本，并保持 annotation offsets 可追溯。
 
