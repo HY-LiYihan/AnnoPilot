@@ -57,7 +57,7 @@ Web UI 空白阅读器中也会显示同一组内置样例按钮；点击后会�
 - **Gold seed**：label schema 中的 bilingual lexical examples 是最小 gold-like seed。
 - **Score review**：suggestion confidence、LLM review recommendation 和人工 accept/reject 共同形成 review signal。
 - **Random baseline**：右侧 review queue 支持 `random` 稳定伪随机基线，方便和 uncertainty / risk routing 比较人工审核收益。
-- **Hybrid review**：右侧 review queue 支持 `hybrid`，先排高风险句子，同时保留少量高置信样本抽检，用来估计自动通过样本的真实错误率；UI 的 `R` / next review 跳转会跟随当前选择的 position、random、uncertain、risk 或 hybrid 队列排序。
+- **Hybrid review**：右侧 review queue 支持 `hybrid`，先排高风险句子，同时保留少量高置信样本抽检，用来估计自动通过样本的真实错误率；API 会返回全队列 `rosetta_route_counts`，UI 可以直接显示 low / medium / high consistency 分布；`R` / next review 跳转会跟随当前选择的 position、random、uncertain、risk 或 hybrid 队列排序，readiness 入口则优先跳到已加载队列中 `priority` 最高的待审项。
 - **Candidate conflict risk**：Goldsmith / hybrid 风险排序会把同一句 pending candidates 的 label 或 span boundary 分歧纳入 `candidate_disagreement_score`，让多候选互相冲突的 Engagement 边界样本更早进入人工复核。
 - **Error discovery**：Document metrics 会用已有 human accept/reject 决策和 latest LLM review 生成累计错配发现曲线，比较 random、uncertainty、Goldsmith risk 和 hybrid queue 在前 5 条复核中发现多少错配。
 - **Review artifacts**：右侧运行状态可导出 Goldsmith/Rosetta-style `candidate_runs.jsonl`、`consistency_scores.jsonl`、`label_statistics.jsonl`、`contrastive_examples.jsonl`、`reflection_plans.jsonl`、`prompt_package.jsonl`、`verification_report.jsonl`、`bootstrap_report.md`、`human_review_queue.jsonl`、`human_choices.jsonl` 和 `hard_examples.jsonl`，把 engagement 标注中的候选、Rosetta route、人工复核 priority、不确定性分数、token-level entity/context/other 概率、similar/boundary examples、reflection checks、prompt tasks、verifier checks、人工优先复核报告、candidate conflict risk、待审队列、人工选择、LLM review / judge、错配标记和边界失败样例交给离线优化/评估流程。
