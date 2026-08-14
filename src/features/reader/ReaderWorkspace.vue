@@ -210,7 +210,15 @@ const {
 } = useDocumentReader()
 
 const localizedReviewSummary = computed(() => labels.value.tags.suggestionsWaiting(metrics.value.suggestion_count))
+const annotationConflictItems = computed(() => queueItems.value.filter((sentence) => (sentence.annotation_overlap_count ?? 0) > 0))
 const localizedReviewQueueSummary = computed(() => {
+  const conflictItems = annotationConflictItems.value
+  if (conflictItems.length) {
+    const conflictIndex = conflictItems.findIndex((sentence) => sentence.index === currentSentenceIndex.value)
+    return conflictIndex >= 0
+      ? `${labels.value.metrics.annotationConflicts} ${conflictIndex + 1}/${conflictItems.length}`
+      : labels.value.metrics.conflictSummary(conflictItems.length)
+  }
   const reviewQueueItems = queueItems.value.filter((sentence) => !sentence.completed && sentence.suggestion_count > 0)
   const orderedItems = reviewQueueOrder.value === 'position' || !reviewQueueDetails.value.length
     ? reviewQueueItems
@@ -454,6 +462,7 @@ async function confirmProjectReset() {
         :audit-summary="auditSummary"
         :rebuild-preview="rebuildPreview"
         :run-history="runHistory"
+        :queue-items="queueItems"
         :review-queue-details="reviewQueueDetails"
         :review-queue-total="reviewQueueTotal"
         :review-queue-order="reviewQueueOrder"

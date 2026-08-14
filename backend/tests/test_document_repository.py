@@ -61,3 +61,5 @@ def test_document_query_repository_counts_overlapping_annotations(tmp_path: Path
     summary = storage.document_queries.get_document_summary("default", document_id)
     assert summary["metrics"]["annotation_count"] == 2
     assert summary["metrics"]["annotation_overlap_count"] == 1
+    assert summary["queue"][0]["annotation_overlap_count"] == 1
+    assert summary["queue"][1]["annotation_overlap_count"] == 0

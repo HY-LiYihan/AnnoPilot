@@ -271,7 +271,22 @@ class DocumentQueryRepository:
             ).fetchall()
             queue_rows = conn.execute(
                 """
-                SELECT s.id, s.sentence_index, s.completed, s.answer, COUNT(DISTINCT sg.id) AS suggestion_count
+                SELECT
+                  s.id,
+                  s.sentence_index,
+                  s.completed,
+                  s.answer,
+                  COUNT(DISTINCT sg.id) AS suggestion_count,
+                  (
+                    SELECT COUNT(*)
+                    FROM annotations left_a
+                    JOIN annotations right_a
+                      ON right_a.sentence_id = left_a.sentence_id
+                     AND right_a.id > left_a.id
+                     AND left_a.start_token_index <= right_a.end_token_index
+                     AND left_a.end_token_index >= right_a.start_token_index
+                    WHERE left_a.sentence_id = s.id
+                  ) AS annotation_overlap_count
                 FROM sentences s
                 LEFT JOIN annotation_suggestions sg ON sg.sentence_id = s.id
                   AND sg.status = 'pending'
@@ -361,6 +376,7 @@ class DocumentQueryRepository:
                     "completed": bool(row["completed"]),
                     "answer": row["answer"] or ("accept" if row["completed"] else "pending"),
                     "suggestion_count": row["suggestion_count"],
+                    "annotation_overlap_count": row["annotation_overlap_count"],
                 }
                 for row in queue_rows
             ],

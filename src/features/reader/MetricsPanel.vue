@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { BarChart3, DatabaseZap, Download, Keyboard, MousePointer2, RotateCw, Route, Sparkles, Target, Trash2, Upload } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
-import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, LabelCount, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder } from '../../types/domain'
+import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, LabelCount, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder, SentenceQueueItem } from '../../types/domain'
 
 defineProps<{
   labels: UiLabels['metrics']
@@ -10,6 +10,7 @@ defineProps<{
   auditSummary: AuditSummary | null
   rebuildPreview: RebuildPreview | null
   runHistory: AnnotationRun[]
+  queueItems: SentenceQueueItem[]
   reviewQueueDetails: ReviewQueueItem[]
   reviewQueueTotal: number
   reviewQueueOrder: ReviewQueueOrder
@@ -160,6 +161,10 @@ function annotationOverlapCount(metrics: Metrics) {
   return metrics.annotation_overlap_count ?? 0
 }
 
+function annotationConflictItems(queueItems: SentenceQueueItem[]) {
+  return queueItems.filter((item) => (item.annotation_overlap_count ?? 0) > 0).slice(0, 5)
+}
+
 function progressPercent(metrics: Metrics) {
   return (metrics.progress * 100).toFixed(2)
 }
@@ -308,6 +313,28 @@ function shortHash(value: string) {
         </div>
       </div>
     </article>
+
+    <section v-if="annotationConflictItems(queueItems).length" class="progress-card review-queue-card conflict-queue-card" :aria-label="labels.annotationConflicts">
+      <div class="progress-header">
+        <span>{{ labels.annotationConflicts }}</span>
+        <strong>{{ annotationOverlapCount(metrics) }} {{ labels.conflicts }}</strong>
+      </div>
+      <div class="review-queue-list">
+        <button
+          v-for="item in annotationConflictItems(queueItems)"
+          :key="item.id"
+          class="review-queue-row"
+          type="button"
+          @click="emit('review-sentence', item.index)"
+        >
+          <span>
+            <strong>#{{ item.index + 1 }} · {{ item.annotation_overlap_count }} {{ labels.conflicts }}</strong>
+            <small>{{ labels.overlapConflictHint }}</small>
+          </span>
+          <em>{{ labels.go }}</em>
+        </button>
+      </div>
+    </section>
 
     <div class="metric-stack">
       <article class="metric-card">

@@ -252,6 +252,7 @@ class SentenceQueueItemResponse(BaseModel):
     completed: bool
     answer: str = "pending"
     suggestion_count: int = 0
+    annotation_overlap_count: int = 0
 
 
 class ReviewQueueItemResponse(BaseModel):

@@ -583,6 +583,9 @@ def test_document_summary_reports_overlapping_annotations(tmp_path: Path) -> Non
         metrics = client.get(f"/api/projects/default/documents/{document_id}/summary").json()["metrics"]
         assert metrics["annotation_count"] == 2
         assert metrics["annotation_overlap_count"] == 1
+        summary = client.get(f"/api/projects/default/documents/{document_id}/summary").json()
+        assert summary["queue"][0]["annotation_overlap_count"] == 1
+        assert summary["queue"][1]["annotation_overlap_count"] == 0
 
 
 def test_llm_settings_runtime_model_selection_updates_health(tmp_path: Path, monkeypatch) -> None:

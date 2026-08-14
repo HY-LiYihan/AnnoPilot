@@ -102,6 +102,7 @@ export type SentenceQueueItem = {
   completed: boolean
   answer: 'pending' | 'accept' | 'reject' | 'ignore' | string
   suggestion_count: number
+  annotation_overlap_count: number
 }
 
 export type ReviewQueueItem = {

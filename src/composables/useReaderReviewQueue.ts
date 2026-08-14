@@ -22,8 +22,12 @@ export function useReaderReviewQueue(options: UseReaderReviewQueueOptions) {
   const reviewQueueTotal = ref(0)
   const reviewQueueOrder = ref<ReviewQueueOrder>('hybrid')
 
+  const annotationConflictItems = computed(() => options.sentenceQueue.value.filter((sentence) => (sentence.annotation_overlap_count ?? 0) > 0))
   const reviewQueueItems = computed(() => options.sentenceQueue.value.filter((sentence) => !sentence.completed && sentence.suggestion_count > 0))
   const reviewNavigationItems = computed(() => {
+    if (annotationConflictItems.value.length) {
+      return annotationConflictItems.value.map((sentence) => ({ id: sentence.id, index: sentence.index }))
+    }
     if (reviewQueueOrder.value === 'position' || !reviewQueueDetails.value.length) {
       return reviewQueueItems.value.map((sentence) => ({ id: sentence.id, index: sentence.index }))
     }
@@ -31,12 +35,12 @@ export function useReaderReviewQueue(options: UseReaderReviewQueueOptions) {
   })
   const reviewQueueSummary = computed(() => {
     const items = reviewNavigationItems.value
-    const total = reviewQueueOrder.value === 'position' ? reviewQueueItems.value.length : reviewQueueTotal.value || items.length
+    const total = annotationConflictItems.value.length || (reviewQueueOrder.value === 'position' ? reviewQueueItems.value.length : reviewQueueTotal.value || items.length)
     if (!total) return 'No review queue'
     const queueIndex = items.findIndex((sentence) => sentence.index === options.currentSentenceIndex.value)
     return queueIndex >= 0 ? `Review ${queueIndex + 1}/${total}` : `${total} pending reviews`
   })
-  const hasReviewQueue = computed(() => options.sentenceQueue.value.some((sentence) => !sentence.completed && sentence.suggestion_count > 0))
+  const hasReviewQueue = computed(() => annotationConflictItems.value.length > 0 || options.sentenceQueue.value.some((sentence) => !sentence.completed && sentence.suggestion_count > 0))
   const queueItems = computed(() => options.sentenceQueue.value)
 
   async function refreshReviewQueue() {
