@@ -2766,8 +2766,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert consistency_lines
         assert consistency_lines[0]["schema_version"] == "annopilot.goldsmith_consistency_scores.v1"
         assert consistency_lines[0]["record_type"] == "consistency_score"
-        assert consistency_lines[0]["diagnostic_scope"] == "visible_pending_suggestions"
-        assert consistency_lines[0]["scoring_mode"] == "character_rag_llm_review_proxy"
+        assert consistency_lines[0]["diagnostic_scope"] == "run_candidate_snapshots"
+        assert consistency_lines[0]["scoring_mode"] == "single_run_candidate_snapshot"
         assert 0 <= consistency_lines[0]["score"] <= 1
         assert 0 <= consistency_lines[0]["agreement"] <= 1
         assert 0 <= consistency_lines[0]["pairwise_span_f1"] <= 1
@@ -2777,8 +2777,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert consistency_lines[0]["review_route"] in {"high_confidence_sample", "light_review", "expert_review"}
         assert consistency_lines[0]["candidate_count"] == len(consistency_lines[0]["candidate_scores"])
         assert 0 <= consistency_lines[0]["candidate_scores"][0]["pairwise_span_f1"] <= 1
-        consistency_candidate_ids = {candidate["suggestion_id"] for line in consistency_lines for candidate in line["candidate_scores"]}
-        assert consistency_candidate_ids.issubset({suggestion["id"] for suggestion in suggestions})
+        consistency_run_ids = {candidate["run_id"] for line in consistency_lines for candidate in line["candidate_scores"]}
+        assert consistency_run_ids == {suggestion_payload["run_id"]}
         assert consistency_lines[0]["meta"]["rosetta_reference"] == "consistency_scores.jsonl"
 
         candidate_runs_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.candidate-runs.jsonl")
@@ -2789,7 +2789,7 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert candidate_runs[0]["schema_version"] == "rosetta.prodigy_candidate.v1"
         assert candidate_runs[0]["record_type"] == "prodigy_candidate"
         assert candidate_runs[0]["sample_id"]
-        assert candidate_runs[0]["candidate_id"] in {suggestion["id"] for suggestion in suggestions}
+        assert candidate_runs[0]["candidate_id"].startswith(f"{suggestion_payload['run_id']}:")
         assert candidate_runs[0]["answer"] is None
         assert candidate_runs[0]["spans"][0]["text"] == candidate_runs[0]["text"][candidate_runs[0]["spans"][0]["start"] : candidate_runs[0]["spans"][0]["end"]]
         assert candidate_runs[0]["spans"][0]["label"]
@@ -2800,8 +2800,8 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert 0 <= candidate_runs[0]["meta"]["uncertainty_score"] <= 1
         assert candidate_runs[0]["meta"]["candidate_score"]["suggestion_id"] == candidate_runs[0]["candidate_id"]
         assert candidate_runs[0]["meta"]["candidate_score"]["span_f1_to_consensus"] >= 0
-        assert candidate_runs[0]["meta"]["consistency"]["diagnostic_scope"] == "visible_pending_suggestions"
-        assert candidate_runs[0]["meta"]["consistency"]["scoring_mode"] == "character_rag_llm_review_proxy"
+        assert candidate_runs[0]["meta"]["consistency"]["diagnostic_scope"] == "run_candidate_snapshots"
+        assert candidate_runs[0]["meta"]["consistency"]["scoring_mode"] == "single_run_candidate_snapshot"
         assert 0 <= candidate_runs[0]["meta"]["consistency"]["pairwise_span_f1"] <= 1
         assert 0 <= candidate_runs[0]["meta"]["consistency"]["uncertainty_score"] <= 1
         assert candidate_runs[0]["meta"]["consistency"]["rosetta_route"] in {"high", "medium", "low"}
@@ -3414,6 +3414,82 @@ def test_goldsmith_consistency_exact_match_rate_matches_rosetta_reference_candid
         first_candidate_consistency = candidate_runs[0]["meta"]["consistency"]
         assert round(first_candidate_consistency["exact_match_rate"], 4) == 0.3333
         assert round(first_candidate_consistency["consensus_match_rate"], 4) == 0.6667
+
+
+def test_goldsmith_consistency_groups_complete_span_sets_by_annotation_run(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("run-consistency.txt", "It may not work.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        for name, example in (("Entertain", "may"), ("Disclaim Deny", "not")):
+            response = client.post(
+                "/api/projects/default/tags",
+                json={"name": name, "description": "Engagement cue.", "examples": [example]},
+            )
+            assert response.status_code == 200
+
+        first_run = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 2, "min_confidence": 0},
+        )
+        assert first_run.status_code == 200
+        assert first_run.json()["suggestions_created"] == 2
+
+        first_scores = [
+            json.loads(line)
+            for line in client.get(
+                f"/api/projects/default/documents/{document_id}/export.goldsmith.consistency-scores.jsonl"
+            ).text.splitlines()
+        ]
+        assert first_scores[0]["scoring_mode"] == "single_run_candidate_snapshot"
+        assert first_scores[0]["candidate_count"] == 1
+        assert first_scores[0]["pairwise_span_f1"] == 1.0
+        first_candidates = [
+            json.loads(line)
+            for line in client.get(
+                f"/api/projects/default/documents/{document_id}/export.goldsmith.candidate-runs.jsonl"
+            ).text.splitlines()
+        ]
+        assert len(first_candidates) == 1
+        assert len(first_candidates[0]["spans"]) == 2
+
+        second_run = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 1, "min_confidence": 0},
+        )
+        assert second_run.status_code == 200
+        assert second_run.json()["suggestions_created"] == 1
+
+        scores = [
+            json.loads(line)
+            for line in client.get(
+                f"/api/projects/default/documents/{document_id}/export.goldsmith.consistency-scores.jsonl"
+            ).text.splitlines()
+        ]
+        assert scores[0]["diagnostic_scope"] == "run_candidate_snapshots"
+        assert scores[0]["scoring_mode"] == "k_run_self_consistency"
+        assert scores[0]["candidate_count"] == 2
+        assert scores[0]["run_count"] == 2
+        assert scores[0]["pairwise_span_f1"] == 0.6667
+
+        candidate_runs = [
+            json.loads(line)
+            for line in client.get(
+                f"/api/projects/default/documents/{document_id}/export.goldsmith.candidate-runs.jsonl"
+            ).text.splitlines()
+        ]
+        assert len(candidate_runs) == 2
+        assert sorted(len(candidate["spans"]) for candidate in candidate_runs) == [1, 2]
+        assert {candidate["meta"]["run_id"] for candidate in candidate_runs} == {
+            first_run.json()["run_id"],
+            second_run.json()["run_id"],
+        }
 
 
 def test_goldsmith_consistency_ignores_evidence_match_key_for_same_span(tmp_path: Path) -> None:
@@ -5238,4 +5314,6 @@ def _db_counts(storage: AnnotationStorage) -> dict[str, int]:
             "suggestions": conn.execute("SELECT COUNT(*) AS count FROM annotation_suggestions").fetchone()["count"],
             "suggestion_reviews": conn.execute("SELECT COUNT(*) AS count FROM annotation_suggestion_reviews").fetchone()["count"],
             "runs": conn.execute("SELECT COUNT(*) AS count FROM annotation_runs").fetchone()["count"],
+            "run_sentences": conn.execute("SELECT COUNT(*) AS count FROM annotation_run_sentences").fetchone()["count"],
+            "run_candidate_spans": conn.execute("SELECT COUNT(*) AS count FROM annotation_run_candidate_spans").fetchone()["count"],
         }

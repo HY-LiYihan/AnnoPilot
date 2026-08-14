@@ -93,8 +93,38 @@ CREATE TABLE IF NOT EXISTS annotation_runs (
   config_json TEXT NOT NULL,
   input_count INTEGER NOT NULL,
   suggestion_count INTEGER NOT NULL,
+  snapshot_complete INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS annotation_run_sentences (
+  run_id TEXT NOT NULL REFERENCES annotation_runs(id) ON DELETE CASCADE,
+  sentence_id TEXT NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
+  PRIMARY KEY (run_id, sentence_id)
+);
+
+CREATE TABLE IF NOT EXISTS annotation_run_candidate_spans (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES annotation_runs(id) ON DELETE CASCADE,
+  sentence_id TEXT NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
+  tag_id TEXT NOT NULL,
+  tag_name TEXT NOT NULL,
+  start_token_index INTEGER NOT NULL,
+  end_token_index INTEGER NOT NULL,
+  start_char INTEGER NOT NULL,
+  end_char INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  source TEXT NOT NULL,
+  evidence_text TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_annotation_run_sentences_sentence
+  ON annotation_run_sentences(sentence_id, run_id);
+
+CREATE INDEX IF NOT EXISTS idx_annotation_run_candidate_spans_run_sentence
+  ON annotation_run_candidate_spans(run_id, sentence_id, start_token_index);
 
 CREATE TABLE IF NOT EXISTS annotation_suggestion_reviews (
   id TEXT PRIMARY KEY,
@@ -158,6 +188,57 @@ _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 def create_base_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(BASE_SCHEMA_SQL)
     ensure_legacy_columns(conn)
+
+
+def create_run_candidate_snapshot_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS annotation_runs (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+          recipe TEXT NOT NULL,
+          config_json TEXT NOT NULL,
+          input_count INTEGER NOT NULL,
+          suggestion_count INTEGER NOT NULL,
+          snapshot_complete INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        )
+        """
+    )
+    ensure_column(conn, "annotation_runs", "snapshot_complete", "INTEGER NOT NULL DEFAULT 0")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS annotation_run_sentences (
+          run_id TEXT NOT NULL REFERENCES annotation_runs(id) ON DELETE CASCADE,
+          sentence_id TEXT NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
+          PRIMARY KEY (run_id, sentence_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS annotation_run_candidate_spans (
+          id TEXT PRIMARY KEY,
+          run_id TEXT NOT NULL REFERENCES annotation_runs(id) ON DELETE CASCADE,
+          sentence_id TEXT NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
+          tag_id TEXT NOT NULL,
+          tag_name TEXT NOT NULL,
+          start_token_index INTEGER NOT NULL,
+          end_token_index INTEGER NOT NULL,
+          start_char INTEGER NOT NULL,
+          end_char INTEGER NOT NULL,
+          text TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          source TEXT NOT NULL,
+          evidence_text TEXT,
+          created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_annotation_run_sentences_sentence
+          ON annotation_run_sentences(sentence_id, run_id);
+
+        CREATE INDEX IF NOT EXISTS idx_annotation_run_candidate_spans_run_sentence
+          ON annotation_run_candidate_spans(run_id, sentence_id, start_token_index);
+        """
+    )
 
 
 def ensure_legacy_columns(conn: sqlite3.Connection) -> None:

@@ -18,7 +18,18 @@ def test_storage_initialize_records_schema_version(tmp_path: Path) -> None:
         assert current_schema_version(conn) == CURRENT_SCHEMA_VERSION
         tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
 
-    assert {"schema_version", "documents", "sentences", "tokens", "annotations", "event_outbox"} <= tables
+    assert {
+        "schema_version",
+        "documents",
+        "sentences",
+        "tokens",
+        "annotations",
+        "event_outbox",
+        "annotation_run_sentences",
+        "annotation_run_candidate_spans",
+    } <= tables
+    with storage.connect() as conn:
+        assert "snapshot_complete" in _columns(conn, "annotation_runs")
 
 
 def test_migration_backfills_legacy_columns(tmp_path: Path) -> None:
@@ -192,6 +203,47 @@ def test_migration_v3_adds_review_judge_json_to_existing_v2_database(tmp_path: P
         migrate_database(conn)
 
         assert "judge_json" in _columns(conn, "annotation_suggestion_reviews")
+        assert current_schema_version(conn) == CURRENT_SCHEMA_VERSION
+    finally:
+        conn.close()
+
+
+def test_migration_v4_adds_run_candidate_snapshot_schema(tmp_path: Path) -> None:
+    database_path = tmp_path / "v3.sqlite"
+    conn = sqlite3.connect(database_path)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE schema_version (
+              version INTEGER PRIMARY KEY,
+              name TEXT NOT NULL,
+              applied_at TEXT NOT NULL
+            );
+            INSERT INTO schema_version (version, name, applied_at)
+            VALUES (1, 'baseline_schema', '2026-08-10T00:00:00+00:00');
+            INSERT INTO schema_version (version, name, applied_at)
+            VALUES (2, 'ensure_legacy_columns', '2026-08-10T00:01:00+00:00');
+            INSERT INTO schema_version (version, name, applied_at)
+            VALUES (3, 'ensure_review_judge_json', '2026-08-10T00:02:00+00:00');
+
+            CREATE TABLE annotation_runs (
+              id TEXT PRIMARY KEY,
+              project_id TEXT NOT NULL,
+              document_id TEXT NOT NULL,
+              recipe TEXT NOT NULL,
+              config_json TEXT NOT NULL,
+              input_count INTEGER NOT NULL,
+              suggestion_count INTEGER NOT NULL,
+              created_at TEXT NOT NULL
+            );
+            """
+        )
+
+        migrate_database(conn)
+
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        assert "snapshot_complete" in _columns(conn, "annotation_runs")
+        assert {"annotation_run_sentences", "annotation_run_candidate_spans"} <= tables
         assert current_schema_version(conn) == CURRENT_SCHEMA_VERSION
     finally:
         conn.close()

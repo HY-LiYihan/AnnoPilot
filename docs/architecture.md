@@ -142,6 +142,8 @@ tokens
 annotations
 annotation_suggestions
 annotation_runs
+annotation_run_sentences
+annotation_run_candidate_spans
 annotation_suggestion_reviews
 annotation_sessions
 event_outbox
@@ -189,8 +191,8 @@ annopilot.run_provenance.v1
 
 1. UI 可针对当前 sentence 或整个 document 触发 suggestions run。
 2. `services/suggestions.py` 从 tag examples、已确认 annotations 和 rejected suggestions 构建正负例。
-3. `rag.py` 生成候选 span，service 保存 `annotation_runs` 和 `annotation_suggestions`。
-4. Run config 记录 tag schema hash、examples hash、negative examples hash、match keys 和 retrieval 规则。
+3. `rag.py` 生成候选 span，service 保存 live `annotation_suggestions`，并在 `annotation_run_sentences` / `annotation_run_candidate_spans` 固化该 run 的完整句子级输出。
+4. Run config 记录 tag schema hash、examples hash、negative examples hash、match keys 和 retrieval 规则；Goldsmith/Rosetta consistency export 使用最近 5 个完整 run snapshot 做 span-set self-consistency。
 5. UI 可单条 accept/reject、当前句批量处理、全文 auto-accept / auto-reject，或一键运行 Character RAG 并自动接受高置信 span。
 
 ### LLM Review

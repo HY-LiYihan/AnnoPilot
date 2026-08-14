@@ -29,6 +29,7 @@ class ExportService:
         audit_project: Callable[[str], dict[str, Any]],
         export_tag_schema: Callable[[str], dict[str, Any]],
         list_runs: Callable[..., list[dict[str, Any]]],
+        list_candidate_run_snapshots: Callable[..., list[dict[str, Any]]],
         list_annotation_imports: Callable[..., dict[str, Any]],
         export_run_provenance: Callable[[str, str], dict[str, Any]],
         now: Callable[[], str],
@@ -63,6 +64,7 @@ class ExportService:
         self.audit_project = audit_project
         self.export_tag_schema = export_tag_schema
         self.list_runs = list_runs
+        self.list_candidate_run_snapshots = list_candidate_run_snapshots
         self.list_annotation_imports = list_annotation_imports
         self.export_run_provenance = export_run_provenance
         self.now = now
@@ -877,13 +879,26 @@ class ExportService:
 
     def export_goldsmith_consistency_scores_lines(self, project_id: str, document_id: str) -> list[str]:
         document = self.get_document(project_id, document_id)
+        run_candidates_by_sentence = self._candidate_run_snapshots_by_sentence(project_id, document_id)
         generated_at = self.now()
         lines = []
         for sentence in document["sentences"]:
             suggestions = sentence.get("suggestions", [])
-            if not suggestions:
+            run_candidates = run_candidates_by_sentence.get(sentence["id"], [])
+            if run_candidates:
+                score = self._goldsmith_run_consistency_score(run_candidates)
+                diagnostic_scope = "run_candidate_snapshots"
+                scoring_mode = "k_run_self_consistency" if len(run_candidates) > 1 else "single_run_candidate_snapshot"
+                candidate_count = len(run_candidates)
+                note = "Sentence-level candidate outputs are grouped by immutable annotation run snapshots."
+            elif suggestions:
+                score = self._goldsmith_consistency_score(suggestions)
+                diagnostic_scope = "visible_pending_suggestions"
+                scoring_mode = "character_rag_llm_review_proxy"
+                candidate_count = len(suggestions)
+                note = "Legacy proxy diagnostics from current pending suggestions; generate a new run to enable run-level self-consistency."
+            else:
                 continue
-            score = self._goldsmith_consistency_score(suggestions)
             line = {
                 "schema_version": self.goldsmith_consistency_scores_schema_version,
                 "record_type": "consistency_score",
@@ -893,8 +908,8 @@ class ExportService:
                 "sentence_id": sentence["id"],
                 "sentence_index": sentence["index"],
                 "text": sentence["text"],
-                "diagnostic_scope": "visible_pending_suggestions",
-                "scoring_mode": "character_rag_llm_review_proxy",
+                "diagnostic_scope": diagnostic_scope,
+                "scoring_mode": scoring_mode,
                 "score": score["score"],
                 "agreement": score["agreement"],
                 "pairwise_span_f1": score["pairwise_span_f1"],
@@ -909,7 +924,8 @@ class ExportService:
                 "review_route": score["review_route"],
                 "rosetta_route": score["rosetta_route"],
                 "route_reason": score["route_reason"],
-                "candidate_count": len(suggestions),
+                "candidate_count": candidate_count,
+                "run_count": len(run_candidates),
                 "reviewed_candidate_count": score["reviewed_candidate_count"],
                 "review_counts": score["review_counts"],
                 "consensus_signature": score["consensus_signature"],
@@ -918,7 +934,7 @@ class ExportService:
                     "source": "annopilot",
                     "artifact": "consistency_scores.jsonl",
                     "rosetta_reference": "consistency_scores.jsonl",
-                    "note": "Proxy diagnostics from current pending suggestions; full k-run self-consistency can replace this artifact without changing downstream consumers.",
+                    "note": note,
                 },
             }
             lines.append(json.dumps(line, ensure_ascii=False) + "\n")
@@ -926,10 +942,85 @@ class ExportService:
 
     def export_goldsmith_candidate_runs_lines(self, project_id: str, document_id: str) -> list[str]:
         document = self.get_document(project_id, document_id)
+        run_candidates_by_sentence = self._candidate_run_snapshots_by_sentence(project_id, document_id)
         generated_at = self.now()
         lines = []
         for sentence in document["sentences"]:
             suggestions = sentence.get("suggestions", [])
+            run_candidates = run_candidates_by_sentence.get(sentence["id"], [])
+            if run_candidates:
+                consistency_score = self._goldsmith_run_consistency_score(run_candidates)
+                tokens = [self._export_prodigy_token(token, sentence["text"], sentence["start_char"]) for token in sentence["tokens"]]
+                candidate_scores = {
+                    candidate_score["candidate_id"]: candidate_score
+                    for candidate_score in consistency_score["candidate_scores"]
+                }
+                for candidate in run_candidates:
+                    spans = [
+                        {
+                            "id": f"T{index}",
+                            "start": int(span["start_char"]) - int(sentence["start_char"]),
+                            "end": int(span["end_char"]) - int(sentence["start_char"]),
+                            "token_start": span["start_token_index"],
+                            "token_end": span["end_token_index"],
+                            "text": span["text"],
+                            "label": span["tag_name"],
+                            "label_id": span["tag_id"],
+                            "implicit": False,
+                        }
+                        for index, span in enumerate(candidate["spans"], start=1)
+                    ]
+                    candidate_score = candidate_scores[candidate["candidate_id"]]
+                    lines.append(
+                        json.dumps(
+                            {
+                                "schema_version": self.goldsmith_candidate_runs_schema_version,
+                                "record_type": "prodigy_candidate",
+                                "generated_at": generated_at,
+                                "sample_id": sentence["id"],
+                                "candidate_id": candidate["candidate_id"],
+                                "text": sentence["text"],
+                                "tokens": tokens,
+                                "spans": spans,
+                                "relations": [],
+                                "runtime_annotation": {
+                                    "format": "inline_markup.v1",
+                                    "annotation_markup": self._inline_spans_markup(sentence["text"], spans),
+                                },
+                                "answer": None,
+                                "explanation": f"Immutable sentence candidate from annotation run {candidate['run_id']}.",
+                                "model_confidence": candidate["model_confidence"],
+                                "uncertainty_reason": self._run_candidate_uncertainty_reason(consistency_score),
+                                "meta": {
+                                    "source": "annopilot",
+                                    "artifact": "candidate_runs.jsonl",
+                                    "rosetta_reference": "candidate_runs.jsonl",
+                                    "candidate_order": "sentence_index,run_created_at,run_id",
+                                    "project_id": project_id,
+                                    "document_id": document_id,
+                                    "sentence_id": sentence["id"],
+                                    "sentence_index": sentence["index"],
+                                    "run_id": candidate["run_id"],
+                                    "run_recipe": candidate["recipe"],
+                                    "run_created_at": candidate["created_at"],
+                                    "rosetta_route": consistency_score["rosetta_route"],
+                                    "uncertainty_score": consistency_score["uncertainty_score"],
+                                    "candidate_score": candidate_score,
+                                    "consistency": self._goldsmith_consistency_export_summary(
+                                        consistency_score,
+                                        diagnostic_scope="run_candidate_snapshots",
+                                        scoring_mode=(
+                                            "k_run_self_consistency" if len(run_candidates) > 1 else "single_run_candidate_snapshot"
+                                        ),
+                                        candidate_count=len(run_candidates),
+                                    ),
+                                },
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+                continue
             if not suggestions:
                 continue
             sorted_suggestions = sorted(suggestions, key=lambda suggestion: str(suggestion["id"]))
@@ -1713,6 +1804,224 @@ class ExportService:
             "label": (payload.get("span") or {}).get("label") or suggestion.get("tag_name"),
         }
 
+    def _candidate_run_snapshots_by_sentence(
+        self,
+        project_id: str,
+        document_id: str,
+    ) -> dict[str, list[dict[str, Any]]]:
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for candidate in self.list_candidate_run_snapshots(project_id, document_id, limit=5):
+            grouped.setdefault(str(candidate["sentence_id"]), []).append(candidate)
+        return grouped
+
+    def _goldsmith_run_consistency_score(self, candidates: list[dict[str, Any]]) -> dict[str, Any]:
+        signatures = [self._run_candidate_signature(candidate) for candidate in candidates]
+        signature_counts: dict[str, int] = {}
+        for signature in signatures:
+            signature_counts[signature] = signature_counts.get(signature, 0) + 1
+        consensus_signature = max(signature_counts, key=lambda key: (signature_counts[key], key))
+        consensus_match_rate = signature_counts[consensus_signature] / len(candidates)
+        exact_match_rate = signature_counts[signatures[0]] / len(candidates)
+        pairwise_span_f1 = self._run_candidate_pairwise_span_f1(candidates)
+        confidence_values = [
+            float(candidate["model_confidence"])
+            for candidate in candidates
+            if candidate.get("model_confidence") is not None
+        ]
+        avg_confidence = sum(confidence_values) / len(confidence_values) if confidence_values else None
+        overlap_conflict_rate = self._run_candidate_overlap_conflict_rate(candidates)
+        uncertainty_score = self._rosetta_uncertainty_score(pairwise_span_f1, avg_confidence)
+        rosetta_route = self._rosetta_consistency_route(pairwise_span_f1, exact_match_rate, avg_confidence)
+        review_route = {
+            "high": "high_confidence_sample",
+            "medium": "light_review",
+            "low": "expert_review",
+        }[rosetta_route]
+        score = max(0.0, min(1.0, 1.0 - uncertainty_score))
+        candidate_scores = []
+        for candidate in candidates:
+            candidate_scores.append(
+                {
+                    "candidate_id": candidate["candidate_id"],
+                    "suggestion_id": candidate["candidate_id"],
+                    "run_id": candidate["run_id"],
+                    "span_signature": self._run_candidate_signature(candidate),
+                    "span_count": len(candidate["spans"]),
+                    "span_f1_to_consensus": self._run_candidate_span_f1_to_signature(candidate, consensus_signature),
+                    "pairwise_span_f1": self._single_run_candidate_pairwise_span_f1(candidate, candidates),
+                    "model_confidence": candidate.get("model_confidence"),
+                    "review_recommendation": None,
+                    "review_risk": 0.0,
+                    "overlap_conflict_count": self._run_candidate_conflict_count(candidate, candidates),
+                    "rule_risk": 0.0,
+                }
+            )
+        return {
+            "score": round(score, 4),
+            "agreement": pairwise_span_f1,
+            "pairwise_span_f1": pairwise_span_f1,
+            "exact_match_rate": round(exact_match_rate, 4),
+            "consensus_match_rate": round(consensus_match_rate, 4),
+            "average_model_confidence": round(avg_confidence, 4) if avg_confidence is not None else None,
+            "avg_confidence": round(avg_confidence, 4) if avg_confidence is not None else None,
+            "avg_rule_risk": round(overlap_conflict_rate, 4),
+            "uncertainty_score": uncertainty_score,
+            "overlap_conflict_rate": round(overlap_conflict_rate, 4),
+            "review_risk": 0.0,
+            "review_route": review_route,
+            "rosetta_route": rosetta_route,
+            "route_reason": self._consistency_route_reason(review_route),
+            "reviewed_candidate_count": 0,
+            "review_counts": {"accept": 0, "reject": 0, "uncertain": 0},
+            "consensus_signature": consensus_signature,
+            "candidate_scores": candidate_scores,
+        }
+
+    @classmethod
+    def _run_candidate_pairwise_span_f1(cls, candidates: list[dict[str, Any]]) -> float:
+        if len(candidates) <= 1:
+            return 1.0 if candidates else 0.0
+        scores = []
+        for left_index, left in enumerate(candidates):
+            for right in candidates[left_index + 1 :]:
+                scores.append(cls._run_candidate_span_f1(left, right))
+        return round(sum(scores) / len(scores), 4) if scores else 0.0
+
+    @classmethod
+    def _single_run_candidate_pairwise_span_f1(
+        cls,
+        candidate: dict[str, Any],
+        candidates: list[dict[str, Any]],
+    ) -> float:
+        peers = [peer for peer in candidates if peer["candidate_id"] != candidate["candidate_id"]]
+        if not peers:
+            return 1.0
+        return round(sum(cls._run_candidate_span_f1(candidate, peer) for peer in peers) / len(peers), 4)
+
+    @classmethod
+    def _run_candidate_span_f1(cls, left: dict[str, Any], right: dict[str, Any]) -> float:
+        left_keys = cls._run_candidate_span_keys(left)
+        right_keys = cls._run_candidate_span_keys(right)
+        if not left_keys and not right_keys:
+            return 1.0
+        if not left_keys or not right_keys:
+            return 0.0
+        overlap = len(left_keys & right_keys)
+        precision = overlap / len(left_keys)
+        recall = overlap / len(right_keys)
+        return round((2 * precision * recall) / (precision + recall), 4) if precision + recall else 0.0
+
+    @classmethod
+    def _run_candidate_signature(cls, candidate: dict[str, Any]) -> str:
+        return json.dumps(sorted(cls._run_candidate_span_keys(candidate)), ensure_ascii=False, separators=(",", ":"))
+
+    @staticmethod
+    def _run_candidate_span_keys(candidate: dict[str, Any]) -> set[tuple[str, int, int, str]]:
+        return {
+            (
+                str(span["tag_id"]),
+                int(span["start_char"]),
+                int(span["end_char"]),
+                str(span["text"]),
+            )
+            for span in candidate.get("spans", [])
+        }
+
+    @classmethod
+    def _run_candidate_span_f1_to_signature(cls, candidate: dict[str, Any], signature: str) -> float:
+        raw_keys = json.loads(signature)
+        consensus = {tuple(item) for item in raw_keys}
+        current = cls._run_candidate_span_keys(candidate)
+        if not current and not consensus:
+            return 1.0
+        if not current or not consensus:
+            return 0.0
+        overlap = len(current & consensus)
+        precision = overlap / len(current)
+        recall = overlap / len(consensus)
+        return round((2 * precision * recall) / (precision + recall), 4) if precision + recall else 0.0
+
+    @classmethod
+    def _run_candidate_overlap_conflict_rate(cls, candidates: list[dict[str, Any]]) -> float:
+        if len(candidates) <= 1:
+            return 0.0
+        pair_count = 0
+        conflict_count = 0
+        for left_index, left in enumerate(candidates):
+            for right in candidates[left_index + 1 :]:
+                pair_count += 1
+                if cls._run_candidates_conflict(left, right):
+                    conflict_count += 1
+        return conflict_count / pair_count if pair_count else 0.0
+
+    @classmethod
+    def _run_candidate_conflict_count(cls, candidate: dict[str, Any], candidates: list[dict[str, Any]]) -> int:
+        return sum(
+            1
+            for peer in candidates
+            if peer["candidate_id"] != candidate["candidate_id"] and cls._run_candidates_conflict(candidate, peer)
+        )
+
+    @classmethod
+    def _run_candidates_conflict(cls, left: dict[str, Any], right: dict[str, Any]) -> bool:
+        for left_span in left.get("spans", []):
+            for right_span in right.get("spans", []):
+                if (
+                    int(left_span["start_token_index"]) <= int(right_span["end_token_index"])
+                    and int(left_span["end_token_index"]) >= int(right_span["start_token_index"])
+                    and (
+                        left_span["tag_id"],
+                        left_span["start_token_index"],
+                        left_span["end_token_index"],
+                    )
+                    != (
+                        right_span["tag_id"],
+                        right_span["start_token_index"],
+                        right_span["end_token_index"],
+                    )
+                ):
+                    return True
+        return False
+
+    @staticmethod
+    def _goldsmith_consistency_export_summary(
+        score: dict[str, Any],
+        *,
+        diagnostic_scope: str,
+        scoring_mode: str,
+        candidate_count: int,
+    ) -> dict[str, Any]:
+        return {
+            "diagnostic_scope": diagnostic_scope,
+            "scoring_mode": scoring_mode,
+            "score": score["score"],
+            "agreement": score["agreement"],
+            "pairwise_span_f1": score["pairwise_span_f1"],
+            "exact_match_rate": score["exact_match_rate"],
+            "consensus_match_rate": score["consensus_match_rate"],
+            "average_model_confidence": score["average_model_confidence"],
+            "avg_confidence": score["avg_confidence"],
+            "avg_rule_risk": score["avg_rule_risk"],
+            "uncertainty_score": score["uncertainty_score"],
+            "overlap_conflict_rate": score["overlap_conflict_rate"],
+            "review_risk": score["review_risk"],
+            "review_route": score["review_route"],
+            "rosetta_route": score["rosetta_route"],
+            "route_reason": score["route_reason"],
+            "candidate_count": candidate_count,
+            "reviewed_candidate_count": score["reviewed_candidate_count"],
+            "review_counts": score["review_counts"],
+            "consensus_signature": score["consensus_signature"],
+        }
+
+    @staticmethod
+    def _run_candidate_uncertainty_reason(score: dict[str, Any]) -> str:
+        if score["rosetta_route"] == "high":
+            return "Run-level candidate spans are stable; retain a small calibration sample."
+        if score["rosetta_route"] == "medium":
+            return "Run-level candidate spans differ moderately; perform light human review."
+        return "Run-level candidate spans disagree; prioritize expert review."
+
     def _goldsmith_consistency_score(self, suggestions: list[dict[str, Any]]) -> dict[str, Any]:
         signatures = [self._suggestion_signature(suggestion) for suggestion in suggestions]
         signature_counts: dict[str, int] = {}
@@ -1912,6 +2221,16 @@ class ExportService:
     @staticmethod
     def _inline_span_markup(text: str, start: int, end: int, label: str) -> str:
         return f"{text[:start]}[{text[start:end]}]{{{label}}}{text[end:]}"
+
+    @staticmethod
+    def _inline_spans_markup(text: str, spans: list[dict[str, Any]]) -> str:
+        markup = text
+        ordered = sorted(spans, key=lambda span: (int(span["start"]), int(span["end"])), reverse=True)
+        for span in ordered:
+            start = int(span["start"])
+            end = int(span["end"])
+            markup = f"{markup[:start]}[{markup[start:end]}]{{{span['label']}}}{markup[end:]}"
+        return markup
 
     @staticmethod
     def _candidate_explanation(suggestion: dict[str, Any]) -> str:

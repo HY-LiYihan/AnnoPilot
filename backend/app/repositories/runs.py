@@ -62,6 +62,90 @@ class RunQueryRepository:
         confidence_counts_by_run = self._run_confidence_counts(project_id, run_ids)
         return [self._run_row_dict(row, source_counts_by_run, confidence_counts_by_run) for row in rows]
 
+    def list_candidate_run_snapshots(
+        self,
+        project_id: str,
+        document_id: str,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Return immutable sentence-level outputs from the latest complete annotation runs."""
+        safe_limit = max(1, min(limit, 10))
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                WITH ranked_run_sentences AS (
+                  SELECT r.id, r.recipe, r.config_json, r.created_at, rs.sentence_id,
+                         ROW_NUMBER() OVER (
+                           PARTITION BY rs.sentence_id
+                           ORDER BY r.created_at DESC, r.id DESC
+                         ) AS candidate_rank
+                  FROM annotation_runs r
+                  JOIN annotation_run_sentences rs ON rs.run_id = r.id
+                  WHERE r.project_id = ?
+                    AND r.document_id = ?
+                    AND r.snapshot_complete = 1
+                    AND r.recipe <> 'goldsmith_rosetta_calibration'
+                )
+                SELECT r.id AS run_id, r.recipe, r.config_json, r.created_at,
+                       s.id AS sentence_id, s.sentence_index, s.text AS sentence_text,
+                       s.start_char AS sentence_start_char,
+                       spans.id AS span_id, spans.tag_id, spans.tag_name,
+                       spans.start_token_index, spans.end_token_index,
+                       spans.start_char, spans.end_char, spans.text AS span_text,
+                       spans.confidence, spans.source, spans.evidence_text
+                FROM ranked_run_sentences r
+                JOIN sentences s ON s.id = r.sentence_id
+                LEFT JOIN annotation_run_candidate_spans spans
+                  ON spans.run_id = r.id AND spans.sentence_id = s.id
+                WHERE r.candidate_rank <= ?
+                ORDER BY s.sentence_index, r.created_at, r.id,
+                         spans.start_token_index, spans.end_token_index, spans.id
+                """,
+                (project_id, document_id, safe_limit),
+            ).fetchall()
+
+        candidates: list[dict[str, Any]] = []
+        by_key: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in rows:
+            key = (row["run_id"], row["sentence_id"])
+            candidate = by_key.get(key)
+            if candidate is None:
+                candidate = {
+                    "candidate_id": f"{row['run_id']}:{row['sentence_id']}",
+                    "run_id": row["run_id"],
+                    "recipe": row["recipe"],
+                    "config": json.loads(row["config_json"]),
+                    "created_at": row["created_at"],
+                    "sentence_id": row["sentence_id"],
+                    "sentence_index": row["sentence_index"],
+                    "text": row["sentence_text"],
+                    "sentence_start_char": row["sentence_start_char"],
+                    "spans": [],
+                }
+                by_key[key] = candidate
+                candidates.append(candidate)
+            if row["span_id"] is not None:
+                candidate["spans"].append(
+                    {
+                        "id": row["span_id"],
+                        "tag_id": row["tag_id"],
+                        "tag_name": row["tag_name"],
+                        "start_token_index": row["start_token_index"],
+                        "end_token_index": row["end_token_index"],
+                        "start_char": row["start_char"],
+                        "end_char": row["end_char"],
+                        "text": row["span_text"],
+                        "confidence": row["confidence"],
+                        "source": row["source"],
+                        "evidence_text": row["evidence_text"],
+                    }
+                )
+
+        for candidate in candidates:
+            confidences = [float(span["confidence"]) for span in candidate["spans"]]
+            candidate["model_confidence"] = round(sum(confidences) / len(confidences), 4) if confidences else None
+        return candidates
+
     def export_run_provenance(self, project_id: str, run_id: str) -> dict[str, Any]:
         with self.connect() as conn:
             run_row = conn.execute(

@@ -86,6 +86,7 @@ class SuggestionService:
             tags = self.get_tags(conn, project_id)
             if not tags:
                 raise self.validation_error("At least one tag is required before generating suggestions.")
+            tag_names = {tag["id"]: tag["name"] for tag in tags}
             tag_schema_sha256 = payload_sha256(self._tag_schema_content_payload(tags))
 
             project_annotations = conn.execute(
@@ -273,6 +274,7 @@ class SuggestionService:
                     now,
                 ),
             )
+            self._snapshot_run_sentences(conn, run_id, sentence_rows)
 
             tokens_by_sentence: dict[str, list[dict[str, Any]]] = {}
             for row in token_rows:
@@ -350,10 +352,14 @@ class SuggestionService:
                             now,
                         ),
                     )
+                    self._snapshot_candidate_span(conn, suggestion_record, tag_names[candidate.tag_id])
 
             source_counts = self._suggestion_source_counts(suggestion_records)
             confidence_counts = self._suggestion_confidence_counts(suggestion_records)
-            conn.execute("UPDATE annotation_runs SET suggestion_count = ? WHERE id = ?", (len(suggestion_ids), run_id))
+            conn.execute(
+                "UPDATE annotation_runs SET suggestion_count = ?, snapshot_complete = 1 WHERE id = ?",
+                (len(suggestion_ids), run_id),
+            )
 
             self.enqueue_event(
                 conn,
@@ -414,6 +420,7 @@ class SuggestionService:
 
             tags = self.get_tags(conn, project_id)
             tag_ids = {tag["id"] for tag in tags}
+            tag_names = {tag["id"]: tag["name"] for tag in tags}
             sentence_rows = conn.execute(
                 """
                 SELECT id, sentence_index, text, start_char, end_char
@@ -454,6 +461,7 @@ class SuggestionService:
                     now,
                 ),
             )
+            self._snapshot_run_sentences(conn, run_id, sentence_rows)
 
             for candidate in candidates:
                 tag_id = str(candidate.get("tag_id") or "")
@@ -532,10 +540,14 @@ class SuggestionService:
                         now,
                     ),
                 )
+                self._snapshot_candidate_span(conn, suggestion_record, tag_names[tag_id])
 
             source_counts = self._suggestion_source_counts(suggestion_records)
             confidence_counts = self._suggestion_confidence_counts(suggestion_records)
-            conn.execute("UPDATE annotation_runs SET suggestion_count = ? WHERE id = ?", (len(suggestion_ids), run_id))
+            conn.execute(
+                "UPDATE annotation_runs SET suggestion_count = ?, snapshot_complete = 1 WHERE id = ?",
+                (len(suggestion_ids), run_id),
+            )
             self.enqueue_event(
                 conn,
                 project_id,
@@ -967,6 +979,41 @@ class SuggestionService:
         if confidence >= self.medium_confidence_threshold:
             return "medium"
         return "low"
+
+    @staticmethod
+    def _snapshot_run_sentences(conn: sqlite3.Connection, run_id: str, sentence_rows: list[sqlite3.Row]) -> None:
+        conn.executemany(
+            "INSERT INTO annotation_run_sentences (run_id, sentence_id) VALUES (?, ?)",
+            [(run_id, row["id"]) for row in sentence_rows],
+        )
+
+    @staticmethod
+    def _snapshot_candidate_span(conn: sqlite3.Connection, suggestion: dict[str, Any], tag_name: str) -> None:
+        conn.execute(
+            """
+            INSERT INTO annotation_run_candidate_spans (
+              id, run_id, sentence_id, tag_id, tag_name, start_token_index, end_token_index,
+              start_char, end_char, text, confidence, source, evidence_text, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                suggestion["id"],
+                suggestion["run_id"],
+                suggestion["sentence_id"],
+                suggestion["tag_id"],
+                tag_name,
+                suggestion["start_token_index"],
+                suggestion["end_token_index"],
+                suggestion["start_char"],
+                suggestion["end_char"],
+                suggestion["text"],
+                suggestion["confidence"],
+                suggestion["source"],
+                suggestion.get("evidence_text"),
+                suggestion["created_at"],
+            ),
+        )
 
     @staticmethod
     def _row_dict(row: sqlite3.Row, exclude: set[str] | None = None) -> dict[str, Any]:

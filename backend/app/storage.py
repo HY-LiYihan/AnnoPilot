@@ -235,6 +235,7 @@ class AnnotationStorage:
             audit_project=self.audit_project,
             export_tag_schema=self.export_tag_schema,
             list_runs=self.list_runs,
+            list_candidate_run_snapshots=self.list_candidate_run_snapshots,
             list_annotation_imports=self.list_annotation_imports,
             export_run_provenance=self.export_run_provenance,
             now=self._now,
@@ -440,6 +441,14 @@ class AnnotationStorage:
 
     def list_runs(self, project_id: str, document_id: Optional[str] = None, limit: int = 10) -> list[dict[str, Any]]:
         return self.run_queries.list_runs(project_id, document_id=document_id, limit=limit)
+
+    def list_candidate_run_snapshots(
+        self,
+        project_id: str,
+        document_id: str,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        return self.run_queries.list_candidate_run_snapshots(project_id, document_id, limit=limit)
 
     def export_run_provenance(self, project_id: str, run_id: str) -> dict[str, Any]:
         return self.run_queries.export_run_provenance(project_id, run_id)

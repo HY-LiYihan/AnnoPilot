@@ -334,9 +334,9 @@ def _apply_suggestions_generated(conn: sqlite3.Connection, project_id: str, even
     conn.execute(
         """
         INSERT OR REPLACE INTO annotation_runs (
-          id, project_id, document_id, recipe, config_json, input_count, suggestion_count, created_at
+          id, project_id, document_id, recipe, config_json, input_count, suggestion_count, snapshot_complete, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
         """,
         (
             event["run_id"],
@@ -348,6 +348,22 @@ def _apply_suggestions_generated(conn: sqlite3.Connection, project_id: str, even
             event["suggestion_count"],
             event.get("created_at") or event.get("ts"),
         ),
+    )
+    config = event.get("config") or {}
+    sentence_id = event.get("sentence_id") or config.get("sentence_id")
+    if sentence_id:
+        sentence_rows = conn.execute(
+            "SELECT id FROM sentences WHERE id = ? AND document_id = ?",
+            (sentence_id, event["document_id"]),
+        ).fetchall()
+    else:
+        sentence_rows = conn.execute(
+            "SELECT id FROM sentences WHERE document_id = ? ORDER BY sentence_index",
+            (event["document_id"],),
+        ).fetchall()
+    conn.executemany(
+        "INSERT OR REPLACE INTO annotation_run_sentences (run_id, sentence_id) VALUES (?, ?)",
+        [(event["run_id"], row["id"]) for row in sentence_rows],
     )
     for suggestion in event["suggestions"]:
         conn.execute(
@@ -380,6 +396,36 @@ def _apply_suggestions_generated(conn: sqlite3.Connection, project_id: str, even
                 suggestion.get("created_at") or event.get("ts"),
             ),
         )
+        tag = conn.execute(
+            "SELECT name FROM tags WHERE project_id = ? AND id = ?",
+            (project_id, suggestion["tag_id"]),
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO annotation_run_candidate_spans (
+              id, run_id, sentence_id, tag_id, tag_name, start_token_index, end_token_index,
+              start_char, end_char, text, confidence, source, evidence_text, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                suggestion["id"],
+                suggestion.get("run_id") or event["run_id"],
+                suggestion["sentence_id"],
+                suggestion["tag_id"],
+                tag["name"] if tag is not None else suggestion["tag_id"],
+                suggestion["start_token_index"],
+                suggestion["end_token_index"],
+                suggestion["start_char"],
+                suggestion["end_char"],
+                suggestion["text"],
+                suggestion["confidence"],
+                suggestion["source"],
+                suggestion.get("evidence_text"),
+                suggestion.get("created_at") or event.get("ts"),
+            ),
+        )
+    conn.execute("UPDATE annotation_runs SET snapshot_complete = 1 WHERE id = ?", (event["run_id"],))
 
 
 def _text_sha256(text: str) -> str:

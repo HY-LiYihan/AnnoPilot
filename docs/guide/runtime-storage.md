@@ -114,6 +114,27 @@ annotation_runs
   config_json
   input_count
   suggestion_count
+  snapshot_complete
+  created_at
+
+annotation_run_sentences
+  run_id
+  sentence_id
+
+annotation_run_candidate_spans
+  id
+  run_id
+  sentence_id
+  tag_id
+  tag_name
+  start_token_index
+  end_token_index
+  start_char
+  end_char
+  text
+  confidence
+  source
+  evidence_text
   created_at
 
 annotation_suggestion_reviews
@@ -150,12 +171,16 @@ idx_tokens_sentence(sentence_id, token_index)
 idx_annotations_sentence(sentence_id, start_token_index)
 idx_suggestions_sentence(sentence_id, status, start_token_index)
 idx_annotation_runs_project(project_id, document_id, created_at)
+idx_annotation_run_sentences_sentence(sentence_id, run_id)
+idx_annotation_run_candidate_spans_run_sentence(run_id, sentence_id, start_token_index)
 idx_suggestion_reviews(suggestion_id, created_at)
 idx_annotation_sessions_document(project_id, document_id, updated_at)
 idx_event_outbox_pending(project_id, flushed_at, created_at)
 ```
 
 Mutation path 使用 SQLite outbox：domain rows 和 event payload 在同一个 transaction 中写入，随后 pending outbox rows flush 到 `events.jsonl`。这比“先提交 mutation、再单独写 JSONL”更容易保持 runtime state 和 audit trail 对齐。
+
+`annotation_run_sentences` 与 `annotation_run_candidate_spans` 保存每次完整 suggestion run 的不可变句子级输出，包括零 span 的句子。Live `annotation_suggestions` 可以按现有策略清理或变更状态，而最近 run 的完整 span 集合仍可用于 Rosetta-compatible self-consistency；`suggestions.generated` event replay 会重建同一快照。
 
 `annotation_sessions` 保存 Prodigy-style runtime workflow state，例如默认人工会话当前停留的 sentence index。它用于刷新后恢复 reader 位置，不写入 JSONL audit log，避免普通导航操作污染业务事件流。
 
