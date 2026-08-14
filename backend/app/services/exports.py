@@ -1141,7 +1141,7 @@ class ExportService:
                 str(suggestion["tag_id"]),
                 str(suggestion["start_token_index"]),
                 str(suggestion["end_token_index"]),
-                str(suggestion.get("match_key") or suggestion.get("text") or ""),
+                str(suggestion.get("text") or ""),
             ]
         )
 
