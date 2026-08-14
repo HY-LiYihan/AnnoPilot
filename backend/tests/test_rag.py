@@ -70,9 +70,80 @@ def test_fullwidth_numeric_punctuation_normalizes_for_lexical_match() -> None:
     assert candidate.evidence_match_key == "3.5%"
 
 
-def test_match_normalization_documents_cjk_inner_whitespace_step() -> None:
+def test_hyphenated_english_cue_matches_space_separated_example() -> None:
+    tokens = [
+        {"token_index": 0, "text": "fact-checking", "start_char": 0, "end_char": 13},
+    ]
+
+    candidates = generate_candidate_spans(
+        tokens,
+        {"engagement_attribute": ["fact checking"]},
+        blocked_ranges=[],
+        limit=4,
+        min_confidence=0.98,
+    )
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.text == "fact-checking"
+    assert candidate.source == "lexical_exact"
+    assert candidate.match_key == "fact checking"
+    assert candidate.evidence_match_key == "fact checking"
+
+
+def test_curly_apostrophe_cue_matches_ascii_example() -> None:
+    tokens = [
+        {"token_index": 0, "text": "can", "start_char": 0, "end_char": 3},
+        {"token_index": 1, "text": "’", "start_char": 3, "end_char": 4},
+        {"token_index": 2, "text": "t", "start_char": 4, "end_char": 5},
+    ]
+
+    candidates = generate_candidate_spans(
+        tokens,
+        {"engagement_disclaim": ["can't"]},
+        blocked_ranges=[],
+        limit=4,
+        min_confidence=0.98,
+    )
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.text == "can’t"
+    assert candidate.source == "lexical_exact"
+    assert candidate.match_key == "can't"
+    assert candidate.evidence_match_key == "can't"
+
+
+def test_slash_cue_matches_space_separated_example() -> None:
+    tokens = [
+        {"token_index": 0, "text": "accept/reject", "start_char": 0, "end_char": 13},
+    ]
+
+    candidates = generate_candidate_spans(
+        tokens,
+        {"engagement_choice": ["accept reject"]},
+        blocked_ranges=[],
+        limit=4,
+        min_confidence=0.98,
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].source == "lexical_exact"
+    assert candidates[0].match_key == "accept reject"
+
+
+def test_match_normalization_documents_punctuation_and_cjk_steps() -> None:
     assert match_normalization_config() == {
-        "schema_version": "annopilot.match_normalization.v3",
-        "steps": ["strip", "unicode_nfkc", "collapse_whitespace", "casefold", "remove_cjk_inner_whitespace"],
+        "schema_version": "annopilot.match_normalization.v4",
+        "steps": [
+            "strip",
+            "unicode_nfkc",
+            "normalize_quotes_dashes_slashes",
+            "space_alnum_hyphen_slash_connectors",
+            "collapse_apostrophe_spacing",
+            "collapse_whitespace",
+            "casefold",
+            "remove_cjk_inner_whitespace",
+        ],
         "preserves_source_text": True,
     }

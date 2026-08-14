@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Any
@@ -13,14 +14,44 @@ DEFAULT_LEXICAL_EXAMPLES = {
 
 MAX_SPAN_TOKENS = 6
 MIN_FUZZY_SCORE = 0.68
-CHARACTER_RAG_RETRIEVAL = "offset_gap_span_text|nfkc_casefold_whitespace_cjk_inner_space_normalized|lexical_exact|lexical_contains|char_ngram"
-MATCH_NORMALIZATION_SCHEMA_VERSION = "annopilot.match_normalization.v3"
+CHARACTER_RAG_RETRIEVAL = "offset_gap_span_text|nfkc_quote_dash_casefold_whitespace_cjk_inner_space_normalized|lexical_exact|lexical_contains|char_ngram"
+MATCH_NORMALIZATION_SCHEMA_VERSION = "annopilot.match_normalization.v4"
+
+PUNCTUATION_TRANSLATION = str.maketrans(
+    {
+        "‘": "'",
+        "’": "'",
+        "‚": "'",
+        "‛": "'",
+        "＇": "'",
+        "“": '"',
+        "”": '"',
+        "„": '"',
+        "‟": '"',
+        "－": "-",
+        "−": "-",
+        "﹣": "-",
+        "–": "-",
+        "—": "-",
+        "―": "-",
+        "／": "/",
+    }
+)
 
 
 def match_normalization_config() -> dict[str, Any]:
     return {
         "schema_version": MATCH_NORMALIZATION_SCHEMA_VERSION,
-        "steps": ["strip", "unicode_nfkc", "collapse_whitespace", "casefold", "remove_cjk_inner_whitespace"],
+        "steps": [
+            "strip",
+            "unicode_nfkc",
+            "normalize_quotes_dashes_slashes",
+            "space_alnum_hyphen_slash_connectors",
+            "collapse_apostrophe_spacing",
+            "collapse_whitespace",
+            "casefold",
+            "remove_cjk_inner_whitespace",
+        ],
         "preserves_source_text": True,
     }
 
@@ -159,7 +190,9 @@ def _is_negative_example(text: str, tag_id: str, negative_examples_by_tag: dict[
 
 
 def _normalize_match_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFKC", str(value).strip())
+    normalized = unicodedata.normalize("NFKC", str(value).strip()).translate(PUNCTUATION_TRANSLATION)
+    normalized = re.sub(r"(?<=[A-Za-z0-9])[-/](?=[A-Za-z0-9])", " ", normalized)
+    normalized = re.sub(r"\s*'\s*", "'", normalized)
     collapsed = " ".join(normalized.split()).casefold()
     return _remove_cjk_inner_whitespace(collapsed)
 

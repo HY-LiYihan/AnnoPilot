@@ -122,7 +122,7 @@ Backend 当前边界：
 - `api/*` 只做 routing、validation error mapping 和 response model 绑定。
 - `schemas.py` 集中维护 Pydantic request / response contracts。
 - `storage.py` 是当前 API 兼容 facade；SQLite migration 在 `db/`，event outbox/replay 在 `events/`，document import/merge/session、runtime settings、annotation、suggestion generation / decision、tag schema、audit/export workflow 已开始迁入 `services/`。
-- `rag.py` 实现低算力 Character RAG：lexical exact、contains、char-ngram、casefold + whitespace normalization。
+- `rag.py` 实现低算力 Character RAG：lexical exact、contains、char-ngram、Unicode NFKC、quote/dash/slash folding、casefold + whitespace normalization。
 - `llm.py` 使用 OpenAI-compatible `/chat/completions`，用于 suggestion LLM review，并在错误信息中 redact API key。
 - `rebuild.py` 支持从 `events.jsonl` 重建 SQLite 的 CLI / service 能力，并复用 `events/replay.py` 的可重放事件校验与 apply 逻辑；API 先提供 non-destructive preview。
 
