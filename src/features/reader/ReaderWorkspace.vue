@@ -5,7 +5,7 @@ import { fetchRuntimeHealth } from '../../api/health'
 import { fetchLlmSettings, updateLlmSettings } from '../../api/settings'
 import { useDocumentReader } from '../../composables/useDocumentReader'
 import { LANGUAGE_KEY, UI_LABELS, type Locale } from '../../i18n'
-import type { LlmModelOption, LlmSettingsState, RuntimeHealth } from '../../types/domain'
+import type { LlmModelOption, LlmSettingsState, ReviewQueueInsight, ReviewQueueItem, RuntimeHealth } from '../../types/domain'
 import MetricsPanel from './MetricsPanel.vue'
 import SentencePanel from './SentencePanel.vue'
 import TagPalette from './TagPalette.vue'
@@ -220,6 +220,19 @@ const localizedReviewQueueSummary = computed(() => {
   return prefix ? `${prefix} · ${summary}` : summary
 })
 
+const currentReviewQueueInsight = computed<ReviewQueueInsight | null>(() => {
+  if (reviewQueueOrder.value === 'position') return null
+  const item = reviewQueueDetails.value.find((queueItem) => queueItem.index === currentSentenceIndex.value)
+  if (!item) return null
+  const orderLabel = reviewQueueOrderLabel()
+  const headline = `${orderLabel} · ${labels.value.metrics.riskScore} ${item.risk_score.toFixed(2)}`
+  return {
+    headline,
+    detail: reviewQueueInsightDetail(item),
+    reasons: riskReasonLabels(item).slice(0, 4),
+  }
+})
+
 function reviewQueueOrderLabel() {
   if (reviewQueueOrder.value === 'position') return ''
   const metricLabels = labels.value.metrics
@@ -230,6 +243,23 @@ function reviewQueueOrderLabel() {
     hybrid: metricLabels.hybrid,
   }
   return labelsByOrder[reviewQueueOrder.value] ?? reviewQueueOrder.value
+}
+
+function reviewQueueInsightDetail(item: ReviewQueueItem) {
+  const suggestion = item.first_suggestion
+  const parts = [
+    item.candidate_disagreement_score > 0 ? `${labels.value.metrics.candidateConflictRisk} ${item.candidate_disagreement_score.toFixed(2)}` : '',
+    item.llm_review_risk_score > 0 ? `${labels.value.metrics.llmReviewRisk} ${item.llm_review_risk_score.toFixed(2)}` : '',
+    item.judge_review_risk_score > 0 ? `${labels.value.metrics.judgeRisk} ${item.judge_review_risk_score.toFixed(2)}` : '',
+    item.lexical_risk_score > 0 ? `${labels.value.metrics.lexicalRisk} ${item.lexical_risk_score.toFixed(2)}` : '',
+  ].filter(Boolean)
+  const firstCandidate = suggestion ? `${suggestion.tag_name}: ${suggestion.text}` : labels.value.metrics.queuePreviewFallback(item.suggestion_count)
+  return parts.length ? `${firstCandidate} · ${parts.join(' · ')}` : firstCandidate
+}
+
+function riskReasonLabels(item: ReviewQueueItem) {
+  const reasonLabels = labels.value.metrics.riskReasonLabels as Record<string, string>
+  return item.risk_reason_codes.map((code) => reasonLabels[code] ?? code)
 }
 const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.value.reader.undoTitle : labels.value.reader.undoTitle))
 
@@ -352,6 +382,7 @@ async function confirmProjectReset() {
         :pending-selection-text="pendingSelectionText"
         :has-review-queue="hasReviewQueue"
         :review-queue-summary="localizedReviewQueueSummary"
+        :review-queue-insight="currentReviewQueueInsight"
         :reviewed-suggestion-count="metrics.reviewed_suggestion_count"
         :reader-error="readerError"
         :is-uploading="isUploading"

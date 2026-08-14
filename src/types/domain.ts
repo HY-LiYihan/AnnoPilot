@@ -121,6 +121,12 @@ export type ReviewQueueItem = {
   first_suggestion: SuggestionDef | null
 }
 
+export type ReviewQueueInsight = {
+  headline: string
+  detail: string
+  reasons: string[]
+}
+
 export type ReviewQueueOrder = 'position' | 'random' | 'uncertain' | 'goldsmith' | 'hybrid'
 
 export type ReviewEfficiencyPoint = {

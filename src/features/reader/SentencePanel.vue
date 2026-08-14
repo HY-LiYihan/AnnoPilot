@@ -7,6 +7,7 @@ import type {
   DocumentListItem,
   DocumentMeta,
   DragSelection,
+  ReviewQueueInsight,
   SamplePreset,
   SentenceDef,
   SuggestionDef,
@@ -36,6 +37,7 @@ const props = defineProps<{
   pendingSelectionText: string
   hasReviewQueue: boolean
   reviewQueueSummary: string
+  reviewQueueInsight: ReviewQueueInsight | null
   reviewedSuggestionCount: number
   readerError: string
   isUploading: boolean
@@ -513,6 +515,13 @@ function predicatePositionClasses(
           <small>{{ labels.pendingHint }}</small>
         </span>
         <em>{{ labels.pending }}</em>
+      </div>
+      <div v-if="reviewQueueInsight" class="review-insight-card">
+        <span>
+          <strong>{{ reviewQueueInsight.headline }}</strong>
+          <small>{{ reviewQueueInsight.detail }}</small>
+        </span>
+        <em v-for="reason in reviewQueueInsight.reasons" :key="reason">{{ reason }}</em>
       </div>
       <div v-if="activeAnnotations.length" class="candidate-list">
         <button

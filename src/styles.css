@@ -1542,6 +1542,57 @@ kbd {
   font-weight: 900;
 }
 
+.review-insight-card {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(196, 90, 46, 0.22);
+  border-radius: 8px;
+  background: #fff8ef;
+}
+
+.review-insight-card span {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.review-insight-card strong,
+.review-insight-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-insight-card strong {
+  color: #8a3a1c;
+  font-size: 0.82rem;
+}
+
+.review-insight-card small {
+  color: #5f5144;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.review-insight-card em {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #8a3a1c;
+  background: #ffffff;
+  font-size: 0.63rem;
+  font-style: normal;
+  font-weight: 900;
+  box-shadow: inset 0 0 0 1px rgba(196, 90, 46, 0.16);
+}
+
 .candidate-row {
   justify-content: space-between;
   min-height: 58px;
