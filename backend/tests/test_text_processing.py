@@ -65,3 +65,13 @@ def test_sentence_splitting_keeps_common_english_abbreviations_inside_sentence()
         "U.S. officials said counting may continue.",
         "Dr. Chen said the audit was clear.",
     ]
+
+
+def test_sentence_splitting_allows_sentence_boundary_after_final_initialism_period() -> None:
+    sentences = split_sentences("Observers monitored the U.S. It mattered. The U.S. Senate met.")
+
+    assert [sentence.text for sentence in sentences] == [
+        "Observers monitored the U.S.",
+        "It mattered.",
+        "The U.S. Senate met.",
+    ]

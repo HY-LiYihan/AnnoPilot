@@ -30,6 +30,44 @@ ENGLISH_SENTENCE_ABBREVIATIONS = {
     "u.s",
     "vs",
 }
+ENGLISH_NON_TERMINAL_ABBREVIATIONS = {
+    "dr",
+    "e.g",
+    "gov",
+    "i.e",
+    "jr",
+    "mr",
+    "mrs",
+    "ms",
+    "no",
+    "prof",
+    "rep",
+    "sen",
+    "sr",
+    "st",
+    "vs",
+}
+ENGLISH_INITIALISM_ABBREVIATIONS = {"u.k", "u.n", "u.s"}
+ENGLISH_SENTENCE_STARTERS_AFTER_ABBREVIATION = {
+    "a",
+    "an",
+    "but",
+    "he",
+    "however",
+    "i",
+    "instead",
+    "it",
+    "meanwhile",
+    "she",
+    "that",
+    "the",
+    "these",
+    "they",
+    "this",
+    "those",
+    "we",
+    "yet",
+}
 
 
 @dataclass(frozen=True)
@@ -140,6 +178,27 @@ def _period_ends_sentence(text: str, index: int) -> bool:
 
 
 def _period_is_english_abbreviation(text: str, index: int) -> bool:
+    abbreviation = _english_abbreviation_at_period(text, index)
+    if abbreviation is None:
+        return False
+    key, token_end = abbreviation
+
+    if index < token_end - 1:
+        return True
+    if key in ENGLISH_NON_TERMINAL_ABBREVIATIONS:
+        return True
+
+    next_word = _next_word(text, token_end)
+    if not next_word:
+        return False
+    if next_word[0].islower() or next_word[0].isdigit():
+        return True
+    if key in ENGLISH_INITIALISM_ABBREVIATIONS and next_word.casefold() not in ENGLISH_SENTENCE_STARTERS_AFTER_ABBREVIATION:
+        return True
+    return False
+
+
+def _english_abbreviation_at_period(text: str, index: int) -> tuple[str, int] | None:
     token_start = index
     while token_start > 0 and (text[token_start - 1].isalpha() or text[token_start - 1] == "."):
         token_start -= 1
@@ -150,14 +209,25 @@ def _period_is_english_abbreviation(text: str, index: int) -> bool:
 
     token = text[token_start:token_end].strip(".")
     if not token:
-        return False
+        return None
 
     key = token.casefold()
     if key in ENGLISH_SENTENCE_ABBREVIATIONS:
-        return True
+        return key, token_end
 
     parts = token.split(".")
-    return len(parts) > 1 and all(len(part) == 1 and part.isalpha() for part in parts) and any(part.isupper() for part in parts)
+    if len(parts) > 1 and all(len(part) == 1 and part.isalpha() for part in parts) and any(part.isupper() for part in parts):
+        return key, token_end
+    return None
+
+
+def _next_word(text: str, index: int) -> str:
+    while index < len(text) and text[index].isspace():
+        index += 1
+    start = index
+    while index < len(text) and text[index].isalpha():
+        index += 1
+    return text[start:index]
 
 
 def _include_trailing_closers(text: str, index: int) -> int:
