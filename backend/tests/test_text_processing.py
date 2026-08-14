@@ -33,7 +33,7 @@ def test_empty_text_has_no_sentences() -> None:
 def test_punctuation_only_text_does_not_crash() -> None:
     sentences = split_sentences("!!!")
 
-    assert [sentence.text for sentence in sentences] == ["!", "!", "!"]
+    assert [sentence.text for sentence in sentences] == ["!!!"]
 
 
 def test_multiline_text_uses_newlines_as_boundaries() -> None:
@@ -74,4 +74,15 @@ def test_sentence_splitting_allows_sentence_boundary_after_final_initialism_peri
         "Observers monitored the U.S.",
         "It mattered.",
         "The U.S. Senate met.",
+    ]
+
+
+def test_sentence_splitting_keeps_mixed_terminal_punctuation_together() -> None:
+    sentences = split_sentences("真的吗？！他说不是。What?! They denied it.")
+
+    assert [sentence.text for sentence in sentences] == [
+        "真的吗？！",
+        "他说不是。",
+        "What?!",
+        "They denied it.",
     ]

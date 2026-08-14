@@ -108,7 +108,7 @@ def split_sentences(text: str) -> list[SentenceSpan]:
                 i += 1
             next_start = i + 1
         elif char in SENTENCE_ENDINGS:
-            boundary_end = _include_trailing_closers(normalized, i + 1)
+            boundary_end = _include_trailing_closers(normalized, _include_sentence_ending_run(normalized, i + 1))
             next_start = boundary_end
         elif char == "." and _period_ends_sentence(normalized, i):
             boundary_end = _include_trailing_closers(normalized, i + 1)
@@ -232,6 +232,12 @@ def _next_word(text: str, index: int) -> str:
 
 def _include_trailing_closers(text: str, index: int) -> int:
     while index < len(text) and text[index] in SENTENCE_TRAILING_CLOSERS:
+        index += 1
+    return index
+
+
+def _include_sentence_ending_run(text: str, index: int) -> int:
+    while index < len(text) and text[index] in SENTENCE_ENDINGS:
         index += 1
     return index
 
