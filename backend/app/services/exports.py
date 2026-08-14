@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from io import BytesIO
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
+
+
+GOLDSMITH_LABEL_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]")
 
 
 class ExportService:
@@ -39,6 +43,7 @@ class ExportService:
         goldsmith_consistency_scores_schema_version: str,
         goldsmith_candidate_runs_schema_version: str,
         goldsmith_risk_reasons_schema_version: str,
+        goldsmith_label_statistics_schema_version: str,
         goldsmith_review_tasks_schema_version: str,
         medium_confidence_threshold: float,
     ) -> None:
@@ -67,6 +72,7 @@ class ExportService:
         self.goldsmith_consistency_scores_schema_version = goldsmith_consistency_scores_schema_version
         self.goldsmith_candidate_runs_schema_version = goldsmith_candidate_runs_schema_version
         self.goldsmith_risk_reasons_schema_version = goldsmith_risk_reasons_schema_version
+        self.goldsmith_label_statistics_schema_version = goldsmith_label_statistics_schema_version
         self.goldsmith_review_tasks_schema_version = goldsmith_review_tasks_schema_version
         self.medium_confidence_threshold = medium_confidence_threshold
 
@@ -178,6 +184,7 @@ class ExportService:
             "goldsmith_consistency_scores_jsonl": "".join(context["goldsmith_consistency_score_lines"]),
             "goldsmith_candidate_runs_jsonl": "".join(context["goldsmith_candidate_run_lines"]),
             "goldsmith_risk_reasons_jsonl": "".join(context["goldsmith_risk_reason_lines"]),
+            "goldsmith_label_statistics_jsonl": "".join(context["goldsmith_label_statistics_lines"]),
             "goldsmith_review_tasks_jsonl": "".join(context["goldsmith_review_task_lines"]),
         }
         bundle_files: dict[str, str] = {
@@ -205,6 +212,7 @@ class ExportService:
         goldsmith_boundary_feedback_lines = self.export_goldsmith_boundary_feedback_lines(project_id, document_id)
         goldsmith_consistency_score_lines = self.export_goldsmith_consistency_scores_lines(project_id, document_id)
         goldsmith_candidate_run_lines = self.export_goldsmith_candidate_runs_lines(project_id, document_id)
+        goldsmith_label_statistics_lines = self.export_goldsmith_label_statistics_lines(project_id, document_id)
         goldsmith_review_task_lines = self.export_goldsmith_review_task_lines(project_id, document_id)
         goldsmith_risk_reason_lines = self._build_goldsmith_risk_reason_lines(
             project_id=project_id,
@@ -330,6 +338,12 @@ class ExportService:
                     lines=goldsmith_risk_reason_lines,
                     content_sha256=self._jsonl_content_sha256(goldsmith_risk_reason_lines),
                 ),
+                "goldsmith_label_statistics_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.label-statistics.jsonl",
+                    schema_version=self.goldsmith_label_statistics_schema_version,
+                    lines=goldsmith_label_statistics_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_label_statistics_lines),
+                ),
                 "goldsmith_review_tasks_jsonl": self._artifact_summary(
                     filename=f"{document_id}.goldsmith.review-tasks.jsonl",
                     schema_version=self.goldsmith_review_tasks_schema_version,
@@ -352,6 +366,7 @@ class ExportService:
             "goldsmith_consistency_score_lines": goldsmith_consistency_score_lines,
             "goldsmith_candidate_run_lines": goldsmith_candidate_run_lines,
             "goldsmith_risk_reason_lines": goldsmith_risk_reason_lines,
+            "goldsmith_label_statistics_lines": goldsmith_label_statistics_lines,
             "goldsmith_review_task_lines": goldsmith_review_task_lines,
             "event_lines": event_lines,
             "tag_schema_line": tag_schema_line,
@@ -555,6 +570,100 @@ class ExportService:
                     "artifact": "human_choices.jsonl",
                     "match_key": choice.get("match_key"),
                     "evidence_match_key": choice.get("evidence_match_key"),
+                },
+            }
+            lines.append(json.dumps(line, ensure_ascii=False) + "\n")
+        return lines
+
+    def export_goldsmith_label_statistics_lines(self, project_id: str, document_id: str) -> list[str]:
+        document = self.get_document(project_id, document_id)
+        generated_at = self.now()
+        context_window = 2
+        stats: dict[str, dict[str, Any]] = {}
+        sentence_count = 0
+        annotation_count = 0
+
+        for sentence in document["sentences"]:
+            tokens = self._goldsmith_label_tokens(sentence["text"])
+            if not tokens:
+                continue
+            sentence_count += 1
+            spans = []
+            sentence_start = int(sentence["start_char"])
+            for annotation in sentence.get("annotations", []):
+                spans.append(
+                    {
+                        "start": int(annotation["start_char"]) - sentence_start,
+                        "end": int(annotation["end_char"]) - sentence_start,
+                        "label": annotation["tag_name"],
+                    }
+                )
+            annotation_count += len(spans)
+            entity_indices: set[int] = set()
+            labels_by_index: dict[int, set[str]] = {}
+            for index, token in enumerate(tokens):
+                for span in spans:
+                    if token["start"] < span["end"] and token["end"] > span["start"]:
+                        entity_indices.add(index)
+                        labels_by_index.setdefault(index, set()).add(span["label"])
+            context_indices: set[int] = set()
+            for index in entity_indices:
+                for offset in range(1, context_window + 1):
+                    if index - offset >= 0:
+                        context_indices.add(index - offset)
+                    if index + offset < len(tokens):
+                        context_indices.add(index + offset)
+            context_indices -= entity_indices
+
+            for index, token in enumerate(tokens):
+                bucket = stats.setdefault(
+                    token["token"],
+                    {
+                        "entity_count": 0,
+                        "context_count": 0,
+                        "other_count": 0,
+                        "label_entity_counts": {},
+                    },
+                )
+                if index in entity_indices:
+                    bucket["entity_count"] += 1
+                    for label in sorted(labels_by_index.get(index, set())):
+                        label_counts = bucket["label_entity_counts"]
+                        label_counts[label] = int(label_counts.get(label, 0)) + 1
+                elif index in context_indices:
+                    bucket["context_count"] += 1
+                else:
+                    bucket["other_count"] += 1
+
+        lines = []
+        for token, counts in sorted(stats.items()):
+            entity_count = int(counts["entity_count"])
+            context_count = int(counts["context_count"])
+            other_count = int(counts["other_count"])
+            total = entity_count + context_count + other_count
+            line = {
+                "schema_version": self.goldsmith_label_statistics_schema_version,
+                "record_type": "token_label_stat",
+                "generated_at": generated_at,
+                "project_id": project_id,
+                "document_id": document_id,
+                "token": token,
+                "entity_count": entity_count,
+                "context_count": context_count,
+                "other_count": other_count,
+                "total": total,
+                "entity_probability": round(self._safe_ratio(entity_count, total), 4),
+                "context_probability": round(self._safe_ratio(context_count, total), 4),
+                "other_probability": round(self._safe_ratio(other_count, total), 4),
+                "label_entity_counts": dict(sorted(counts["label_entity_counts"].items())),
+                "meta": {
+                    "source": "annopilot",
+                    "artifact": "label_statistics.jsonl",
+                    "rosetta_reference": "label_statistics.json",
+                    "tokenizer": "rosetta_label_statistics_compatible_v1",
+                    "context_window": context_window,
+                    "sentence_count": sentence_count,
+                    "annotation_count": annotation_count,
                 },
             }
             lines.append(json.dumps(line, ensure_ascii=False) + "\n")
@@ -1509,6 +1618,19 @@ class ExportService:
             return default
 
     @staticmethod
+    def _goldsmith_label_tokens(text: str) -> list[dict[str, Any]]:
+        return [
+            {"token": match.group(0).lower(), "start": match.start(), "end": match.end()}
+            for match in GOLDSMITH_LABEL_TOKEN_PATTERN.finditer(text)
+        ]
+
+    @staticmethod
+    def _safe_ratio(numerator: int, denominator: int) -> float:
+        if denominator <= 0:
+            return 0.0
+        return numerator / denominator
+
+    @staticmethod
     def _pending_boundary_feedback_note(suggestion: dict[str, Any], reasons: list[str]) -> str:
         latest_review = suggestion.get("latest_review") or {}
         notes = []
@@ -1688,6 +1810,7 @@ class ExportService:
                 artifact_line("goldsmith_risk_reasons_jsonl", "aggregated risk reason summaries for review planning"),
                 artifact_line("goldsmith_candidate_runs_jsonl", "Rosetta-style candidate span records"),
                 artifact_line("goldsmith_consistency_scores_jsonl", "sentence-level agreement and route diagnostics"),
+                artifact_line("goldsmith_label_statistics_jsonl", "Rosetta-style token label statistics for seed and negative-example optimization"),
                 artifact_line("goldsmith_boundary_feedback_jsonl", "boundary feedback from hard examples and LLM review"),
                 artifact_line("goldsmith_hard_examples_jsonl", "human-disagreed or risky examples for guideline refinement"),
                 artifact_line("goldsmith_human_choices_jsonl", "accepted/rejected human decisions for calibration"),

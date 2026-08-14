@@ -996,6 +996,81 @@ def test_import_prodigy_jsonl_round_trips_mixed_language_char_offsets(tmp_path: 
         assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
 
+def test_export_goldsmith_label_statistics_supports_rosetta_token_priors(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        tag_response = client.post("/api/projects/default/tags", json={"name": "Pronounce"})
+        assert tag_response.status_code == 200
+        tag = tag_response.json()["tag"]
+
+        import_response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("mixed-priors.txt", "Clearly, the audit shows risk. 审计清楚显示风险。", "text/plain")},
+        )
+        assert import_response.status_code == 200
+        document_id = import_response.json()["document_id"]
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+
+        english_sentence = document["sentences"][0]
+        clearly_token = next(token for token in english_sentence["tokens"] if token["text"] == "Clearly")
+        english_annotation = client.post(
+            f"/api/projects/default/sentences/{english_sentence['id']}/annotations",
+            json={
+                "tag_id": tag["id"],
+                "start_token_index": clearly_token["token_index"],
+                "end_token_index": clearly_token["token_index"],
+            },
+        )
+        assert english_annotation.status_code == 200
+
+        chinese_sentence = document["sentences"][1]
+        chinese_tokens = {token["text"]: token for token in chinese_sentence["tokens"]}
+        chinese_annotation = client.post(
+            f"/api/projects/default/sentences/{chinese_sentence['id']}/annotations",
+            json={
+                "tag_id": tag["id"],
+                "start_token_index": chinese_tokens["清"]["token_index"],
+                "end_token_index": chinese_tokens["楚"]["token_index"],
+            },
+        )
+        assert chinese_annotation.status_code == 200
+
+        response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.label-statistics.jsonl")
+        assert response.status_code == 200
+        assert response.headers["content-disposition"] == f'attachment; filename="{document_id}.goldsmith.label-statistics.jsonl"'
+        stats = [json.loads(line) for line in response.text.splitlines()]
+        stats_by_token = {item["token"]: item for item in stats}
+
+        assert stats_by_token["clearly"]["schema_version"] == "annopilot.goldsmith_label_statistics.v1"
+        assert stats_by_token["clearly"]["entity_count"] == 1
+        assert stats_by_token["clearly"]["entity_probability"] == 1.0
+        assert stats_by_token["clearly"]["label_entity_counts"] == {"Pronounce": 1}
+        assert stats_by_token["the"]["context_count"] == 1
+        assert stats_by_token["audit"]["context_count"] == 1
+        assert stats_by_token["shows"]["other_count"] == 1
+        assert stats_by_token["清"]["entity_count"] == 1
+        assert stats_by_token["楚"]["entity_count"] == 1
+        assert stats_by_token["显"]["context_count"] == 1
+        assert stats_by_token["示"]["context_count"] == 1
+        assert stats_by_token["clearly"]["meta"]["rosetta_reference"] == "label_statistics.json"
+        assert stats_by_token["clearly"]["meta"]["context_window"] == 2
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        artifact = manifest["artifacts"]["goldsmith_label_statistics_jsonl"]
+        assert artifact["schema_version"] == "annopilot.goldsmith_label_statistics.v1"
+        assert artifact["line_count"] == len(stats)
+
+        bundle_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.bundle.zip")
+        assert bundle_response.status_code == 200
+        with ZipFile(BytesIO(bundle_response.content)) as archive:
+            assert artifact["filename"] in archive.namelist()
+            readme = archive.read("README.txt").decode("utf-8")
+        assert artifact["filename"] in readme
+
+
 def test_list_tags_persists_project_tag_schema_without_document(tmp_path: Path) -> None:
     with TestClient(
         create_app(

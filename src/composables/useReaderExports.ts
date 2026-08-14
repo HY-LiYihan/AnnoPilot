@@ -7,6 +7,7 @@ import {
   goldsmithConsistencyScoresExportUrl,
   goldsmithHardExamplesExportUrl,
   goldsmithHumanChoicesExportUrl,
+  goldsmithLabelStatisticsExportUrl,
   goldsmithRiskReasonsExportUrl,
   goldsmithReviewTasksExportUrl,
   goldsmithReviewQueueExportUrl,
@@ -98,6 +99,10 @@ export function useReaderExports(options: ReaderExportOptions) {
     withDocument(goldsmithRiskReasonsExportUrl)
   }
 
+  function exportGoldsmithLabelStatisticsJsonl() {
+    withDocument(goldsmithLabelStatisticsExportUrl)
+  }
+
   function exportGoldsmithReviewTasksJsonl() {
     withDocument(goldsmithReviewTasksExportUrl)
   }
@@ -109,6 +114,7 @@ export function useReaderExports(options: ReaderExportOptions) {
     exportGoldsmithConsistencyScoresJsonl,
     exportGoldsmithHardExamplesJsonl,
     exportGoldsmithHumanChoicesJsonl,
+    exportGoldsmithLabelStatisticsJsonl,
     exportGoldsmithRiskReasonsJsonl,
     exportGoldsmithReviewTasksJsonl,
     exportGoldsmithReviewQueueJsonl,

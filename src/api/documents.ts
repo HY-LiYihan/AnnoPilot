@@ -187,6 +187,10 @@ export function goldsmithRiskReasonsExportUrl(projectId: string, documentId: str
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.risk-reasons.jsonl`
 }
 
+export function goldsmithLabelStatisticsExportUrl(projectId: string, documentId: string) {
+  return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.label-statistics.jsonl`
+}
+
 export function goldsmithReviewTasksExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.review-tasks.jsonl`
 }
