@@ -286,38 +286,7 @@ class AnnotationStorage:
         return self.document_queries.get_review_queue(project_id, document_id, limit=limit, order=order)
 
     def list_sentence_review_suggestion_ids(self, project_id: str, sentence_id: str, limit: int = 20) -> list[str]:
-        safe_limit = max(1, min(int(limit), 100))
-        with self.connect() as conn:
-            sentence = conn.execute(
-                """
-                SELECT s.id
-                FROM sentences s
-                JOIN documents d ON d.id = s.document_id
-                WHERE s.id = ? AND d.project_id = ?
-                """,
-                (sentence_id, project_id),
-            ).fetchone()
-            if sentence is None:
-                raise NotFoundError("Sentence not found.")
-
-            rows = conn.execute(
-                """
-                SELECT sg.id
-                FROM annotation_suggestions sg
-                WHERE sg.sentence_id = ? AND sg.status = 'pending'
-                  AND NOT EXISTS (
-                    SELECT 1
-                    FROM annotations a
-                    WHERE a.sentence_id = sg.sentence_id
-                      AND a.start_token_index <= sg.end_token_index
-                      AND a.end_token_index >= sg.start_token_index
-                  )
-                ORDER BY sg.start_token_index, sg.confidence DESC, sg.id
-                LIMIT ?
-                """,
-                (sentence_id, safe_limit),
-            ).fetchall()
-        return [row["id"] for row in rows]
+        return self.document_queries.list_sentence_review_suggestion_ids(project_id, sentence_id, limit=limit)
 
     def create_annotation(
         self,
