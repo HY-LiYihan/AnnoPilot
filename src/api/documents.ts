@@ -207,6 +207,10 @@ export function goldsmithReviewTasksExportUrl(projectId: string, documentId: str
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.review-tasks.jsonl`
 }
 
+export function goldsmithVerificationReportExportUrl(projectId: string, documentId: string) {
+  return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.verification-report.jsonl`
+}
+
 export function manifestExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.manifest.json`
 }

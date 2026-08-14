@@ -14,6 +14,7 @@ import {
   goldsmithRiskReasonsExportUrl,
   goldsmithReviewTasksExportUrl,
   goldsmithReviewQueueExportUrl,
+  goldsmithVerificationReportExportUrl,
   manifestExportUrl,
   prodigyBundleExportUrl,
   prodigyExportUrl,
@@ -122,6 +123,10 @@ export function useReaderExports(options: ReaderExportOptions) {
     withDocument(goldsmithReviewTasksExportUrl)
   }
 
+  function exportGoldsmithVerificationReportJsonl() {
+    withDocument(goldsmithVerificationReportExportUrl)
+  }
+
   return {
     exportEventsJsonl,
     exportGoldsmithBoundaryFeedbackJsonl,
@@ -136,6 +141,7 @@ export function useReaderExports(options: ReaderExportOptions) {
     exportGoldsmithRiskReasonsJsonl,
     exportGoldsmithReviewTasksJsonl,
     exportGoldsmithReviewQueueJsonl,
+    exportGoldsmithVerificationReportJsonl,
     exportJsonl,
     exportManifestJson,
     exportProdigyBundleZip,

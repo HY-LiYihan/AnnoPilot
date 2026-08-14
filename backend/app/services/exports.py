@@ -8,6 +8,8 @@ from io import BytesIO
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from .export_verification import ExportVerificationService
+
 
 GOLDSMITH_LABEL_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]")
 
@@ -48,6 +50,7 @@ class ExportService:
         goldsmith_reflection_plans_schema_version: str,
         goldsmith_prompt_package_schema_version: str,
         goldsmith_review_tasks_schema_version: str,
+        goldsmith_verification_report_schema_version: str,
         medium_confidence_threshold: float,
     ) -> None:
         self.get_document = get_document
@@ -80,6 +83,8 @@ class ExportService:
         self.goldsmith_reflection_plans_schema_version = goldsmith_reflection_plans_schema_version
         self.goldsmith_prompt_package_schema_version = goldsmith_prompt_package_schema_version
         self.goldsmith_review_tasks_schema_version = goldsmith_review_tasks_schema_version
+        self.goldsmith_verification_report_schema_version = goldsmith_verification_report_schema_version
+        self.export_verification_service = ExportVerificationService(goldsmith_verification_report_schema_version)
         self.medium_confidence_threshold = medium_confidence_threshold
 
     def export_document_lines(self, project_id: str, document_id: str) -> list[str]:
@@ -195,6 +200,7 @@ class ExportService:
             "goldsmith_reflection_plans_jsonl": "".join(context["goldsmith_reflection_plan_lines"]),
             "goldsmith_prompt_package_jsonl": "".join(context["goldsmith_prompt_package_lines"]),
             "goldsmith_review_tasks_jsonl": "".join(context["goldsmith_review_task_lines"]),
+            "goldsmith_verification_report_jsonl": "".join(context["goldsmith_verification_report_lines"]),
         }
         bundle_files: dict[str, str] = {
             "README.txt": self._prodigy_bundle_readme(project_id, document_id, manifest),
@@ -239,6 +245,18 @@ class ExportService:
         audit_summary = self.audit_project(project_id)
         tag_schema_payload = self.export_tag_schema(project_id)
         tag_schema_line = json.dumps(tag_schema_payload, ensure_ascii=False, sort_keys=True) + "\n"
+        goldsmith_verification_report_lines = self._build_goldsmith_verification_report_lines(
+            project_id=project_id,
+            document_id=document_id,
+            document=document,
+            generated_at=self.now(),
+            tag_schema=tag_schema_payload,
+            prodigy_lines=prodigy_lines,
+            prodigy_spans_lines=prodigy_spans_lines,
+            goldsmith_candidate_run_lines=goldsmith_candidate_run_lines,
+            goldsmith_review_task_lines=goldsmith_review_task_lines,
+            goldsmith_prompt_package_lines=goldsmith_prompt_package_lines,
+        )
         runs = self.list_runs(project_id, document_id=document_id, limit=50)
         annotation_imports = self.list_annotation_imports(project_id, document_id=document_id, limit=50)["imports"]
         run_provenance_artifacts: dict[str, dict[str, Any]] = {}
@@ -380,6 +398,12 @@ class ExportService:
                     lines=goldsmith_review_task_lines,
                     content_sha256=self._jsonl_content_sha256(goldsmith_review_task_lines),
                 ),
+                "goldsmith_verification_report_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.verification-report.jsonl",
+                    schema_version=self.goldsmith_verification_report_schema_version,
+                    lines=goldsmith_verification_report_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_verification_report_lines),
+                ),
             },
         }
         manifest["content_sha256"] = self._payload_sha256(self._manifest_content_payload(manifest))
@@ -401,6 +425,7 @@ class ExportService:
             "goldsmith_reflection_plan_lines": goldsmith_reflection_plan_lines,
             "goldsmith_prompt_package_lines": goldsmith_prompt_package_lines,
             "goldsmith_review_task_lines": goldsmith_review_task_lines,
+            "goldsmith_verification_report_lines": goldsmith_verification_report_lines,
             "event_lines": event_lines,
             "tag_schema_line": tag_schema_line,
             "run_provenance_lines": run_provenance_lines,
@@ -1097,6 +1122,48 @@ class ExportService:
             }
             lines.append(json.dumps(payload, ensure_ascii=False) + "\n")
         return lines
+
+    def export_goldsmith_verification_report_lines(self, project_id: str, document_id: str) -> list[str]:
+        document = self.get_document(project_id, document_id)
+        return self._build_goldsmith_verification_report_lines(
+            project_id=project_id,
+            document_id=document_id,
+            document=document,
+            generated_at=self.now(),
+            tag_schema=self.export_tag_schema(project_id),
+            prodigy_lines=self.export_prodigy_document_lines(project_id, document_id),
+            prodigy_spans_lines=self.export_prodigy_spans_document_lines(project_id, document_id),
+            goldsmith_candidate_run_lines=self.export_goldsmith_candidate_runs_lines(project_id, document_id),
+            goldsmith_review_task_lines=self.export_goldsmith_review_task_lines(project_id, document_id),
+            goldsmith_prompt_package_lines=self.export_goldsmith_prompt_package_lines(project_id, document_id),
+        )
+
+    def _build_goldsmith_verification_report_lines(
+        self,
+        *,
+        project_id: str,
+        document_id: str,
+        document: dict[str, Any],
+        generated_at: str,
+        tag_schema: dict[str, Any],
+        prodigy_lines: list[str],
+        prodigy_spans_lines: list[str],
+        goldsmith_candidate_run_lines: list[str],
+        goldsmith_review_task_lines: list[str],
+        goldsmith_prompt_package_lines: list[str],
+    ) -> list[str]:
+        return self.export_verification_service.build_lines(
+            project_id=project_id,
+            document_id=document_id,
+            document=document,
+            generated_at=generated_at,
+            tag_schema=tag_schema,
+            prodigy_lines=prodigy_lines,
+            prodigy_spans_lines=prodigy_spans_lines,
+            goldsmith_candidate_run_lines=goldsmith_candidate_run_lines,
+            goldsmith_review_task_lines=goldsmith_review_task_lines,
+            goldsmith_prompt_package_lines=goldsmith_prompt_package_lines,
+        )
 
     @staticmethod
     def _goldsmith_prompt_output_contract() -> list[str]:
@@ -2397,6 +2464,7 @@ class ExportService:
                 artifact_line("goldsmith_label_statistics_jsonl", "Rosetta-style token label statistics for seed and negative-example optimization"),
                 artifact_line("goldsmith_contrastive_examples_jsonl", "Rosetta-style similar and boundary examples for prompt and guideline calibration"),
                 artifact_line("goldsmith_prompt_package_jsonl", "Rosetta-style prompt tasks for LLM or expert review"),
+                artifact_line("goldsmith_verification_report_jsonl", "verifier.py-style checks for export offsets, labels, markup, and prompt contracts"),
                 artifact_line("goldsmith_reflection_plans_jsonl", "Rosetta-style reflection plans for missed-span and boundary review"),
                 artifact_line("goldsmith_boundary_feedback_jsonl", "boundary feedback from hard examples and LLM review"),
                 artifact_line("goldsmith_hard_examples_jsonl", "human-disagreed or risky examples for guideline refinement"),

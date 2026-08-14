@@ -2025,19 +2025,41 @@ def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(
         assert first_prompt["meta"]["rosetta_reference"] == "prompting.py"
         assert first_prompt["verification"]["rosetta_reference"] == "verifier.py"
 
+        verification_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.verification-report.jsonl")
+        assert verification_response.status_code == 200
+        assert verification_response.headers["content-disposition"] == f'attachment; filename="{document_id}.goldsmith.verification-report.jsonl"'
+        verification_report = [json.loads(line) for line in verification_response.text.splitlines()]
+        assert len(verification_report) == 1
+        report = verification_report[0]
+        assert report["schema_version"] == "annopilot.goldsmith_verification_report.v1"
+        assert report["record_type"] == "export_verification_report"
+        assert report["summary"]["status"] == "ok"
+        assert report["summary"]["issue_count"] == 0
+        assert report["summary"]["checked_records"]["goldsmith_candidate_runs_jsonl"] == len(candidate_runs)
+        assert report["summary"]["checked_records"]["goldsmith_review_tasks_jsonl"] == len(review_tasks)
+        assert report["summary"]["checked_records"]["goldsmith_prompt_package_jsonl"] == len(prompt_package)
+        assert all(check["status"] == "ok" for check in report["checks"])
+        assert report["meta"]["rosetta_reference"] == "verifier.py"
+        assert len(report["content_sha256"]) == 64
+
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert manifest["artifacts"]["goldsmith_review_tasks_jsonl"]["schema_version"] == "annopilot.goldsmith_review_tasks.v1"
         assert manifest["artifacts"]["goldsmith_review_tasks_jsonl"]["line_count"] == len(review_tasks)
         assert manifest["artifacts"]["goldsmith_prompt_package_jsonl"]["schema_version"] == "annopilot.goldsmith_prompt_package.v1"
         assert manifest["artifacts"]["goldsmith_prompt_package_jsonl"]["line_count"] == len(prompt_package)
+        assert manifest["artifacts"]["goldsmith_verification_report_jsonl"]["schema_version"] == "annopilot.goldsmith_verification_report.v1"
+        assert manifest["artifacts"]["goldsmith_verification_report_jsonl"]["line_count"] == 1
 
         bundle_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.bundle.zip")
         assert bundle_response.status_code == 200
         with ZipFile(BytesIO(bundle_response.content)) as archive:
             prompt_artifact = manifest["artifacts"]["goldsmith_prompt_package_jsonl"]
+            verification_artifact = manifest["artifacts"]["goldsmith_verification_report_jsonl"]
             assert prompt_artifact["filename"] in archive.namelist()
+            assert verification_artifact["filename"] in archive.namelist()
             readme = archive.read("README.txt").decode("utf-8")
         assert prompt_artifact["filename"] in readme
+        assert verification_artifact["filename"] in readme
 
         events_response = client.get("/api/projects/default/events.jsonl")
         assert events_response.status_code == 200

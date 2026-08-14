@@ -54,6 +54,7 @@ GOLDSMITH_CONTRASTIVE_EXAMPLES_SCHEMA_VERSION = "annopilot.goldsmith_contrastive
 GOLDSMITH_REFLECTION_PLANS_SCHEMA_VERSION = "annopilot.goldsmith_reflection_plans.v1"
 GOLDSMITH_PROMPT_PACKAGE_SCHEMA_VERSION = "annopilot.goldsmith_prompt_package.v1"
 GOLDSMITH_REVIEW_TASKS_SCHEMA_VERSION = "annopilot.goldsmith_review_tasks.v1"
+GOLDSMITH_VERIFICATION_REPORT_SCHEMA_VERSION = "annopilot.goldsmith_verification_report.v1"
 HIGH_CONFIDENCE_THRESHOLD = 0.9
 MEDIUM_CONFIDENCE_THRESHOLD = 0.75
 DEFAULT_TAGS: list[dict[str, Any]] = []
@@ -253,6 +254,7 @@ class AnnotationStorage:
             goldsmith_reflection_plans_schema_version=GOLDSMITH_REFLECTION_PLANS_SCHEMA_VERSION,
             goldsmith_prompt_package_schema_version=GOLDSMITH_PROMPT_PACKAGE_SCHEMA_VERSION,
             goldsmith_review_tasks_schema_version=GOLDSMITH_REVIEW_TASKS_SCHEMA_VERSION,
+            goldsmith_verification_report_schema_version=GOLDSMITH_VERIFICATION_REPORT_SCHEMA_VERSION,
             medium_confidence_threshold=MEDIUM_CONFIDENCE_THRESHOLD,
         )
 
@@ -398,6 +400,9 @@ class AnnotationStorage:
 
     def export_goldsmith_review_task_lines(self, project_id: str, document_id: str) -> list[str]:
         return self.export_service.export_goldsmith_review_task_lines(project_id, document_id)
+
+    def export_goldsmith_verification_report_lines(self, project_id: str, document_id: str) -> list[str]:
+        return self.export_service.export_goldsmith_verification_report_lines(project_id, document_id)
 
     def export_tag_schema(self, project_id: str) -> dict[str, Any]:
         return self.tag_service.export_tag_schema(project_id)

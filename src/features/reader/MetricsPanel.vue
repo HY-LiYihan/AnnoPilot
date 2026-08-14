@@ -41,6 +41,7 @@ const emit = defineEmits<{
   'export-goldsmith-risk-reasons': []
   'export-goldsmith-label-statistics': []
   'export-goldsmith-review-tasks': []
+  'export-goldsmith-verification-report': []
   'auto-mark-monogloss': []
   'import-annotations': [file: File]
   'reset-project': []
@@ -617,6 +618,11 @@ function shortHash(value: string) {
 
     <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-goldsmith-review-tasks')">
       {{ labels.exportReviewTasks }}
+      <Download :size="18" aria-hidden="true" />
+    </button>
+
+    <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-goldsmith-verification-report')">
+      {{ labels.exportVerificationReport }}
       <Download :size="18" aria-hidden="true" />
     </button>
 

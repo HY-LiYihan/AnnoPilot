@@ -203,6 +203,7 @@ const {
   exportGoldsmithRiskReasonsJsonl,
   exportGoldsmithLabelStatisticsJsonl,
   exportGoldsmithReviewTasksJsonl,
+  exportGoldsmithVerificationReportJsonl,
   verifyRebuildPreview,
   resetProjectData,
 } = useDocumentReader()
@@ -483,6 +484,7 @@ async function confirmProjectReset() {
         @export-goldsmith-risk-reasons="exportGoldsmithRiskReasonsJsonl"
         @export-goldsmith-label-statistics="exportGoldsmithLabelStatisticsJsonl"
         @export-goldsmith-review-tasks="exportGoldsmithReviewTasksJsonl"
+        @export-goldsmith-verification-report="exportGoldsmithVerificationReportJsonl"
         @auto-mark-monogloss="autoMarkEmptySentencesMonogloss"
         @verify-rebuild="verifyRebuildPreview"
         @reset-project="confirmProjectReset"
