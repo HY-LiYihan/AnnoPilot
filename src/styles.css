@@ -1647,8 +1647,20 @@ kbd {
   background: #fff5f2;
 }
 
-.annotation-conflict-card > span,
+.annotation-conflict-summary,
 .annotation-conflict-pair > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.annotation-conflict-summary {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.annotation-conflict-summary > span {
   min-width: 0;
   display: grid;
   gap: 3px;
@@ -1688,6 +1700,10 @@ kbd {
   gap: 7px;
 }
 
+.annotation-conflict-actions.compact {
+  justify-content: flex-end;
+}
+
 .annotation-conflict-actions button {
   min-width: 0;
   max-width: 100%;
@@ -1702,6 +1718,11 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.annotation-conflict-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .candidate-row {
@@ -2602,6 +2623,14 @@ kbd {
     min-height: 360px;
   }
 
+  .annotation-conflict-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .annotation-conflict-actions.compact {
+    justify-content: flex-start;
+  }
+
   .metric-stack {
     grid-template-columns: 1fr;
   }
@@ -2634,6 +2663,7 @@ kbd {
   }
 
   .verification-actions,
+  .annotation-conflict-actions button,
   .accept-button,
   .edit-button,
   .skip-button,

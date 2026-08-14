@@ -24,8 +24,7 @@ type UndoableSpanAction =
   | {
       kind: 'deleted'
       label: string
-      sentenceId: string
-      annotation: AnnotationDef
+      annotations: Array<{ sentenceId: string; annotation: AnnotationDef }>
     }
 
 type TokenSelectionState = {
@@ -145,23 +144,35 @@ export function useReaderAnnotationActions(options: UseReaderAnnotationActionsOp
   }
 
   async function removeAnnotation(annotationId: string) {
+    await removeAnnotations([annotationId])
+  }
+
+  async function removeAnnotations(annotationIds: string[]) {
     if (options.isSaving.value) return
-    const removedFromSentence = options.sentences.value.find((sentence) => sentence.annotations.some((annotation) => annotation.id === annotationId))
-    const removedAnnotation = removedFromSentence?.annotations.find((annotation) => annotation.id === annotationId)
+    const uniqueAnnotationIds = Array.from(new Set(annotationIds)).filter(Boolean)
+    if (!uniqueAnnotationIds.length) return
+
+    const removedAnnotations = options.sentences.value.flatMap((sentence) =>
+      sentence.annotations
+        .filter((annotation) => uniqueAnnotationIds.includes(annotation.id))
+        .map((annotation) => ({ sentenceId: sentence.id, annotation })),
+    )
     options.isSaving.value = true
     options.readerError.value = ''
     try {
-      await deleteAnnotation(PROJECT_ID, annotationId)
+      await Promise.all(uniqueAnnotationIds.map((annotationId) => deleteAnnotation(PROJECT_ID, annotationId)))
       options.sentences.value = options.sentences.value.map((sentence) => ({
         ...sentence,
-        annotations: sentence.annotations.filter((annotation) => annotation.id !== annotationId),
+        annotations: sentence.annotations.filter((annotation) => !uniqueAnnotationIds.includes(annotation.id)),
       }))
-      lastUndoAction.value = removedFromSentence && removedAnnotation?.source === 'human'
+      const undoableAnnotations = removedAnnotations.filter((item) => item.annotation.source === 'human')
+      lastUndoAction.value = undoableAnnotations.length
         ? {
             kind: 'deleted',
-            label: `Restore ${removedAnnotation.tag_name}`,
-            sentenceId: removedFromSentence.id,
-            annotation: removedAnnotation,
+            label: undoableAnnotations.length === 1
+              ? `Restore ${undoableAnnotations[0].annotation.tag_name}`
+              : `Restore ${undoableAnnotations.length} spans`,
+            annotations: undoableAnnotations,
           }
         : null
       await options.refreshDocumentSummary()
@@ -191,21 +202,25 @@ export function useReaderAnnotationActions(options: UseReaderAnnotationActionsOp
           )
         }
       } else {
-        const loadedSentence = options.sentences.value.find((sentence) => sentence.id === action.sentenceId)
-        const overlaps = loadedSentence
-          ? overlappingAnnotations(loadedSentence, action.annotation.start_token_index, action.annotation.end_token_index)
-          : []
-        if (overlaps.length) {
+        const hasBlockingOverlap = action.annotations.some(({ sentenceId, annotation }) => {
+          const loadedSentence = options.sentences.value.find((sentence) => sentence.id === sentenceId)
+          return loadedSentence
+            ? overlappingAnnotations(loadedSentence, annotation.start_token_index, annotation.end_token_index).length > 0
+            : false
+        })
+        if (hasBlockingOverlap) {
           options.readerError.value = 'Cannot undo because that span now overlaps another annotation.'
           return
         }
-        await createAnnotation(
-          PROJECT_ID,
-          action.sentenceId,
-          action.annotation.tag_id,
-          action.annotation.start_token_index,
-          action.annotation.end_token_index,
-        )
+        for (const { sentenceId, annotation } of action.annotations) {
+          await createAnnotation(
+            PROJECT_ID,
+            sentenceId,
+            annotation.tag_id,
+            annotation.start_token_index,
+            annotation.end_token_index,
+          )
+        }
       }
       lastUndoAction.value = null
       await options.refreshDocumentSummary()
@@ -229,6 +244,7 @@ export function useReaderAnnotationActions(options: UseReaderAnnotationActionsOp
     handleTagClick,
     markCurrentSentenceMonogloss,
     removeAnnotation,
+    removeAnnotations,
     resetAnnotationActionState,
     selectCurrentSentenceSpan,
     undoLabel,

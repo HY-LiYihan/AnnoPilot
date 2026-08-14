@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Check, Sparkles, Undo2, X } from '@lucide/vue'
+import {
+  buildAnnotationConflictPairs,
+  conflictResolutionAnnotation,
+  conflictResolutionAnnotationIds,
+  type ConflictResolutionMode,
+} from '../../composables/readerAnnotationConflicts'
 import type { UiLabels } from '../../i18n'
 import type {
   AnnotationDef,
@@ -64,21 +70,12 @@ const renderedSentences = computed(() =>
     .sort((left, right) => left.index - right.index),
 )
 
-const annotationConflictPairs = computed(() => {
-  const pairs: Array<{ id: string; left: AnnotationDef; right: AnnotationDef }> = []
-  for (let leftIndex = 0; leftIndex < props.activeAnnotations.length; leftIndex += 1) {
-    const left = props.activeAnnotations[leftIndex]
-    for (let rightIndex = leftIndex + 1; rightIndex < props.activeAnnotations.length; rightIndex += 1) {
-      const right = props.activeAnnotations[rightIndex]
-      if (left.start_token_index <= right.end_token_index && left.end_token_index >= right.start_token_index) {
-        pairs.push({ id: `${left.id}:${right.id}`, left, right })
-      }
-    }
-  }
-  return pairs
-})
+const annotationConflictPairs = computed(() => buildAnnotationConflictPairs(props.activeAnnotations))
 
 const conflictedAnnotationIds = computed(() => new Set(annotationConflictPairs.value.flatMap((pair) => [pair.left.id, pair.right.id])))
+
+const narrowerConflictAnnotationIds = computed(() => uniqueConflictResolutionIds('narrower'))
+const widerConflictAnnotationIds = computed(() => uniqueConflictResolutionIds('wider'))
 
 const emit = defineEmits<{
   import: [file: File, mode: TxtImportMode]
@@ -92,6 +89,7 @@ const emit = defineEmits<{
   'select-current-sentence': []
   'mark-current-monogloss': []
   'delete-annotation': [annotationId: string]
+  'delete-annotations': [annotationIds: string[]]
   undo: []
   'generate-current-suggestions': []
   'generate-suggestions': []
@@ -207,6 +205,15 @@ function shortSpanText(text: string) {
 
 function isAnnotationConflicted(annotationId: string) {
   return conflictedAnnotationIds.value.has(annotationId)
+}
+
+function uniqueConflictResolutionIds(mode: ConflictResolutionMode) {
+  return conflictResolutionAnnotationIds(annotationConflictPairs.value, mode)
+}
+
+function deleteConflictResolution(mode: ConflictResolutionMode) {
+  const annotationIds = mode === 'narrower' ? narrowerConflictAnnotationIds.value : widerConflictAnnotationIds.value
+  if (annotationIds.length) emit('delete-annotations', annotationIds)
 }
 
 const swipeStart = ref<{ x: number; y: number; pointerId: number } | null>(null)
@@ -527,10 +534,20 @@ function predicatePositionClasses(
         <em v-for="reason in reviewQueueInsight.reasons" :key="reason">{{ reason }}</em>
       </div>
       <div v-if="annotationConflictPairs.length" class="annotation-conflict-card" :aria-label="labels.annotationConflictTitle">
-        <span>
-          <strong>{{ labels.annotationConflictTitle }}</strong>
-          <small>{{ labels.annotationConflictHint }}</small>
-        </span>
+        <div class="annotation-conflict-summary">
+          <span>
+            <strong>{{ labels.annotationConflictTitle }}</strong>
+            <small>{{ labels.annotationConflictHint }}</small>
+          </span>
+          <div class="annotation-conflict-actions compact">
+            <button type="button" :disabled="isSaving" @click="deleteConflictResolution('narrower')">
+              {{ labels.deleteAllNarrowerConflicts(narrowerConflictAnnotationIds.length) }}
+            </button>
+            <button type="button" :disabled="isSaving" @click="deleteConflictResolution('wider')">
+              {{ labels.deleteAllWiderConflicts(widerConflictAnnotationIds.length) }}
+            </button>
+          </div>
+        </div>
         <div class="annotation-conflict-list">
           <div v-for="pair in annotationConflictPairs" :key="pair.id" class="annotation-conflict-pair">
             <span>
@@ -538,10 +555,16 @@ function predicatePositionClasses(
               <small>{{ annotationRangeText(pair.left, labels) }} · {{ annotationRangeText(pair.right, labels) }}</small>
             </span>
             <div class="annotation-conflict-actions">
-              <button type="button" @click="emit('delete-annotation', pair.left.id)">
+              <button type="button" :disabled="isSaving" @click="emit('delete-annotation', conflictResolutionAnnotation(pair, 'narrower').id)">
+                {{ labels.deleteNarrowerConflictSpan(shortSpanText(conflictResolutionAnnotation(pair, 'narrower').text)) }}
+              </button>
+              <button type="button" :disabled="isSaving" @click="emit('delete-annotation', conflictResolutionAnnotation(pair, 'wider').id)">
+                {{ labels.deleteWiderConflictSpan(shortSpanText(conflictResolutionAnnotation(pair, 'wider').text)) }}
+              </button>
+              <button type="button" :disabled="isSaving" @click="emit('delete-annotation', pair.left.id)">
                 {{ labels.deleteConflictSpan(shortSpanText(pair.left.text)) }}
               </button>
-              <button type="button" @click="emit('delete-annotation', pair.right.id)">
+              <button type="button" :disabled="isSaving" @click="emit('delete-annotation', pair.right.id)">
                 {{ labels.deleteConflictSpan(shortSpanText(pair.right.text)) }}
               </button>
             </div>

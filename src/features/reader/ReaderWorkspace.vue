@@ -162,6 +162,7 @@ const {
   handleTagSchemaImport,
   deleteTag,
   removeAnnotation,
+  removeAnnotations,
   undoLastSpanAction,
   acceptSuggestedSpan,
   rejectSuggestedSpan,
@@ -429,6 +430,7 @@ async function confirmProjectReset() {
         @select-current-sentence="selectCurrentSentenceSpan"
         @mark-current-monogloss="markCurrentSentenceMonogloss"
         @delete-annotation="removeAnnotation"
+        @delete-annotations="removeAnnotations"
         @undo="undoLastSpanAction"
         @generate-current-suggestions="generateCurrentSentenceSuggestions"
         @generate-suggestions="generateDocumentSuggestions"
