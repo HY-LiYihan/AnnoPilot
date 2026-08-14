@@ -15,6 +15,7 @@ import type {
   TxtImportMode,
 } from '../../types/domain'
 import { truncateFilename } from '../../utils/display'
+import SuggestionRow from './SuggestionRow.vue'
 
 const SWIPE_MIN_DISTANCE = 56
 const SWIPE_AXIS_RATIO = 1.4
@@ -177,23 +178,6 @@ function samplePresetButtonText(preset: SamplePreset, labels: UiLabels['reader']
   return labels.loadSamplePreset(truncateFilename(preset.title, 34))
 }
 
-function reviewJudgeLabel(review: SuggestionReview | undefined, labels: UiLabels['reader']) {
-  const judge = review?.judge
-  if (!judge) return ''
-  const parts: string[] = []
-  if (typeof judge.overall_score === 'number') {
-    parts.push(`${labels.judgeOverall} ${Math.round(judge.overall_score * 100)}%`)
-  }
-  if (typeof judge.boundary_score === 'number') {
-    parts.push(`${labels.judgeBoundary} ${Math.round(judge.boundary_score * 100)}%`)
-  }
-  const flags = [...(judge.error_types ?? []), ...(judge.risk_flags ?? [])]
-  if (flags.length) {
-    parts.push(`${labels.judgeFlags} ${flags.slice(0, 2).join(', ')}`)
-  }
-  return parts.join(' · ')
-}
-
 const swipeStart = ref<{ x: number; y: number; pointerId: number } | null>(null)
 
 function isInteractiveTarget(target: EventTarget | null) {
@@ -221,26 +205,6 @@ function handleReaderPointerUp(event: PointerEvent) {
 
 function clearReaderSwipe() {
   swipeStart.value = null
-}
-
-function suggestionSourceLabel(source: string, labels: UiLabels['reader']) {
-  return labels.sourceLabels[source as keyof typeof labels.sourceLabels] ?? source
-}
-
-function suggestionRangeLabel(suggestion: SuggestionDef, labels: UiLabels['reader']) {
-  const tokenRange =
-    suggestion.start_token_index === suggestion.end_token_index
-      ? `${labels.tokenRange} ${suggestion.start_token_index}`
-      : `${labels.tokenRange} ${suggestion.start_token_index}-${suggestion.end_token_index}`
-  return `${tokenRange} · ${labels.charRange} ${suggestion.start_char}-${suggestion.end_char}`
-}
-
-function suggestionMatchKeyLabel(suggestion: SuggestionDef) {
-  const matchKey = suggestion.match_key?.trim()
-  const evidenceMatchKey = suggestion.evidence_match_key?.trim()
-  if (!matchKey && !evidenceMatchKey) return ''
-  if (matchKey && evidenceMatchKey && matchKey !== evidenceMatchKey) return `${matchKey} → ${evidenceMatchKey}`
-  return matchKey || evidenceMatchKey || ''
 }
 
 function sentenceStatusLabel(sentence: SentenceDef, currentSentenceIndex: number, labels: UiLabels['reader']) {
@@ -543,66 +507,22 @@ function predicatePositionClasses(
         </button>
       </div>
       <div v-if="activeSuggestions.length" class="suggestion-list" :aria-label="labels.suggestionsAria">
-        <article
-          v-for="(suggestion, suggestionIndex) in activeSuggestions"
+        <SuggestionRow
+          v-for="suggestion in activeSuggestions"
           :key="suggestion.id"
-          class="suggestion-row"
-          :class="{ 'keyboard-target': suggestion.id === activeSuggestionTargetId }"
-          :style="{ '--token-color': suggestion.tag_color }"
-          @click="emit('suggestion-target', suggestion)"
-        >
-          <span>
-            <strong>{{ suggestion.text }}</strong>
-            <small class="suggestion-meta-line">
-              <em class="suggestion-badge">{{ suggestionSourceLabel(suggestion.source, labels) }}</em>
-              <em>{{ suggestion.tag_name }}</em>
-              <em>{{ Math.round(suggestion.confidence * 100) }}%</em>
-              <em>{{ suggestionRangeLabel(suggestion, labels) }}</em>
-              <em v-if="suggestion.run_id">{{ suggestion.run_id.slice(0, 10) }}</em>
-              <em v-if="suggestion.id === activeSuggestionTargetId" class="keyboard-target-badge">
-                {{ labels.keyboardTarget(activeSuggestionPosition, activeSuggestions.length) }}
-              </em>
-            </small>
-            <small v-if="suggestion.evidence_text" class="evidence-copy">
-              <em>{{ labels.evidence }}</em>
-              <strong>{{ suggestion.evidence_text }}</strong>
-            </small>
-            <small v-if="suggestionMatchKeyLabel(suggestion)" class="evidence-copy match-key-copy">
-              <em>{{ labels.matchKeys }}</em>
-              <strong>{{ suggestionMatchKeyLabel(suggestion) }}</strong>
-            </small>
-            <small v-if="suggestion.context_before || suggestion.context_after" class="evidence-copy">
-              <em>{{ labels.context }}</em>
-              <strong>{{ suggestion.context_before }}[{{ suggestion.text }}]{{ suggestion.context_after }}</strong>
-            </small>
-            <small v-if="suggestionReviews[suggestion.id]" class="review-copy">
-              <em>{{ labels.llmReview }}</em>
-              {{ suggestionReviews[suggestion.id].recommendation }} ·
-              {{ Math.round(suggestionReviews[suggestion.id].confidence * 100) }}% ·
-              {{ suggestionReviews[suggestion.id].rationale }}
-            </small>
-            <small v-if="reviewJudgeLabel(suggestionReviews[suggestion.id], labels)" class="review-copy judge-copy">
-              <em>{{ labels.judgeSignal }}</em>
-              {{ reviewJudgeLabel(suggestionReviews[suggestion.id], labels) }}
-            </small>
-          </span>
-          <div class="suggestion-actions">
-            <button
-              type="button"
-              :disabled="isSaving || !!reviewingSuggestionId"
-              :title="labels.reviewTitle"
-              @click.stop="emit('review-suggestion', suggestion)"
-            >
-              <Sparkles :size="15" aria-hidden="true" />
-            </button>
-            <button type="button" :disabled="isSaving" :title="labels.acceptTitle" @click.stop="emit('accept-suggestion', suggestion)">
-              <Check :size="15" aria-hidden="true" />
-            </button>
-            <button type="button" :disabled="isSaving" :title="labels.rejectTitle" @click.stop="emit('reject-suggestion', suggestion)">
-              <X :size="15" aria-hidden="true" />
-            </button>
-          </div>
-        </article>
+          :labels="labels"
+          :suggestion="suggestion"
+          :review="suggestionReviews[suggestion.id]"
+          :is-saving="isSaving"
+          :is-reviewing="!!reviewingSuggestionId"
+          :is-keyboard-target="suggestion.id === activeSuggestionTargetId"
+          :active-position="activeSuggestionPosition"
+          :total-suggestions="activeSuggestions.length"
+          @target="emit('suggestion-target', $event)"
+          @review="emit('review-suggestion', $event)"
+          @accept="emit('accept-suggestion', $event)"
+          @reject="emit('reject-suggestion', $event)"
+        />
       </div>
       <p v-if="!activeAnnotations.length && !activeSuggestions.length" class="candidate-empty">
         {{ labels.emptyCandidate }}
