@@ -643,6 +643,10 @@ class ProdigyReadinessResponse(BaseModel):
     covered_label_count: int
     total_label_count: int
     pending_suggestion_count: int
+    verification_status: str = "unknown"
+    verification_issue_count: int = 0
+    verification_error_count: int = 0
+    verification_warning_count: int = 0
     formats: dict[str, str]
 
 

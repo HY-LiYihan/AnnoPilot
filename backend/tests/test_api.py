@@ -385,6 +385,70 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
         assert "annopilot.event.v1" in audit["schema_versions"]
 
 
+def test_manifest_readiness_uses_verification_warnings_for_overlapping_spans(tmp_path: Path) -> None:
+    with TestClient(
+        create_app(
+            AnnotationStorage(
+                database_path=tmp_path / "runtime" / "annopilot.sqlite",
+                data_root=tmp_path / "projects",
+            )
+        )
+    ) as client:
+        import_response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("overlap.txt", "Clearly shows improvement.", "text/plain")},
+        )
+        assert import_response.status_code == 200
+        document_id = import_response.json()["document_id"]
+
+        tag_response = client.post("/api/projects/default/tags", json={"name": "Cue"})
+        assert tag_response.status_code == 200
+        tag_id = tag_response.json()["tag"]["id"]
+        sentence = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=1").json()[
+            "sentences"
+        ][0]
+
+        phrase_response = client.post(
+            f"/api/projects/default/sentences/{sentence['id']}/annotations",
+            json={"tag_id": tag_id, "start_token_index": 0, "end_token_index": 1},
+        )
+        assert phrase_response.status_code == 200
+        nested_response = client.post(
+            f"/api/projects/default/sentences/{sentence['id']}/annotations",
+            json={"tag_id": tag_id, "start_token_index": 1, "end_token_index": 1},
+        )
+        assert nested_response.status_code == 200
+        complete_response = client.post(
+            f"/api/projects/default/sentences/{sentence['id']}/complete",
+            json={"completed": True},
+        )
+        assert complete_response.status_code == 200
+
+        verification_report = [
+            json.loads(line)
+            for line in client.get(
+                f"/api/projects/default/documents/{document_id}/export.goldsmith.verification-report.jsonl"
+            ).text.splitlines()
+        ][0]
+        assert verification_report["summary"]["status"] == "warning"
+        assert verification_report["summary"]["warning_count"] >= 1
+        assert any(issue["code"] == "overlapping_spans" for issue in verification_report["issues"])
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert manifest["prodigy_readiness"]["ready"] is False
+        assert manifest["prodigy_readiness"]["status"] == "needs_attention"
+        assert manifest["prodigy_readiness"]["blockers"] == ["verification_warnings"]
+        assert manifest["prodigy_readiness"]["verification_status"] == "warning"
+        assert manifest["prodigy_readiness"]["verification_warning_count"] == verification_report["summary"]["warning_count"]
+        assert manifest["prodigy_readiness"]["verification_error_count"] == 0
+
+        bootstrap_report = client.get(
+            f"/api/projects/default/documents/{document_id}/export.goldsmith.bootstrap-report.md"
+        ).text
+        assert "- Prodigy readiness: `needs_attention`" in bootstrap_report
+        assert "Clear Prodigy readiness blockers: verification_warnings." in bootstrap_report
+
+
 def test_health_reports_llm_runtime_without_secret(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LLM_BASE_URL", "https://api.aixhan.com/v1")
     monkeypatch.setenv("LLM_API_KEY", "sk-test-secret")

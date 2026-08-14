@@ -262,7 +262,8 @@ class ExportService:
             goldsmith_review_task_lines=goldsmith_review_task_lines,
             goldsmith_prompt_package_lines=goldsmith_prompt_package_lines,
         )
-        prodigy_readiness = self._prodigy_readiness(document["metrics"])
+        verification_summary = self._verification_summary_from_lines(goldsmith_verification_report_lines)
+        prodigy_readiness = self._prodigy_readiness(document["metrics"], verification_summary=verification_summary)
         goldsmith_bootstrap_report_lines = self._build_goldsmith_bootstrap_report_lines(
             project_id=project_id,
             document_id=document_id,
@@ -1166,18 +1167,22 @@ class ExportService:
 
     def export_goldsmith_bootstrap_report_lines(self, project_id: str, document_id: str) -> list[str]:
         document = self.get_document(project_id, document_id)
+        goldsmith_verification_report_lines = self.export_goldsmith_verification_report_lines(project_id, document_id)
         return self._build_goldsmith_bootstrap_report_lines(
             project_id=project_id,
             document_id=document_id,
             document=document,
             generated_at=self.now(),
-            prodigy_readiness=self._prodigy_readiness(document["metrics"]),
+            prodigy_readiness=self._prodigy_readiness(
+                document["metrics"],
+                verification_summary=self._verification_summary_from_lines(goldsmith_verification_report_lines),
+            ),
             goldsmith_review_queue_lines=self.export_goldsmith_review_queue_lines(project_id, document_id, order="hybrid", limit=100),
             goldsmith_consistency_score_lines=self.export_goldsmith_consistency_scores_lines(project_id, document_id),
             goldsmith_label_statistics_lines=self.export_goldsmith_label_statistics_lines(project_id, document_id),
             goldsmith_reflection_plan_lines=self.export_goldsmith_reflection_plan_lines(project_id, document_id),
             goldsmith_review_task_lines=self.export_goldsmith_review_task_lines(project_id, document_id),
-            goldsmith_verification_report_lines=self.export_goldsmith_verification_report_lines(project_id, document_id),
+            goldsmith_verification_report_lines=goldsmith_verification_report_lines,
         )
 
     def _build_goldsmith_verification_report_lines(
@@ -2455,7 +2460,12 @@ class ExportService:
             source["source_suggestion_id"] = annotation["source_suggestion_id"]
         return source
 
-    def _prodigy_readiness(self, metrics: dict[str, Any]) -> dict[str, Any]:
+    def _prodigy_readiness(
+        self,
+        metrics: dict[str, Any],
+        *,
+        verification_summary: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         sentence_count = int(metrics.get("sentence_count") or 0)
         completed_count = int(metrics.get("completed_count") or 0)
         annotation_count = int(metrics.get("annotation_count") or 0)
@@ -2479,6 +2489,14 @@ class ExportService:
             blockers.append("no_annotations")
         if pending_suggestion_count > 0:
             blockers.append("pending_suggestions")
+        verification_status = str((verification_summary or {}).get("status") or "unknown")
+        verification_issue_count = int((verification_summary or {}).get("issue_count") or 0)
+        verification_error_count = int((verification_summary or {}).get("error_count") or 0)
+        verification_warning_count = int((verification_summary or {}).get("warning_count") or 0)
+        if verification_error_count > 0 or verification_status == "error":
+            blockers.append("verification_errors")
+        elif verification_warning_count > 0 or verification_status == "warning":
+            blockers.append("verification_warnings")
 
         return {
             "ready": not blockers,
@@ -2491,10 +2509,27 @@ class ExportService:
             "covered_label_count": covered_label_count,
             "total_label_count": total_label_count,
             "pending_suggestion_count": pending_suggestion_count,
+            "verification_status": verification_status,
+            "verification_issue_count": verification_issue_count,
+            "verification_error_count": verification_error_count,
+            "verification_warning_count": verification_warning_count,
             "formats": {
                 "ner_manual": self.prodigy_export_schema_version,
                 "spans_manual": self.prodigy_spans_export_schema_version,
             },
+        }
+
+    @classmethod
+    def _verification_summary_from_lines(cls, lines: list[str]) -> dict[str, Any]:
+        payloads = cls._jsonl_payloads(lines)
+        if not payloads:
+            return {"status": "unknown", "issue_count": 0, "error_count": 0, "warning_count": 0}
+        summary = payloads[0].get("summary") or {}
+        return {
+            "status": str(summary.get("status") or "unknown"),
+            "issue_count": int(summary.get("issue_count") or 0),
+            "error_count": int(summary.get("error_count") or 0),
+            "warning_count": int(summary.get("warning_count") or 0),
         }
 
     @staticmethod
