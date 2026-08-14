@@ -7,6 +7,7 @@ import {
   type ReadinessAction,
   type ReadinessTargetFocus,
 } from '../../composables/readerReadinessActions'
+import { reviewQueuePriorityRouteText } from '../../composables/reviewQueueDisplay'
 import type { UiLabels } from '../../i18n'
 import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, LabelCount, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder, SentenceQueueItem } from '../../types/domain'
 
@@ -263,7 +264,7 @@ function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics'], or
   }
   const candidate = suggestion ? `${suggestion.tag_name}: ${suggestion.text}` : labels.queuePreviewFallback(item.suggestion_count)
   const optionCount = candidateCount > 1 ? `${labels.candidateOptions(candidateCount)} · ` : ''
-  const priority = `${labels.priority} ${item.priority}`
+  const priority = reviewQueuePriorityRouteText(item, labels)
   return hint
     ? `${priority} · ${optionCount}${candidate} · ${hint} · ${score}`
     : `${priority} · ${optionCount}${candidate} · ${score}`

@@ -5,6 +5,7 @@ import { fetchRuntimeHealth } from '../../api/health'
 import { fetchLlmSettings, updateLlmSettings } from '../../api/settings'
 import { buildAnnotationConflictPairs, firstConflictAnnotationIds } from '../../composables/readerAnnotationConflicts'
 import type { ReadinessTargetFocus } from '../../composables/readerReadinessActions'
+import { reviewQueuePriorityRouteText } from '../../composables/reviewQueueDisplay'
 import { useDocumentReader } from '../../composables/useDocumentReader'
 import { LANGUAGE_KEY, UI_LABELS, type Locale } from '../../i18n'
 import type { LlmModelOption, LlmSettingsState, ReviewQueueInsight, ReviewQueueItem, RuntimeHealth } from '../../types/domain'
@@ -248,7 +249,7 @@ const currentReviewQueueInsight = computed<ReviewQueueInsight | null>(() => {
   const item = reviewQueueDetails.value.find((queueItem) => queueItem.index === currentSentenceIndex.value)
   if (!item) return null
   const orderLabel = reviewQueueOrderLabel()
-  const headline = `${orderLabel} · ${labels.value.metrics.priority} ${item.priority} · ${labels.value.metrics.riskScore} ${item.risk_score.toFixed(2)}`
+  const headline = `${orderLabel} · ${reviewQueuePriorityRouteText(item, labels.value.metrics)} · ${labels.value.metrics.riskScore} ${item.risk_score.toFixed(2)}`
   return {
     headline,
     detail: reviewQueueInsightDetail(item),
