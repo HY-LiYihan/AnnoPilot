@@ -50,6 +50,7 @@ GOLDSMITH_CONSISTENCY_SCORES_SCHEMA_VERSION = "annopilot.goldsmith_consistency_s
 GOLDSMITH_CANDIDATE_RUNS_SCHEMA_VERSION = "rosetta.prodigy_candidate.v1"
 GOLDSMITH_RISK_REASONS_SCHEMA_VERSION = "annopilot.goldsmith_risk_reasons.v1"
 GOLDSMITH_LABEL_STATISTICS_SCHEMA_VERSION = "annopilot.goldsmith_label_statistics.v1"
+GOLDSMITH_CONTRASTIVE_EXAMPLES_SCHEMA_VERSION = "annopilot.goldsmith_contrastive_examples.v1"
 GOLDSMITH_REVIEW_TASKS_SCHEMA_VERSION = "annopilot.goldsmith_review_tasks.v1"
 HIGH_CONFIDENCE_THRESHOLD = 0.9
 MEDIUM_CONFIDENCE_THRESHOLD = 0.75
@@ -246,6 +247,7 @@ class AnnotationStorage:
             goldsmith_candidate_runs_schema_version=GOLDSMITH_CANDIDATE_RUNS_SCHEMA_VERSION,
             goldsmith_risk_reasons_schema_version=GOLDSMITH_RISK_REASONS_SCHEMA_VERSION,
             goldsmith_label_statistics_schema_version=GOLDSMITH_LABEL_STATISTICS_SCHEMA_VERSION,
+            goldsmith_contrastive_examples_schema_version=GOLDSMITH_CONTRASTIVE_EXAMPLES_SCHEMA_VERSION,
             goldsmith_review_tasks_schema_version=GOLDSMITH_REVIEW_TASKS_SCHEMA_VERSION,
             medium_confidence_threshold=MEDIUM_CONFIDENCE_THRESHOLD,
         )
@@ -369,6 +371,20 @@ class AnnotationStorage:
 
     def export_goldsmith_label_statistics_lines(self, project_id: str, document_id: str) -> list[str]:
         return self.export_service.export_goldsmith_label_statistics_lines(project_id, document_id)
+
+    def export_goldsmith_contrastive_examples_lines(
+        self,
+        project_id: str,
+        document_id: str,
+        similar_k: int = 3,
+        boundary_k: int = 1,
+    ) -> list[str]:
+        return self.export_service.export_goldsmith_contrastive_examples_lines(
+            project_id,
+            document_id,
+            similar_k=similar_k,
+            boundary_k=boundary_k,
+        )
 
     def export_goldsmith_review_task_lines(self, project_id: str, document_id: str) -> list[str]:
         return self.export_service.export_goldsmith_review_task_lines(project_id, document_id)

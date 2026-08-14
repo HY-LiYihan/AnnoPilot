@@ -35,6 +35,7 @@ const emit = defineEmits<{
   'export-goldsmith-boundary-feedback': []
   'export-goldsmith-consistency-scores': []
   'export-goldsmith-candidate-runs': []
+  'export-goldsmith-contrastive-examples': []
   'export-goldsmith-risk-reasons': []
   'export-goldsmith-label-statistics': []
   'export-goldsmith-review-tasks': []
@@ -584,6 +585,11 @@ function shortHash(value: string) {
 
     <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-goldsmith-candidate-runs')">
       {{ labels.exportCandidateRuns }}
+      <Download :size="18" aria-hidden="true" />
+    </button>
+
+    <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-goldsmith-contrastive-examples')">
+      {{ labels.exportContrastiveExamples }}
       <Download :size="18" aria-hidden="true" />
     </button>
 

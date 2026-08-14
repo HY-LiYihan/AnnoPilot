@@ -44,6 +44,7 @@ class ExportService:
         goldsmith_candidate_runs_schema_version: str,
         goldsmith_risk_reasons_schema_version: str,
         goldsmith_label_statistics_schema_version: str,
+        goldsmith_contrastive_examples_schema_version: str,
         goldsmith_review_tasks_schema_version: str,
         medium_confidence_threshold: float,
     ) -> None:
@@ -73,6 +74,7 @@ class ExportService:
         self.goldsmith_candidate_runs_schema_version = goldsmith_candidate_runs_schema_version
         self.goldsmith_risk_reasons_schema_version = goldsmith_risk_reasons_schema_version
         self.goldsmith_label_statistics_schema_version = goldsmith_label_statistics_schema_version
+        self.goldsmith_contrastive_examples_schema_version = goldsmith_contrastive_examples_schema_version
         self.goldsmith_review_tasks_schema_version = goldsmith_review_tasks_schema_version
         self.medium_confidence_threshold = medium_confidence_threshold
 
@@ -185,6 +187,7 @@ class ExportService:
             "goldsmith_candidate_runs_jsonl": "".join(context["goldsmith_candidate_run_lines"]),
             "goldsmith_risk_reasons_jsonl": "".join(context["goldsmith_risk_reason_lines"]),
             "goldsmith_label_statistics_jsonl": "".join(context["goldsmith_label_statistics_lines"]),
+            "goldsmith_contrastive_examples_jsonl": "".join(context["goldsmith_contrastive_example_lines"]),
             "goldsmith_review_tasks_jsonl": "".join(context["goldsmith_review_task_lines"]),
         }
         bundle_files: dict[str, str] = {
@@ -213,6 +216,7 @@ class ExportService:
         goldsmith_consistency_score_lines = self.export_goldsmith_consistency_scores_lines(project_id, document_id)
         goldsmith_candidate_run_lines = self.export_goldsmith_candidate_runs_lines(project_id, document_id)
         goldsmith_label_statistics_lines = self.export_goldsmith_label_statistics_lines(project_id, document_id)
+        goldsmith_contrastive_example_lines = self.export_goldsmith_contrastive_examples_lines(project_id, document_id)
         goldsmith_review_task_lines = self.export_goldsmith_review_task_lines(project_id, document_id)
         goldsmith_risk_reason_lines = self._build_goldsmith_risk_reason_lines(
             project_id=project_id,
@@ -344,6 +348,12 @@ class ExportService:
                     lines=goldsmith_label_statistics_lines,
                     content_sha256=self._jsonl_content_sha256(goldsmith_label_statistics_lines),
                 ),
+                "goldsmith_contrastive_examples_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.contrastive-examples.jsonl",
+                    schema_version=self.goldsmith_contrastive_examples_schema_version,
+                    lines=goldsmith_contrastive_example_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_contrastive_example_lines),
+                ),
                 "goldsmith_review_tasks_jsonl": self._artifact_summary(
                     filename=f"{document_id}.goldsmith.review-tasks.jsonl",
                     schema_version=self.goldsmith_review_tasks_schema_version,
@@ -367,6 +377,7 @@ class ExportService:
             "goldsmith_candidate_run_lines": goldsmith_candidate_run_lines,
             "goldsmith_risk_reason_lines": goldsmith_risk_reason_lines,
             "goldsmith_label_statistics_lines": goldsmith_label_statistics_lines,
+            "goldsmith_contrastive_example_lines": goldsmith_contrastive_example_lines,
             "goldsmith_review_task_lines": goldsmith_review_task_lines,
             "event_lines": event_lines,
             "tag_schema_line": tag_schema_line,
@@ -664,6 +675,64 @@ class ExportService:
                     "context_window": context_window,
                     "sentence_count": sentence_count,
                     "annotation_count": annotation_count,
+                },
+            }
+            lines.append(json.dumps(line, ensure_ascii=False) + "\n")
+        return lines
+
+    def export_goldsmith_contrastive_examples_lines(
+        self,
+        project_id: str,
+        document_id: str,
+        similar_k: int = 3,
+        boundary_k: int = 1,
+    ) -> list[str]:
+        similar_limit = max(0, min(int(similar_k), 10))
+        boundary_limit = max(0, min(int(boundary_k), 10))
+        document = self.get_document(project_id, document_id)
+        generated_at = self.now()
+        samples = [
+            self._goldsmith_contrastive_sample(project_id, document_id, sentence)
+            for sentence in document["sentences"]
+            if sentence.get("annotations")
+        ]
+        sample_by_id = {sample["id"]: sample for sample in samples}
+        lines = []
+        for query in samples:
+            scored = [
+                (candidate, self._lexical_similarity(query["text"], candidate["text"]))
+                for candidate in samples
+                if candidate["id"] != query["id"]
+            ]
+            similar_hits = [
+                self._contrastive_hit("similar", candidate, score)
+                for candidate, score in sorted(scored, key=lambda item: (-item[1], item[0]["id"]))[:similar_limit]
+            ]
+            similar_ids = {hit["sample_id"] for hit in similar_hits}
+            boundary_hits = [
+                self._contrastive_hit("boundary", candidate, score)
+                for candidate, score in sorted(scored, key=lambda item: (item[1], item[0]["id"]))
+                if candidate["id"] not in similar_ids
+            ][:boundary_limit]
+            line = {
+                "schema_version": self.goldsmith_contrastive_examples_schema_version,
+                "record_type": "contrastive_selection",
+                "generated_at": generated_at,
+                "project_id": project_id,
+                "document_id": document_id,
+                "query_id": query["id"],
+                "query": sample_by_id[query["id"]],
+                "similar": similar_hits,
+                "boundary": boundary_hits,
+                "meta": {
+                    "source": "annopilot",
+                    "artifact": "contrastive_examples.jsonl",
+                    "rosetta_reference": "contrastive_retrieval.py",
+                    "selection_strategy": "lexical_jaccard_tokens",
+                    "tokenizer": "rosetta_contrastive_retrieval_compatible_v1",
+                    "similar_k": similar_limit,
+                    "boundary_k": boundary_limit,
+                    "candidate_sample_count": len(samples),
                 },
             }
             lines.append(json.dumps(line, ensure_ascii=False) + "\n")
@@ -1625,6 +1694,62 @@ class ExportService:
         ]
 
     @staticmethod
+    def _goldsmith_contrastive_sample(project_id: str, document_id: str, sentence: dict[str, Any]) -> dict[str, Any]:
+        sentence_start = int(sentence["start_char"])
+        spans = []
+        for index, annotation in enumerate(sentence.get("annotations") or []):
+            spans.append(
+                {
+                    "id": f"T{index + 1}",
+                    "start": int(annotation["start_char"]) - sentence_start,
+                    "end": int(annotation["end_char"]) - sentence_start,
+                    "text": annotation["text"],
+                    "label": annotation["tag_name"],
+                    "implicit": False,
+                    "token_start": annotation["start_token_index"],
+                    "token_end": annotation["end_token_index"],
+                }
+            )
+        return {
+            "schema_version": "rosetta.prodigy_jsonl.v1",
+            "id": sentence["id"],
+            "text": sentence["text"],
+            "tokens": [],
+            "spans": spans,
+            "relations": [],
+            "answer": sentence.get("answer", "accept" if sentence.get("completed") else "pending"),
+            "meta": {
+                "source": "annopilot",
+                "project_id": project_id,
+                "document_id": document_id,
+                "sentence_id": sentence["id"],
+                "sentence_index": sentence["index"],
+            },
+        }
+
+    @staticmethod
+    def _contrastive_hit(role: str, sample: dict[str, Any], score: float) -> dict[str, Any]:
+        return {
+            "role": role,
+            "sample_id": sample["id"],
+            "score": score,
+            "sample": sample,
+        }
+
+    @classmethod
+    def _lexical_similarity(cls, left: str, right: str) -> float:
+        left_tokens = cls._goldsmith_contrastive_token_set(left)
+        right_tokens = cls._goldsmith_contrastive_token_set(right)
+        if not left_tokens or not right_tokens:
+            return 0.0
+        union = left_tokens | right_tokens
+        return round(len(left_tokens & right_tokens) / len(union), 4) if union else 0.0
+
+    @staticmethod
+    def _goldsmith_contrastive_token_set(text: str) -> set[str]:
+        return {match.group(0).lower() for match in GOLDSMITH_LABEL_TOKEN_PATTERN.finditer(text)}
+
+    @staticmethod
     def _safe_ratio(numerator: int, denominator: int) -> float:
         if denominator <= 0:
             return 0.0
@@ -1811,6 +1936,7 @@ class ExportService:
                 artifact_line("goldsmith_candidate_runs_jsonl", "Rosetta-style candidate span records"),
                 artifact_line("goldsmith_consistency_scores_jsonl", "sentence-level agreement and route diagnostics"),
                 artifact_line("goldsmith_label_statistics_jsonl", "Rosetta-style token label statistics for seed and negative-example optimization"),
+                artifact_line("goldsmith_contrastive_examples_jsonl", "Rosetta-style similar and boundary examples for prompt and guideline calibration"),
                 artifact_line("goldsmith_boundary_feedback_jsonl", "boundary feedback from hard examples and LLM review"),
                 artifact_line("goldsmith_hard_examples_jsonl", "human-disagreed or risky examples for guideline refinement"),
                 artifact_line("goldsmith_human_choices_jsonl", "accepted/rejected human decisions for calibration"),

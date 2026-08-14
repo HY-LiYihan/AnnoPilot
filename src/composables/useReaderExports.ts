@@ -5,6 +5,7 @@ import {
   goldsmithBoundaryFeedbackExportUrl,
   goldsmithCandidateRunsExportUrl,
   goldsmithConsistencyScoresExportUrl,
+  goldsmithContrastiveExamplesExportUrl,
   goldsmithHardExamplesExportUrl,
   goldsmithHumanChoicesExportUrl,
   goldsmithLabelStatisticsExportUrl,
@@ -103,6 +104,10 @@ export function useReaderExports(options: ReaderExportOptions) {
     withDocument(goldsmithLabelStatisticsExportUrl)
   }
 
+  function exportGoldsmithContrastiveExamplesJsonl() {
+    withDocument(goldsmithContrastiveExamplesExportUrl)
+  }
+
   function exportGoldsmithReviewTasksJsonl() {
     withDocument(goldsmithReviewTasksExportUrl)
   }
@@ -112,6 +117,7 @@ export function useReaderExports(options: ReaderExportOptions) {
     exportGoldsmithBoundaryFeedbackJsonl,
     exportGoldsmithCandidateRunsJsonl,
     exportGoldsmithConsistencyScoresJsonl,
+    exportGoldsmithContrastiveExamplesJsonl,
     exportGoldsmithHardExamplesJsonl,
     exportGoldsmithHumanChoicesJsonl,
     exportGoldsmithLabelStatisticsJsonl,

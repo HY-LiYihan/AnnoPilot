@@ -197,6 +197,27 @@ def export_goldsmith_label_statistics(
     return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
 
 
+@router.get("/documents/{document_id}/export.goldsmith.contrastive-examples.jsonl")
+def export_goldsmith_contrastive_examples(
+    project_id: str,
+    document_id: str,
+    similar_k: int = Query(3, ge=0, le=10),
+    boundary_k: int = Query(1, ge=0, le=10),
+    storage: AnnotationStorage = Depends(get_storage),
+) -> StreamingResponse:
+    try:
+        lines = storage.export_goldsmith_contrastive_examples_lines(
+            project_id,
+            document_id,
+            similar_k=similar_k,
+            boundary_k=boundary_k,
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.goldsmith.contrastive-examples.jsonl"'}
+    return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
+
+
 @router.get("/documents/{document_id}/export.goldsmith.review-tasks.jsonl")
 def export_goldsmith_review_tasks(
     project_id: str,

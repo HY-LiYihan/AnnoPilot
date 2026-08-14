@@ -130,6 +130,7 @@ GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.consiste
 GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.candidate-runs.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.risk-reasons.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.label-statistics.jsonl
+GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.contrastive-examples.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.goldsmith.review-tasks.jsonl
 GET /api/projects/{project_id}/documents/{document_id}/export.manifest.json
 GET /api/projects/{project_id}/events.jsonl
@@ -143,6 +144,7 @@ GET /api/projects/{project_id}/tags/prodigy-labels.json
 - Goldsmith human choices JSONL 使用 `annopilot.goldsmith_human_choices.v1`，导出已被人工 accept/reject 的 suggestions、latest LLM review / judge、是否错配、`risk_reason_codes` 和 span payload，可作为 Rosetta 风格 `human_choices.jsonl`。
 - Goldsmith risk reasons JSONL 使用 `annopilot.goldsmith_risk_reasons.v1`，把 `review_efficiency_curves.goldsmith` 的原因统计、hybrid review queue、hard examples 和 boundary feedback 聚合为独立 `risk_reason_summary` records，包含 `reason_code`、`calibrated_count`、`disagreement_count`、`queue_count`、`hard_example_count`、`boundary_feedback_count` 和最多 3 条样例，方便离线复盘哪类风险最常触发人工纠错。
 - Goldsmith label statistics JSONL 使用 `annopilot.goldsmith_label_statistics.v1`，按 Rosetta `label_statistics` 思路输出 token-level `entity/context/other` 计数和概率；英文数字按连续词归一为小写，中文按单字统计，span 前后 2 个 token 作为 context，便于离线优化 lexical seed、negative examples 和双语边界规则。
+- Goldsmith contrastive examples JSONL 使用 `annopilot.goldsmith_contrastive_examples.v1`，按 Rosetta `contrastive_retrieval` 思路为每条已标注 sentence 选出 lexical overlap 最高的 similar examples 与最低的 boundary examples，可用 `similar_k` / `boundary_k` query params 控制数量。
 - Goldsmith hard examples JSONL 使用 `annopilot.goldsmith_hard_examples.v1`，从 human choices 中筛出人工拒绝、LLM/人工分歧、低置信或 LLM uncertain 样本，并附 `risk_reason_codes` 与 `failure_note` 作为 Rosetta hard-example / boundary-feedback 输入。
 - Goldsmith boundary feedback JSONL 使用 `annopilot.goldsmith_boundary_feedback.v1`，合并 human hard examples 与仍 pending 但 latest LLM review 为 `reject` / `uncertain` 的候选，并保留 `risk_reason_codes`，供下一轮 label boundary、负例和 bilingual examples 优化。
 - Goldsmith consistency scores JSONL 使用 `annopilot.goldsmith_consistency_scores.v1`，对当前可见 pending suggestions 输出 sentence-level `score / agreement / pairwise_span_f1 / exact_match_rate / consensus_match_rate / average_model_confidence / uncertainty_score / rosetta_route / review_route / candidate_scores`，其中 `pairwise_span_f1`、`exact_match_rate`、`uncertainty_score` 和 `rosetta_route=high|medium|low` 对齐 Rosetta `consistency_scores.jsonl` 的核心字段；`exact_match_rate` 表示与第一条候选完全一致的比例，`consensus_match_rate` 额外保留 AnnoPilot 的多数共识比例；后续可替换为真正 k-run self-consistency 而不改下游文件名语义。

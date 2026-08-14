@@ -1071,6 +1071,82 @@ def test_export_goldsmith_label_statistics_supports_rosetta_token_priors(tmp_pat
         assert artifact["filename"] in readme
 
 
+def test_export_goldsmith_contrastive_examples_matches_rosetta_lexical_selection(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        tag = client.post("/api/projects/default/tags", json={"name": "Pronounce"}).json()["tag"]
+        import_response = client.post(
+            "/api/projects/default/import-txt",
+            files={
+                "file": (
+                    "contrastive.txt",
+                    "Clearly, the audit shows risk. Clearly, the audit shows improvement. 审计清楚显示风险。",
+                    "text/plain",
+                )
+            },
+        )
+        assert import_response.status_code == 200
+        document_id = import_response.json()["document_id"]
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+
+        for sentence in document["sentences"][:2]:
+            token = next(token for token in sentence["tokens"] if token["text"] == "Clearly")
+            response = client.post(
+                f"/api/projects/default/sentences/{sentence['id']}/annotations",
+                json={"tag_id": tag["id"], "start_token_index": token["token_index"], "end_token_index": token["token_index"]},
+            )
+            assert response.status_code == 200
+
+        chinese_sentence = document["sentences"][2]
+        chinese_tokens = {token["text"]: token for token in chinese_sentence["tokens"]}
+        response = client.post(
+            f"/api/projects/default/sentences/{chinese_sentence['id']}/annotations",
+            json={
+                "tag_id": tag["id"],
+                "start_token_index": chinese_tokens["清"]["token_index"],
+                "end_token_index": chinese_tokens["楚"]["token_index"],
+            },
+        )
+        assert response.status_code == 200
+
+        export_response = client.get(
+            f"/api/projects/default/documents/{document_id}/export.goldsmith.contrastive-examples.jsonl?similar_k=1&boundary_k=1"
+        )
+        assert export_response.status_code == 200
+        assert export_response.headers["content-disposition"] == f'attachment; filename="{document_id}.goldsmith.contrastive-examples.jsonl"'
+        lines = [json.loads(line) for line in export_response.text.splitlines()]
+        assert len(lines) == 3
+        first = lines[0]
+        assert first["schema_version"] == "annopilot.goldsmith_contrastive_examples.v1"
+        assert first["record_type"] == "contrastive_selection"
+        assert first["query"]["text"] == "Clearly, the audit shows risk."
+        assert first["similar"][0]["role"] == "similar"
+        assert first["similar"][0]["sample"]["text"] == "Clearly, the audit shows improvement."
+        assert first["boundary"][0]["role"] == "boundary"
+        assert first["boundary"][0]["sample"]["text"] == "审计清楚显示风险。"
+        assert first["similar"][0]["score"] > first["boundary"][0]["score"]
+        assert first["query"]["spans"][0]["text"] == "Clearly"
+        assert first["query"]["spans"][0]["start"] == 0
+        assert first["meta"]["rosetta_reference"] == "contrastive_retrieval.py"
+        assert first["meta"]["similar_k"] == 1
+        assert first["meta"]["boundary_k"] == 1
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        artifact = manifest["artifacts"]["goldsmith_contrastive_examples_jsonl"]
+        assert artifact["schema_version"] == "annopilot.goldsmith_contrastive_examples.v1"
+        assert artifact["line_count"] == 3
+
+        bundle_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.bundle.zip")
+        assert bundle_response.status_code == 200
+        with ZipFile(BytesIO(bundle_response.content)) as archive:
+            assert artifact["filename"] in archive.namelist()
+            readme = archive.read("README.txt").decode("utf-8")
+        assert artifact["filename"] in readme
+
+
 def test_list_tags_persists_project_tag_schema_without_document(tmp_path: Path) -> None:
     with TestClient(
         create_app(
