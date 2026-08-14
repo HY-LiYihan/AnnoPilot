@@ -1480,6 +1480,28 @@ def test_calibration_preset_recommended_load_preserves_goldsmith_review_queue(tm
         assert review_tasks[0]["record_type"] == "human_review_task"
         assert review_tasks[0]["manual_option_id"] == "__manual__"
 
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        assert manifest["artifacts"]["goldsmith_review_queue_jsonl"]["line_count"] == queue["total"]
+        assert manifest["artifacts"]["goldsmith_review_tasks_jsonl"]["line_count"] == len(review_tasks)
+        assert manifest["artifacts"]["goldsmith_candidate_runs_jsonl"]["line_count"] == loaded["suggestions_created"]
+        assert manifest["artifacts"]["goldsmith_consistency_scores_jsonl"]["line_count"] == queue["total"]
+        assert manifest["artifacts"]["goldsmith_risk_reasons_jsonl"]["line_count"] >= 1
+
+        bundle_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.bundle.zip")
+        assert bundle_response.status_code == 200
+        with ZipFile(BytesIO(bundle_response.content)) as archive:
+            readme = archive.read("README.txt").decode("utf-8")
+            bundled_manifest = json.loads(archive.read(f"{document_id}.manifest.json").decode("utf-8"))
+            bundle_names = set(archive.namelist())
+
+        assert "Goldsmith/Rosetta review artifacts" in readme
+        assert "human review tasks with candidate options and manual fallback" in readme
+        assert manifest["artifacts"]["goldsmith_review_tasks_jsonl"]["filename"] in readme
+        assert manifest["artifacts"]["goldsmith_risk_reasons_jsonl"]["filename"] in readme
+        assert manifest["artifacts"]["goldsmith_candidate_runs_jsonl"]["filename"] in readme
+        assert bundled_manifest["content_sha256"] == manifest["content_sha256"]
+        assert {artifact["filename"] for artifact in manifest["artifacts"].values()} <= bundle_names
+
 
 def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(tmp_path: Path) -> None:
     storage = AnnotationStorage(

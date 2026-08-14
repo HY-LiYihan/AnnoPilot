@@ -292,41 +292,49 @@ class ExportService:
                     filename=f"{document_id}.goldsmith.review-queue.jsonl",
                     schema_version=self.goldsmith_review_queue_schema_version,
                     lines=goldsmith_queue_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_queue_lines),
                 ),
                 "goldsmith_human_choices_jsonl": self._artifact_summary(
                     filename=f"{document_id}.goldsmith.human-choices.jsonl",
                     schema_version=self.goldsmith_human_choices_schema_version,
                     lines=goldsmith_choices_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_choices_lines),
                 ),
                 "goldsmith_hard_examples_jsonl": self._artifact_summary(
                     filename=f"{document_id}.goldsmith.hard-examples.jsonl",
                     schema_version=self.goldsmith_hard_examples_schema_version,
                     lines=goldsmith_hard_example_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_hard_example_lines),
                 ),
                 "goldsmith_boundary_feedback_jsonl": self._artifact_summary(
                     filename=f"{document_id}.goldsmith.boundary-feedback.jsonl",
                     schema_version=self.goldsmith_boundary_feedback_schema_version,
                     lines=goldsmith_boundary_feedback_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_boundary_feedback_lines),
                 ),
                 "goldsmith_consistency_scores_jsonl": self._artifact_summary(
                     filename=f"{document_id}.goldsmith.consistency-scores.jsonl",
                     schema_version=self.goldsmith_consistency_scores_schema_version,
                     lines=goldsmith_consistency_score_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_consistency_score_lines),
                 ),
                 "goldsmith_candidate_runs_jsonl": self._artifact_summary(
                     filename=f"{document_id}.goldsmith.candidate-runs.jsonl",
                     schema_version=self.goldsmith_candidate_runs_schema_version,
                     lines=goldsmith_candidate_run_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_candidate_run_lines),
                 ),
                 "goldsmith_risk_reasons_jsonl": self._artifact_summary(
                     filename=f"{document_id}.goldsmith.risk-reasons.jsonl",
                     schema_version=self.goldsmith_risk_reasons_schema_version,
                     lines=goldsmith_risk_reason_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_risk_reason_lines),
                 ),
                 "goldsmith_review_tasks_jsonl": self._artifact_summary(
                     filename=f"{document_id}.goldsmith.review-tasks.jsonl",
                     schema_version=self.goldsmith_review_tasks_schema_version,
                     lines=goldsmith_review_task_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_review_task_lines),
                 ),
             },
         }
@@ -1570,7 +1578,16 @@ class ExportService:
     @staticmethod
     def _prodigy_bundle_readme(project_id: str, document_id: str, manifest: dict[str, Any]) -> str:
         readiness = manifest.get("prodigy_readiness", {})
+        artifacts = manifest.get("artifacts", {})
         labels_artifact = manifest.get("artifacts", {}).get("prodigy_labels_json", {})
+
+        def artifact_line(key: str, description: str) -> str:
+            artifact = artifacts.get(key, {})
+            filename = artifact.get("filename", key)
+            schema_version = artifact.get("schema_version", "unknown")
+            line_count = artifact.get("line_count", "unknown")
+            return f"- {filename}: {description} ({schema_version}, {line_count} lines)."
+
         return "\n".join(
             [
                 "AnnoPilot Prodigy Export Bundle",
@@ -1586,7 +1603,22 @@ class ExportService:
                 f"- {document_id}.prodigy.jsonl for ner.manual-style review.",
                 f"- {document_id}.prodigy.spans.jsonl for spans.manual-style review.",
                 "- The Prodigy labels JSON contains label definitions and command templates.",
+                "",
+                "Goldsmith/Rosetta review artifacts:",
+                artifact_line("goldsmith_review_tasks_jsonl", "human review tasks with candidate options and manual fallback"),
+                artifact_line("goldsmith_review_queue_jsonl", "ranked queue with risk scores and route reasons"),
+                artifact_line("goldsmith_risk_reasons_jsonl", "aggregated risk reason summaries for review planning"),
+                artifact_line("goldsmith_candidate_runs_jsonl", "Rosetta-style candidate span records"),
+                artifact_line("goldsmith_consistency_scores_jsonl", "sentence-level agreement and route diagnostics"),
+                artifact_line("goldsmith_boundary_feedback_jsonl", "boundary feedback from hard examples and LLM review"),
+                artifact_line("goldsmith_hard_examples_jsonl", "human-disagreed or risky examples for guideline refinement"),
+                artifact_line("goldsmith_human_choices_jsonl", "accepted/rejected human decisions for calibration"),
+                "",
+                "Audit and reproducibility:",
+                artifact_line("events_jsonl", "project event log for rebuild/audit"),
+                artifact_line("tag_schema_json", "label schema definitions and lexical examples"),
                 "- The manifest file records artifact hashes, readiness blockers, and audit state.",
+                "- If readiness is needs_attention, resolve pending suggestions or incomplete sentences before treating exports as final gold.",
                 "",
             ]
         )
@@ -1636,6 +1668,23 @@ class ExportService:
         if content_sha256 is not None:
             summary["content_sha256"] = content_sha256
         return summary
+
+    @classmethod
+    def _jsonl_content_sha256(cls, lines: list[str]) -> str:
+        records = [cls._without_volatile_export_fields(payload) for payload in cls._jsonl_payloads(lines)]
+        return cls._payload_sha256({"records": records})
+
+    @classmethod
+    def _without_volatile_export_fields(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: cls._without_volatile_export_fields(item)
+                for key, item in value.items()
+                if key != "generated_at"
+            }
+        if isinstance(value, list):
+            return [cls._without_volatile_export_fields(item) for item in value]
+        return value
 
     @staticmethod
     def _payload_sha256(payload: dict[str, Any]) -> str:
