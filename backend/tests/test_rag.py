@@ -47,9 +47,32 @@ def test_english_multi_word_cue_keeps_required_space() -> None:
     assert candidates[0].match_key == "of course"
 
 
+def test_fullwidth_numeric_punctuation_normalizes_for_lexical_match() -> None:
+    tokens = [
+        {"token_index": 0, "text": "3.5％", "start_char": 10, "end_char": 14},
+    ]
+
+    candidates = generate_candidate_spans(
+        tokens,
+        {"metric": ["3.5%"]},
+        blocked_ranges=[],
+        limit=4,
+        min_confidence=0.98,
+    )
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.text == "3.5％"
+    assert candidate.start_char == 10
+    assert candidate.end_char == 14
+    assert candidate.source == "lexical_exact"
+    assert candidate.match_key == "3.5%"
+    assert candidate.evidence_match_key == "3.5%"
+
+
 def test_match_normalization_documents_cjk_inner_whitespace_step() -> None:
     assert match_normalization_config() == {
-        "schema_version": "annopilot.match_normalization.v2",
-        "steps": ["strip", "collapse_whitespace", "casefold", "remove_cjk_inner_whitespace"],
+        "schema_version": "annopilot.match_normalization.v3",
+        "steps": ["strip", "unicode_nfkc", "collapse_whitespace", "casefold", "remove_cjk_inner_whitespace"],
         "preserves_source_text": True,
     }
