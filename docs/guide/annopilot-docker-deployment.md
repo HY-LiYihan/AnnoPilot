@@ -237,8 +237,8 @@ server {
 3. GitHub Actions 构建 `annopilot-api` 和 `annopilot-web` 镜像，并推送到 GHCR。
 4. GitHub Actions 用共享 secret 对 payload 做 HMAC-SHA256 签名。
 5. GitHub Actions POST 到服务器 webhook：`/deploy/annopilot`。
-6. 服务器 webhook 验签、校验 repo/ref/timestamp，然后执行 `/opt/annopilot/bin/deploy.sh`。
-7. 部署脚本加锁，执行 `docker compose pull && docker compose up -d --remove-orphans`，最后检查 `/api/health`。
+6. 服务器 webhook 同步完成验签、repo/ref/timestamp 校验和部署互斥检查，然后快速返回 `202 Accepted`。
+7. webhook 后台线程继续执行 `/opt/annopilot/bin/deploy.sh`；部署脚本加锁，执行 `docker compose pull && docker compose up -d --remove-orphans`，最后检查 `/api/health`。
 
 实际 workflow 文件：`.github/workflows/deploy-annopilot.yml`。
 
@@ -311,17 +311,15 @@ ANNOPILOT_ALLOWED_REF=main
 ANNOPILOT_DEPLOY_COMMAND=/opt/annopilot/bin/deploy.sh
 ANNOPILOT_DEPLOY_MODE=image
 ANNOPILOT_COMPOSE_FILE=/opt/annopilot/compose.yml
-ANNOPILOT_HEALTH_URL=http://127.0.0.1:18501/api/health
+ANNOPILOT_HEALTH_URL=http://127.0.0.1:8888/api/health
 ```
 
-灰度阶段建议同时创建 `/opt/annopilot/.env`：
+同时创建 `/opt/annopilot/.env`：
 
 ```text
 ANNOPILOT_IMAGE_TAG=main
-ANNOPILOT_WEB_PORT=18501
+ANNOPILOT_WEB_PORT=8888
 ```
-
-等新服务确认可用后，再把 `ANNOPILOT_WEB_PORT` 改回 `8501` 并停止旧 `annopilot-app`。
 
 安装 systemd service：
 
@@ -462,10 +460,10 @@ docker volume prune -f
 3. 在服务器创建 `/opt/annopilot/data` 和 `/opt/annopilot/backups`。
 4. 备份当前 `/opt/annopilot/runtime` 和旧 `annopilot-app` 使用的数据目录。
 5. 写入 `/opt/annopilot/compose.yml`、`/opt/annopilot/bin/deploy.sh`、`/opt/annopilot/bin/webhook.py` 和 `/opt/annopilot/webhook.env`。
-6. 先用非冲突端口试运行，例如 `18501:80`。
+6. 使用当前约定端口试运行，例如 `8888:80`。
 7. 启动 `annopilot-webhook.service`，并验证 `/healthz` 与签名 POST。
 8. 验证 `/api/health`、前端页面、TXT import、annotation、export JSONL。
-9. 停止旧 `annopilot-app`，把新 `annopilot-web` 端口切到 `8501:80`。
+9. 确认宿主机 `8888` 上的 `annopilot-web` 和 `annopilot-api` 正常。
 10. push 到 `main`，确认 `CI` 成功后 `Deploy AnnoPilot` 自动触发服务器 webhook。
 
 当前旧容器使用的 `ANNOPILOT_RUNTIME_DIR=/opt/annopilot/runtime` 不等同于新 AnnoPilot 的 `/data/runtime` 和 `/data/projects` 结构。迁移旧数据前需要先确认旧 runtime 目录中的文件格式，不建议直接覆盖新 `/opt/annopilot/data`。

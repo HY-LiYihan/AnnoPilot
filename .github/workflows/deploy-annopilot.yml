@@ -96,8 +96,11 @@ jobs:
           cat "$response_file"
 
           case "$status_code" in
-            200|202|204)
-              echo "Deployment webhook accepted."
+            200|204)
+              echo "Deployment webhook completed."
+              ;;
+            202)
+              echo "Deployment webhook accepted; server deployment is running in the background."
               ;;
             409)
               echo "::notice::Deployment webhook reports another deploy is already running; images were pushed and the server lock is active."

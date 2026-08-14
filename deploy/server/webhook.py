@@ -31,6 +31,62 @@ def tail(text: str, limit: int = 12000) -> str:
     return text[-limit:]
 
 
+def log(message: str) -> None:
+    print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] {message}", flush=True)
+
+
+def run_deploy_command(payload: Dict[str, Any]) -> subprocess.CompletedProcess:
+    command = shlex.split(env("ANNOPILOT_DEPLOY_COMMAND", "/opt/annopilot/bin/deploy.sh"))
+    if not command:
+        raise ValueError("empty ANNOPILOT_DEPLOY_COMMAND")
+
+    deploy_env = os.environ.copy()
+    deploy_env["ANNOPILOT_DEPLOY_MODE"] = str(payload.get("mode", env("ANNOPILOT_DEPLOY_MODE", "image")))
+    deploy_env["ANNOPILOT_DEPLOY_SHA"] = str(payload.get("sha", ""))
+    deploy_env["ANNOPILOT_DEPLOY_REF"] = str(payload.get("ref", ""))
+    deploy_env["ANNOPILOT_DEPLOY_REPOSITORY"] = str(payload.get("repository", ""))
+
+    timeout = int(env("ANNOPILOT_DEPLOY_TIMEOUT_SECONDS", "900"))
+    return subprocess.run(
+        command,
+        env=deploy_env,
+        universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def run_deploy_job(payload: Dict[str, Any]) -> None:
+    sha = str(payload.get("sha", "")) or "unknown"
+    ref = str(payload.get("ref", "")) or "unknown"
+    mode = str(payload.get("mode", "image"))
+    log(f"deployment job started mode={mode} sha={sha} ref={ref}")
+    try:
+        result = run_deploy_command(payload)
+    except subprocess.TimeoutExpired as exc:
+        log(
+            "deployment job timed out "
+            f"sha={sha} stdout={tail(str(exc.stdout or ''))!r} stderr={tail(str(exc.stderr or ''))!r}"
+        )
+        return
+    except Exception as exc:  # noqa: BLE001 - background job must log and release the lock.
+        log(f"deployment job failed before completion sha={sha} error={exc}")
+        return
+    finally:
+        DEPLOY_LOCK.release()
+
+    if result.stdout:
+        log(f"deployment stdout sha={sha}:\n{tail(result.stdout)}")
+    if result.stderr:
+        log(f"deployment stderr sha={sha}:\n{tail(result.stderr)}")
+    if result.returncode == 0:
+        log(f"deployment job completed sha={sha}")
+    else:
+        log(f"deployment job failed sha={sha} returncode={result.returncode}")
+
+
 class DeployHandler(BaseHTTPRequestHandler):
     server_version = "AnnoPilotDeployWebhook/1.0"
 
@@ -60,34 +116,22 @@ class DeployHandler(BaseHTTPRequestHandler):
             self.respond(409, {"error": "deployment_already_running"}, "error")
             return
 
+        thread = threading.Thread(target=run_deploy_job, args=(dict(payload),), daemon=True)
         try:
-            result = self.run_deploy(payload)
-        except subprocess.TimeoutExpired as exc:
-            self.respond(
-                504,
-                {
-                    "error": "deployment_timeout",
-                    "stdout": tail(str(exc.stdout or "")),
-                    "stderr": tail(str(exc.stderr or "")),
-                },
-                "error",
-            )
-            return
-        except Exception as exc:  # noqa: BLE001 - convert webhook runtime failures to JSON.
+            thread.start()
+        except Exception as exc:  # noqa: BLE001 - release the reservation if thread startup fails.
+            DEPLOY_LOCK.release()
             self.respond(500, {"error": str(exc)}, "error")
             return
-        finally:
-            DEPLOY_LOCK.release()
 
         response = {
-            "returncode": result.returncode,
-            "stdout": tail(result.stdout),
-            "stderr": tail(result.stderr),
+            "accepted": True,
+            "mode": str(payload.get("mode", "image")),
+            "sha": str(payload.get("sha", "")),
+            "ref": str(payload.get("ref", "")),
+            "message": "deployment_started",
         }
-        if result.returncode == 0:
-            self.respond(200, response, "ok")
-        else:
-            self.respond(500, response, "error")
+        self.respond(202, response, "ok")
 
     def read_body(self) -> bytes:
         length = int(self.headers.get("Content-Length", "0"))
@@ -133,28 +177,6 @@ class DeployHandler(BaseHTTPRequestHandler):
             if issued_at <= 0 or issued_at > now + 60 or now - issued_at > max_age:
                 raise ValueError("payload timestamp is outside the allowed window")
 
-    def run_deploy(self, payload: Dict[str, Any]) -> subprocess.CompletedProcess:
-        command = shlex.split(env("ANNOPILOT_DEPLOY_COMMAND", "/opt/annopilot/bin/deploy.sh"))
-        if not command:
-            raise ValueError("empty ANNOPILOT_DEPLOY_COMMAND")
-
-        deploy_env = os.environ.copy()
-        deploy_env["ANNOPILOT_DEPLOY_MODE"] = str(payload.get("mode", env("ANNOPILOT_DEPLOY_MODE", "image")))
-        deploy_env["ANNOPILOT_DEPLOY_SHA"] = str(payload.get("sha", ""))
-        deploy_env["ANNOPILOT_DEPLOY_REF"] = str(payload.get("ref", ""))
-        deploy_env["ANNOPILOT_DEPLOY_REPOSITORY"] = str(payload.get("repository", ""))
-
-        timeout = int(env("ANNOPILOT_DEPLOY_TIMEOUT_SECONDS", "900"))
-        return subprocess.run(
-            command,
-            env=deploy_env,
-            universal_newlines=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout,
-            check=False,
-        )
-
     def respond(self, status_code: int, payload: Dict[str, Any], status: str) -> None:
         body = json_bytes(payload, status)
         self.send_response(status_code)
@@ -164,7 +186,7 @@ class DeployHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib hook name.
-        print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] {self.client_address[0]} {format % args}", flush=True)
+        log(f"{self.client_address[0]} {format % args}")
 
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
