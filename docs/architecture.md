@@ -259,7 +259,7 @@ healthcheck: GET /api/health
 短期优先级：
 
 - 继续把 `storage.py` 按 repository/service 拆分：reset 和 annotation import 仍可继续迁出，减少 facade 膨胀。
-- 为 `import-annotations-jsonl` 增加前端入口和测试覆盖，形成 Prodigy round-trip workflow。
+- 继续加强 `import-annotations-jsonl` 的混合中英 offset round-trip 覆盖，确保外部 Prodigy / AnnoPilot JSONL 审阅结果导回后不会产生 span 漂移。
 - 给 OpenAPI schema 生成 TypeScript types，替代长期手写 `src/types/domain.ts`。
 - 将 health / audit / rebuild preview 做成更明确的 diagnostics panel，方便部署后快速定位 JSONL 或 LLM 配置问题。
 

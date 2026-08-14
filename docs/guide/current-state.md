@@ -271,7 +271,7 @@ Backend 已有 pytest 覆盖：
 
 - 增加 project management，而不是只使用 `default` project。
 - 将 tag schema 从当前 CRUD 演进为更完整的 project-level guideline / label setup。
-- 给 annotations JSONL 导入补 frontend 入口，形成 import/export round-trip。
+- 持续补强 annotations JSONL 导入/导出的 round-trip 回归测试，重点覆盖混合中英 offset、外部 Prodigy 审阅导回和重复导入去漂移。
 - 增加 calibration runs 和 batch annotation runs。
 - 增加 API OpenAPI type generation，减少 frontend 手写 payload types。
 - 将当前 sentence window 进一步演进为虚拟滚动和更细的预取策略。

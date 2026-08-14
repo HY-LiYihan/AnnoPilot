@@ -868,6 +868,7 @@ def test_import_prodigy_jsonl_updates_annotations_and_answers(tmp_path: Path) ->
         created_event = next(event for event in events if event["type"] == "annotation.created")
         assert created_event["source"] == "prodigy_import"
         assert first_record_result["created_annotation_ids"] == [created_event["annotation_id"]]
+
         assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
         import_history_response = client.get(f"/api/projects/default/annotation-imports?document_id={document_id}")
@@ -902,6 +903,97 @@ def test_import_prodigy_jsonl_updates_annotations_and_answers(tmp_path: Path) ->
     rebuilt_document = rebuilt_storage.get_document("default", document_id)
     assert rebuilt_document["metrics"] == updated_document["metrics"]
     assert rebuilt_document["sentences"] == updated_document["sentences"]
+
+
+def test_import_prodigy_jsonl_round_trips_mixed_language_char_offsets(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("mixed.txt", "AI agent 赞赏快速响应，也批评 high cost.\n第二句保留。", "text/plain")},
+        )
+        assert response.status_code == 200
+        document_id = response.json()["document_id"]
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        sentence = document["sentences"][0]
+        sentence_text = sentence["text"]
+        expected_spans = [
+            {
+                "start": sentence_text.index("AI"),
+                "end": sentence_text.index("agent") + len("agent"),
+                "label": "appreciation",
+            },
+            {
+                "start": sentence_text.index("快速响应"),
+                "end": sentence_text.index("快速响应") + len("快速响应"),
+                "label": "appreciation",
+            },
+            {
+                "start": sentence_text.index("high cost"),
+                "end": sentence_text.index("high cost") + len("high cost"),
+                "label": "criticism",
+            },
+        ]
+        import_record = {
+            "text": sentence_text,
+            "spans": expected_spans,
+            "answer": "accept",
+            "_view_id": "ner_manual",
+            "meta": {"sentence_index": sentence["index"], "source": "mixed-roundtrip-fixture"},
+        }
+        import_payload = json.dumps(import_record, ensure_ascii=False) + "\n"
+
+        import_response = client.post(
+            f"/api/projects/default/documents/{document_id}/import-annotations-jsonl",
+            files={"file": ("mixed.prodigy.jsonl", import_payload, "application/x-ndjson")},
+        )
+        assert import_response.status_code == 200
+        imported = import_response.json()
+        assert imported["matched_count"] == 1
+        assert imported["created_tag_count"] == 2
+        assert imported["created_annotation_count"] == 3
+
+        exported_once = [
+            json.loads(line)
+            for line in client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl").text.splitlines()
+        ]
+        assert exported_once[0]["text"] == sentence_text
+        exported_once_spans = [
+            {"start": span["start"], "end": span["end"], "label": span["label"]}
+            for span in exported_once[0]["spans"]
+        ]
+        assert sorted(exported_once_spans, key=lambda span: (span["start"], span["label"])) == sorted(
+            expected_spans,
+            key=lambda span: (span["start"], span["label"]),
+        )
+        assert {source["source"] for source in exported_once[0]["meta"]["annotation_sources"]} == {"prodigy_import"}
+
+        reimport_payload = "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in exported_once)
+        reimport_response = client.post(
+            f"/api/projects/default/documents/{document_id}/import-annotations-jsonl",
+            files={"file": ("mixed-roundtrip.prodigy.jsonl", reimport_payload, "application/x-ndjson")},
+        )
+        assert reimport_response.status_code == 200
+        reimported = reimport_response.json()
+        assert reimported["created_annotation_count"] == 3
+        assert reimported["deleted_annotation_count"] == 3
+
+        exported_twice = [
+            json.loads(line)
+            for line in client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl").text.splitlines()
+        ]
+        exported_twice_spans = [
+            {"start": span["start"], "end": span["end"], "label": span["label"]}
+            for span in exported_twice[0]["spans"]
+        ]
+        assert sorted(exported_twice_spans, key=lambda span: (span["start"], span["label"])) == sorted(
+            expected_spans,
+            key=lambda span: (span["start"], span["label"]),
+        )
+        assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
 
 def test_list_tags_persists_project_tag_schema_without_document(tmp_path: Path) -> None:
