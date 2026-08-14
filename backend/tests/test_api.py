@@ -1926,11 +1926,11 @@ def test_generate_accept_and_reject_suggestions(tmp_path: Path) -> None:
         assert len(runs[0]["config"]["tag_schema_sha256"]) == 64
         assert len(runs[0]["config"]["examples_sha256"]) == 64
         assert runs[0]["config"]["match_normalization"] == {
-            "schema_version": "annopilot.match_normalization.v1",
-            "steps": ["strip", "collapse_whitespace", "casefold"],
+            "schema_version": "annopilot.match_normalization.v2",
+            "steps": ["strip", "collapse_whitespace", "casefold", "remove_cjk_inner_whitespace"],
             "preserves_source_text": True,
         }
-        assert runs[0]["config"]["retrieval"] == "offset_gap_span_text|casefold_whitespace_normalized|lexical_exact|lexical_contains|char_ngram"
+        assert runs[0]["config"]["retrieval"] == "offset_gap_span_text|casefold_whitespace_cjk_inner_space_normalized|lexical_exact|lexical_contains|char_ngram"
         assert runs[0]["config"]["examples_match_key_count"] == runs[0]["config"]["example_count"]
         noun_id = labels["名词"]["id"]
         assert "小猫" in runs[0]["config"]["examples_match_keys_by_tag"][noun_id]

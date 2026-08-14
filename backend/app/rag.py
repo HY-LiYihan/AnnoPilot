@@ -12,14 +12,14 @@ DEFAULT_LEXICAL_EXAMPLES = {
 
 MAX_SPAN_TOKENS = 6
 MIN_FUZZY_SCORE = 0.68
-CHARACTER_RAG_RETRIEVAL = "offset_gap_span_text|casefold_whitespace_normalized|lexical_exact|lexical_contains|char_ngram"
-MATCH_NORMALIZATION_SCHEMA_VERSION = "annopilot.match_normalization.v1"
+CHARACTER_RAG_RETRIEVAL = "offset_gap_span_text|casefold_whitespace_cjk_inner_space_normalized|lexical_exact|lexical_contains|char_ngram"
+MATCH_NORMALIZATION_SCHEMA_VERSION = "annopilot.match_normalization.v2"
 
 
 def match_normalization_config() -> dict[str, Any]:
     return {
         "schema_version": MATCH_NORMALIZATION_SCHEMA_VERSION,
-        "steps": ["strip", "collapse_whitespace", "casefold"],
+        "steps": ["strip", "collapse_whitespace", "casefold", "remove_cjk_inner_whitespace"],
         "preserves_source_text": True,
     }
 
@@ -158,7 +158,23 @@ def _is_negative_example(text: str, tag_id: str, negative_examples_by_tag: dict[
 
 
 def _normalize_match_text(value: str) -> str:
-    return " ".join(str(value).strip().split()).casefold()
+    collapsed = " ".join(str(value).strip().split()).casefold()
+    return _remove_cjk_inner_whitespace(collapsed)
+
+
+def _remove_cjk_inner_whitespace(text: str) -> str:
+    normalized: list[str] = []
+    for index, char in enumerate(text):
+        if (
+            char == " "
+            and index > 0
+            and index + 1 < len(text)
+            and _is_cjk(text[index - 1])
+            and _is_cjk(text[index + 1])
+        ):
+            continue
+        normalized.append(char)
+    return "".join(normalized)
 
 
 def _char_ngram_jaccard(left: str, right: str) -> float:

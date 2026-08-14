@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 
 SENTENCE_ENDINGS = set("。！？?!")
+SENTENCE_TRAILING_CLOSERS = set("\"'”’)]}〉》」』】）")
 
 
 @dataclass(frozen=True)
@@ -36,15 +37,19 @@ def split_sentences(text: str) -> list[SentenceSpan]:
     while i < len(normalized):
         char = normalized[i]
         boundary_end: int | None = None
+        next_start: int | None = None
 
         if char == "\n":
             boundary_end = i
             while i + 1 < len(normalized) and normalized[i + 1] == "\n":
                 i += 1
+            next_start = i + 1
         elif char in SENTENCE_ENDINGS:
-            boundary_end = i + 1
+            boundary_end = _include_trailing_closers(normalized, i + 1)
+            next_start = boundary_end
         elif char == "." and _period_ends_sentence(normalized, i):
-            boundary_end = i + 1
+            boundary_end = _include_trailing_closers(normalized, i + 1)
+            next_start = boundary_end
 
         if boundary_end is not None:
             span = _trimmed_span(normalized, start, boundary_end)
@@ -52,7 +57,9 @@ def split_sentences(text: str) -> list[SentenceSpan]:
                 trimmed_start, trimmed_end, sentence_text = span
                 sentences.append(SentenceSpan(index=index, text=sentence_text, start=trimmed_start, end=trimmed_end))
                 index += 1
-            start = i + 1
+            start = next_start if next_start is not None else i + 1
+            i = start
+            continue
         i += 1
 
     span = _trimmed_span(normalized, start, len(normalized))
@@ -102,7 +109,13 @@ def _period_ends_sentence(text: str, index: int) -> bool:
     next_char = text[index + 1] if index + 1 < len(text) else ""
     if previous_char.isdigit() and next_char.isdigit():
         return False
-    return next_char == "" or next_char.isspace() or next_char in '"\'”’)]}>'
+    return next_char == "" or next_char.isspace() or next_char in SENTENCE_TRAILING_CLOSERS
+
+
+def _include_trailing_closers(text: str, index: int) -> int:
+    while index < len(text) and text[index] in SENTENCE_TRAILING_CLOSERS:
+        index += 1
+    return index
 
 
 def _trimmed_span(text: str, start: int, end: int) -> tuple[int, int, str] | None:

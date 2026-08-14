@@ -41,3 +41,18 @@ def test_multiline_text_uses_newlines_as_boundaries() -> None:
 
 
     assert [sentence.text for sentence in sentences] == ["First line", "Second line"]
+
+
+def test_sentence_splitting_keeps_chinese_closing_quote_with_sentence() -> None:
+    sentences = split_sentences("他说：“可能会下雨。”然后他离开。")
+
+    assert [sentence.text for sentence in sentences] == ["他说：“可能会下雨。”", "然后他离开。"]
+    assert sentences[0].start == 0
+    assert sentences[0].end == len("他说：“可能会下雨。”")
+    assert sentences[1].start == len("他说：“可能会下雨。”")
+
+
+def test_sentence_splitting_keeps_english_closing_quote_with_sentence() -> None:
+    sentences = split_sentences('She said, "It may work." Then left.')
+
+    assert [sentence.text for sentence in sentences] == ['She said, "It may work."', "Then left."]
