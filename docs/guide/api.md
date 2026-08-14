@@ -42,8 +42,8 @@ GET  /api/projects/{project_id}/sample-presets
 POST /api/projects/{project_id}/sample-presets/{preset_id}/load
 ```
 
-- `sample-presets` 返回后端内置的轻量样例索引；当前包含通用、新闻/政策、学术/方法、平台复核、客服反馈、合规/法律、社交舆情、财报/投资者沟通、医疗/科学传播、AI 教育、气候/能源，以及 Goldsmith/Rosetta 校准场景十二类 bilingual Engagement 样例。
-- `load` 会导入对应 label schema、导入 TXT 文档，并默认运行一次高置信 Character RAG suggestions；Goldsmith/Rosetta 校准样例会改用 `calibration_seed` 受控候选，保留重叠 span 和 label/boundary 分歧，便于测试 review queue 与 consistency/candidate-runs 导出。请求可设置 `auto_accept_suggestions=true` 与 `complete_sentences=true`，用于内置 demo 一键接受高置信候选并完成没有剩余 pending suggestion 的句子；响应会返回 `auto_accepted`、`auto_completed` 和对应 id 列表。
+- `sample-presets` 返回后端内置的轻量样例索引；当前包含通用、新闻/政策、学术/方法、平台复核、客服反馈、合规/法律、社交舆情、财报/投资者沟通、医疗/科学传播、AI 教育、气候/能源，以及 Goldsmith/Rosetta 校准场景十二类 bilingual Engagement 样例。每个 preset 还返回 `auto_accept_on_load` 和 `complete_sentences_on_load`，供 UI 按场景选择快速标注或保留 review 候选。
+- `load` 会导入对应 label schema、导入 TXT 文档，并默认运行一次高置信 Character RAG suggestions；Goldsmith/Rosetta 校准样例会改用 `calibration_seed` 受控候选，保留重叠 span 和 label/boundary 分歧，便于测试 review queue 与 consistency/candidate-runs 导出。请求可设置 `auto_accept_suggestions=true` 与 `complete_sentences=true`，用于普通内置 demo 一键接受高置信候选并完成没有剩余 pending suggestion 的句子；calibration preset 的推荐策略会关闭该自动接受，以保留 Goldsmith/Rosetta review queue。响应会返回 `auto_accepted`、`auto_completed` 和对应 id 列表。
 - 该接口不改变现有手动 `tags/schema/import`、`import-txt` 或 `suggestions/run` API，只是把演示/测试工作流合成一个快捷入口。
 
 ## Tags

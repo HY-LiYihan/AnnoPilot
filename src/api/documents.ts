@@ -55,14 +55,23 @@ export async function fetchSamplePresets(projectId: string): Promise<SamplePrese
   return parseJsonResponse<SamplePresetListPayload>(response)
 }
 
-export async function loadSamplePreset(projectId: string, presetId: string): Promise<LoadSamplePresetResponse> {
+type LoadSamplePresetOptions = {
+  autoAcceptSuggestions?: boolean
+  completeSentences?: boolean
+}
+
+export async function loadSamplePreset(
+  projectId: string,
+  presetId: string,
+  options: LoadSamplePresetOptions = {},
+): Promise<LoadSamplePresetResponse> {
   const response = await fetch(`/api/projects/${projectId}/sample-presets/${presetId}/load`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       generate_suggestions: true,
-      auto_accept_suggestions: true,
-      complete_sentences: true,
+      auto_accept_suggestions: Boolean(options.autoAcceptSuggestions),
+      complete_sentences: Boolean(options.completeSentences),
     }),
   })
   return parseJsonResponse<LoadSamplePresetResponse>(response)

@@ -410,7 +410,11 @@ export function useDocumentReader() {
     lastAnnotationImport.value = null
     resetAnnotationActionState()
     try {
-      const loaded = await loadSamplePresetApi(PROJECT_ID, presetId)
+      const preset = samplePresets.value.find((item) => item.id === presetId)
+      const loaded = await loadSamplePresetApi(PROJECT_ID, presetId, {
+        autoAcceptSuggestions: preset?.auto_accept_on_load ?? true,
+        completeSentences: preset?.complete_sentences_on_load ?? true,
+      })
       setTags(loaded.tags, 'first')
       selection.clearSelection()
       window.localStorage.setItem(ACTIVE_DOCUMENT_KEY, loaded.document_id)

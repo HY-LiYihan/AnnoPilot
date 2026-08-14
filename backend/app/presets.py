@@ -282,6 +282,8 @@ class SamplePreset:
     default_limit_per_sentence: int = 10
     default_min_confidence: float = 0.98
     calibration_candidates: tuple[CalibrationCandidate, ...] = ()
+    auto_accept_on_load: bool = True
+    complete_sentences_on_load: bool = True
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -294,6 +296,8 @@ class SamplePreset:
             "default_limit_per_sentence": self.default_limit_per_sentence,
             "default_min_confidence": self.default_min_confidence,
             "calibration_candidate_count": len(self.calibration_candidates),
+            "auto_accept_on_load": self.auto_accept_on_load,
+            "complete_sentences_on_load": self.complete_sentences_on_load,
         }
 
 
@@ -408,6 +412,8 @@ BUILTIN_SAMPLE_PRESETS = {
         default_limit_per_sentence=20,
         default_min_confidence=0.75,
         calibration_candidates=APPRAISAL_ENGAGEMENT_CALIBRATION_CANDIDATES,
+        auto_accept_on_load=False,
+        complete_sentences_on_load=False,
     ),
 }
 

@@ -1306,6 +1306,11 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         ]
         assert [preset["id"] for preset in presets] == expected_preset_ids
         assert all(preset["tag_count"] == 9 for preset in presets)
+        preset_by_id = {preset["id"]: preset for preset in presets}
+        assert preset_by_id["appraisal-engagement-cn-en"]["auto_accept_on_load"] is True
+        assert preset_by_id["appraisal-engagement-cn-en"]["complete_sentences_on_load"] is True
+        assert preset_by_id["appraisal-engagement-calibration-cn-en"]["auto_accept_on_load"] is False
+        assert preset_by_id["appraisal-engagement-calibration-cn-en"]["complete_sentences_on_load"] is False
 
         loaded_by_id = {}
         for preset_id in expected_preset_ids:
@@ -1429,6 +1434,51 @@ def test_load_appraisal_preset_can_auto_accept_and_complete_for_prodigy(tmp_path
             if event["type"] == "sentence.completed" and event.get("source") == "auto_accept_suggestions"
         )
         assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
+
+
+def test_calibration_preset_recommended_load_preserves_goldsmith_review_queue(tmp_path: Path) -> None:
+    with TestClient(
+        create_app(
+            AnnotationStorage(
+                database_path=tmp_path / "runtime" / "annopilot.sqlite",
+                data_root=tmp_path / "projects",
+            )
+        )
+    ) as client:
+        presets = client.get("/api/projects/default/sample-presets").json()["presets"]
+        calibration_preset = next(preset for preset in presets if preset["id"] == "appraisal-engagement-calibration-cn-en")
+        load_response = client.post(
+            "/api/projects/default/sample-presets/appraisal-engagement-calibration-cn-en/load",
+            json={
+                "generate_suggestions": True,
+                "auto_accept_suggestions": calibration_preset["auto_accept_on_load"],
+                "complete_sentences": calibration_preset["complete_sentences_on_load"],
+            },
+        )
+        assert load_response.status_code == 200
+        loaded = load_response.json()
+        document_id = loaded["document_id"]
+        assert loaded["suggestions_created"] == loaded["preset"]["calibration_candidate_count"]
+        assert loaded["auto_accepted"] == 0
+        assert loaded["auto_completed"] == 0
+
+        summary = client.get(f"/api/projects/default/documents/{document_id}/summary").json()
+        assert summary["metrics"]["suggestion_count"] == loaded["suggestions_created"]
+        assert summary["metrics"]["annotation_count"] == 0
+        assert summary["metrics"]["completed_count"] == 0
+
+        queue = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith&limit=20").json()
+        assert queue["total"] == 8
+        assert all(item["review_route"] == "risk" for item in queue["items"])
+        assert any("candidate_conflict" in item["risk_reason_codes"] for item in queue["items"])
+
+        review_tasks = [
+            json.loads(line)
+            for line in client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.review-tasks.jsonl").text.splitlines()
+        ]
+        assert len(review_tasks) == queue["total"]
+        assert review_tasks[0]["record_type"] == "human_review_task"
+        assert review_tasks[0]["manual_option_id"] == "__manual__"
 
 
 def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(tmp_path: Path) -> None:

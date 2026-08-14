@@ -370,6 +370,8 @@ class SamplePresetResponse(BaseModel):
     default_limit_per_sentence: int
     default_min_confidence: float
     calibration_candidate_count: int = 0
+    auto_accept_on_load: bool = True
+    complete_sentences_on_load: bool = True
 
 
 class SamplePresetListResponse(BaseModel):

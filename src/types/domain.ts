@@ -322,6 +322,8 @@ export type SamplePreset = {
   default_limit_per_sentence: number
   default_min_confidence: number
   calibration_candidate_count: number
+  auto_accept_on_load: boolean
+  complete_sentences_on_load: boolean
 }
 
 export type SamplePresetListPayload = {
