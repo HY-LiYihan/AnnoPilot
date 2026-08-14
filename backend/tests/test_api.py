@@ -1317,7 +1317,10 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
 
         loaded_by_id = {}
         for preset_id in expected_preset_ids:
-            load_response = client.post(f"/api/projects/default/sample-presets/{preset_id}/load")
+            load_response = client.post(
+                f"/api/projects/default/sample-presets/{preset_id}/load",
+                json={"auto_accept_suggestions": False, "complete_sentences": False},
+            )
             assert load_response.status_code == 200
             loaded_preset = load_response.json()
             loaded_by_id[preset_id] = loaded_preset
@@ -1398,14 +1401,7 @@ def test_load_appraisal_preset_can_auto_accept_and_complete_for_prodigy(tmp_path
             )
         )
     ) as client:
-        load_response = client.post(
-            "/api/projects/default/sample-presets/appraisal-engagement-product-safety-cn-en/load",
-            json={
-                "generate_suggestions": True,
-                "auto_accept_suggestions": True,
-                "complete_sentences": True,
-            },
-        )
+        load_response = client.post("/api/projects/default/sample-presets/appraisal-engagement-product-safety-cn-en/load")
         assert load_response.status_code == 200
         loaded = load_response.json()
         document_id = loaded["document_id"]
@@ -1585,7 +1581,10 @@ def test_appraisal_engagement_review_context_includes_guidelines(tmp_path: Path)
         data_root=tmp_path / "projects",
     )
     with TestClient(create_app(storage)) as client:
-        load_response = client.post("/api/projects/default/sample-presets/appraisal-engagement-cn-en/load")
+        load_response = client.post(
+            "/api/projects/default/sample-presets/appraisal-engagement-cn-en/load",
+            json={"auto_accept_suggestions": False, "complete_sentences": False},
+        )
         assert load_response.status_code == 200
         document_id = load_response.json()["document_id"]
         queue = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith").json()
@@ -1611,7 +1610,10 @@ def test_appraisal_engagement_human_review_session_exports_prodigy_and_goldsmith
         data_root=tmp_path / "projects",
     )
     with TestClient(create_app(storage, suggestion_reviewer=FakeSuggestionReviewer())) as client:
-        load_response = client.post("/api/projects/default/sample-presets/appraisal-engagement-finance-investor-cn-en/load")
+        load_response = client.post(
+            "/api/projects/default/sample-presets/appraisal-engagement-finance-investor-cn-en/load",
+            json={"auto_accept_suggestions": False, "complete_sentences": False},
+        )
         assert load_response.status_code == 200
         loaded = load_response.json()
         document_id = loaded["document_id"]

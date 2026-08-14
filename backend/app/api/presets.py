@@ -31,6 +31,10 @@ def load_preset(
         raise HTTPException(status_code=404, detail="Sample preset not found.")
 
     request = payload or LoadSamplePresetRequest()
+    should_auto_accept = preset.auto_accept_on_load if request.auto_accept_suggestions is None else request.auto_accept_suggestions
+    should_complete_sentences = (
+        preset.complete_sentences_on_load if request.complete_sentences is None else request.complete_sentences
+    )
     try:
         storage.import_tag_schema(project_id, preset.tag_schema)
         imported = storage.import_txt(project_id, preset.filename, preset.text.encode("utf-8"))
@@ -79,7 +83,7 @@ def load_preset(
                 "accepted_suggestion_ids": [],
                 "completed_sentence_ids": [],
             }
-            if request.auto_accept_suggestions and generated["suggestions_created"]:
+            if should_auto_accept and generated["suggestions_created"]:
                 accept_floor = request.auto_accept_min_confidence
                 if accept_floor is None:
                     accept_floor = max(confidence_floor, 0.9)
@@ -87,7 +91,7 @@ def load_preset(
                     project_id,
                     imported["document_id"],
                     accept_floor,
-                    complete_sentences=request.complete_sentences,
+                    complete_sentences=should_complete_sentences,
                 )
             suggestion_result = {
                 "suggestions_created": generated["suggestions_created"],

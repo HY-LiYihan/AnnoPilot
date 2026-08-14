@@ -382,9 +382,9 @@ class LoadSamplePresetRequest(BaseModel):
     generate_suggestions: bool = True
     limit_per_sentence: Optional[int] = Field(default=None, ge=1, le=20)
     min_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    auto_accept_suggestions: bool = False
+    auto_accept_suggestions: Optional[bool] = None
     auto_accept_min_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    complete_sentences: bool = False
+    complete_sentences: Optional[bool] = None
 
 
 class LoadSamplePresetResponse(BaseModel):
