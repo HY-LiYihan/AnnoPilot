@@ -124,9 +124,11 @@ export type ReviewQueueItem = {
     primary_action?: string
     risk_reason_codes?: string[]
     action_hint?: string
+    candidate_count?: number
     boundary_checks?: string[]
   }
   first_suggestion: SuggestionDef | null
+  candidate_suggestions: SuggestionDef[]
 }
 
 export type ReviewQueueInsight = {

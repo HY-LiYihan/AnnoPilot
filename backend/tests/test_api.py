@@ -2534,8 +2534,13 @@ def test_review_queue_goldsmith_prioritizes_candidate_disagreement(tmp_path: Pat
         assert by_goldsmith["items"][0]["review_guidance"]["domain"] == "appraisal_engagement"
         assert by_goldsmith["items"][0]["review_guidance"]["primary_action"] == "compare_candidates"
         assert by_goldsmith["items"][0]["review_guidance"]["action_hint"] == by_goldsmith["items"][0]["action_hint"]
+        assert by_goldsmith["items"][0]["review_guidance"]["candidate_count"] == 2
         assert "candidate_conflict" in by_goldsmith["items"][0]["review_guidance"]["risk_reason_codes"]
         assert by_goldsmith["items"][0]["review_guidance"]["boundary_checks"]
+        assert [suggestion["id"] for suggestion in by_goldsmith["items"][0]["candidate_suggestions"]] == [
+            "sg-conflict-short",
+            "sg-conflict-wide",
+        ]
 
         review_queue_export = client.get(
             f"/api/projects/default/documents/{document_id}/export.goldsmith.review-queue.jsonl?order=goldsmith&limit=2"
@@ -2546,6 +2551,10 @@ def test_review_queue_goldsmith_prioritizes_candidate_disagreement(tmp_path: Pat
         assert review_queue_lines[0]["candidate_disagreement_score"] == 1.0
         assert review_queue_lines[0]["action_hint"] == by_goldsmith["items"][0]["action_hint"]
         assert review_queue_lines[0]["review_guidance"]["primary_action"] == "compare_candidates"
+        assert [suggestion["id"] for suggestion in review_queue_lines[0]["candidate_suggestions"]] == [
+            "sg-conflict-short",
+            "sg-conflict-wide",
+        ]
 
 
 def test_review_queue_goldsmith_uses_llm_review_risk_signal(tmp_path: Path) -> None:

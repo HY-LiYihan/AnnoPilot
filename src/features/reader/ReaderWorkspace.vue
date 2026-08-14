@@ -248,7 +248,9 @@ function reviewQueueOrderLabel() {
 
 function reviewQueueInsightDetail(item: ReviewQueueItem) {
   const suggestion = item.first_suggestion
+  const candidateCount = item.candidate_suggestions?.length || item.review_guidance?.candidate_count || item.suggestion_count
   const parts = [
+    candidateCount > 1 ? labels.value.metrics.candidateOptions(candidateCount) : '',
     item.candidate_disagreement_score > 0 ? `${labels.value.metrics.candidateConflictRisk} ${item.candidate_disagreement_score.toFixed(2)}` : '',
     item.llm_review_risk_score > 0 ? `${labels.value.metrics.llmReviewRisk} ${item.llm_review_risk_score.toFixed(2)}` : '',
     item.judge_review_risk_score > 0 ? `${labels.value.metrics.judgeRisk} ${item.judge_review_risk_score.toFixed(2)}` : '',

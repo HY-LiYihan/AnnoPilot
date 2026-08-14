@@ -612,7 +612,7 @@ class DocumentQueryRepository:
                     ).fetchall()
                 sentence_rows, review_routes = self._hybrid_review_rows(sentence_rows, calibration_rows, safe_limit)
             sentence_ids = [row["id"] for row in sentence_rows]
-            first_suggestion_by_sentence: dict[str, dict[str, Any]] = {}
+            candidate_suggestions_by_sentence: dict[str, list[dict[str, Any]]] = {}
             if sentence_ids:
                 placeholders = ",".join("?" for _ in sentence_ids)
                 suggestion_rows = conn.execute(
@@ -648,11 +648,12 @@ class DocumentQueryRepository:
                     sentence_ids,
                 ).fetchall()
                 for row in suggestion_rows:
-                    first_suggestion_by_sentence.setdefault(row["sentence_id"], self._suggestion_row_dict(row))
+                    candidate_suggestions_by_sentence.setdefault(row["sentence_id"], []).append(self._suggestion_row_dict(row))
 
         items = []
         for row in sentence_rows:
-            first_suggestion = first_suggestion_by_sentence.get(row["id"])
+            candidate_suggestions = candidate_suggestions_by_sentence.get(row["id"], [])
+            first_suggestion = candidate_suggestions[0] if candidate_suggestions else None
             review_route = review_routes.get(
                 row["id"],
                 "risk" if normalized_order in {"goldsmith", "hybrid"} else normalized_order,
@@ -671,6 +672,7 @@ class DocumentQueryRepository:
                 "risk_score": float(row["risk_score"] or 0),
                 "review_route": review_route,
                 "first_suggestion": first_suggestion,
+                "candidate_suggestions": candidate_suggestions,
             }
             item["risk_reason_codes"] = self._review_queue_risk_reason_codes(item, first_suggestion)
             item["action_hint"] = self._review_queue_action_hint(item, first_suggestion)
@@ -818,6 +820,7 @@ class DocumentQueryRepository:
             "primary_action": primary_action,
             "risk_reason_codes": risk_reason_codes,
             "action_hint": cls._review_queue_action_hint(item, first_suggestion),
+            "candidate_count": int(item.get("suggestion_count") or 0),
             "boundary_checks": [
                 "Choose the smallest text span that explicitly signals dialogic positioning.",
                 "Judge the label by Engagement function, not by sentiment polarity alone.",

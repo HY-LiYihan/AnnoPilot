@@ -393,6 +393,10 @@ class ExportService:
                 "action_hint": item.get("action_hint", ""),
                 "review_guidance": item.get("review_guidance", {}),
                 "first_suggestion": self._export_goldsmith_suggestion(item.get("first_suggestion")),
+                "candidate_suggestions": [
+                    self._export_goldsmith_suggestion(suggestion)
+                    for suggestion in item.get("candidate_suggestions", [])
+                ],
                 "meta": {
                     "source": "annopilot",
                     "artifact": "human_review_queue.jsonl",

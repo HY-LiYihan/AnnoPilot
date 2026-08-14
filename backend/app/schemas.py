@@ -271,6 +271,7 @@ class ReviewQueueItemResponse(BaseModel):
     action_hint: str = ""
     review_guidance: dict[str, Any] = Field(default_factory=dict)
     first_suggestion: Optional[SuggestionResponse] = None
+    candidate_suggestions: list[SuggestionResponse] = Field(default_factory=list)
 
 
 class ReviewQueueResponse(BaseModel):
