@@ -29,3 +29,25 @@ def test_appraisal_engagement_sample_schema_matches_builtin_schema() -> None:
     disk_schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
     assert disk_schema == APPRAISAL_ENGAGEMENT_TAG_SCHEMA
+
+
+def test_appraisal_engagement_schema_encodes_theoretical_hierarchy() -> None:
+    taxonomies = {tag["id"]: tag["taxonomy"] for tag in APPRAISAL_ENGAGEMENT_TAG_SCHEMA["tags"]}
+
+    assert taxonomies["engagement_monogloss"] == {
+        "framework": "appraisal",
+        "system": "engagement",
+        "dialogic_status": "monogloss",
+        "orientation": None,
+        "family": "monogloss",
+        "subtype": None,
+        "path": ["engagement", "monogloss"],
+        "default_scope": "proposition",
+    }
+    heterogloss = [taxonomy for taxonomy in taxonomies.values() if taxonomy["dialogic_status"] == "heterogloss"]
+    assert len(heterogloss) == 8
+    assert sum(taxonomy["orientation"] == "expansion" for taxonomy in heterogloss) == 3
+    assert sum(taxonomy["orientation"] == "contraction" for taxonomy in heterogloss) == 5
+    assert {taxonomy["family"] for taxonomy in heterogloss} == {"entertain", "attribute", "proclaim", "disclaim"}
+    assert all(taxonomy["path"][:2] == ["engagement", "heterogloss"] for taxonomy in heterogloss)
+    assert all(taxonomy["default_scope"] == "cue" for taxonomy in heterogloss)

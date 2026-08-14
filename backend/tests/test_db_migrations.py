@@ -249,5 +249,42 @@ def test_migration_v4_adds_run_candidate_snapshot_schema(tmp_path: Path) -> None
         conn.close()
 
 
+def test_migration_v5_adds_tag_taxonomy_metadata(tmp_path: Path) -> None:
+    database_path = tmp_path / "v4.sqlite"
+    conn = sqlite3.connect(database_path)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE schema_version (
+              version INTEGER PRIMARY KEY,
+              name TEXT NOT NULL,
+              applied_at TEXT NOT NULL
+            );
+            INSERT INTO schema_version (version, name, applied_at) VALUES (1, 'baseline_schema', '2026-08-10T00:00:00Z');
+            INSERT INTO schema_version (version, name, applied_at) VALUES (2, 'ensure_legacy_columns', '2026-08-10T00:01:00Z');
+            INSERT INTO schema_version (version, name, applied_at) VALUES (3, 'ensure_review_judge_json', '2026-08-10T00:02:00Z');
+            INSERT INTO schema_version (version, name, applied_at) VALUES (4, 'run_candidate_snapshots', '2026-08-10T00:03:00Z');
+
+            CREATE TABLE tags (
+              id TEXT NOT NULL,
+              project_id TEXT NOT NULL,
+              name TEXT NOT NULL,
+              description TEXT,
+              examples_json TEXT NOT NULL DEFAULT '[]',
+              shortcut TEXT NOT NULL,
+              color TEXT NOT NULL,
+              PRIMARY KEY (project_id, id)
+            );
+            """
+        )
+
+        migrate_database(conn)
+
+        assert "taxonomy_json" in _columns(conn, "tags")
+        assert current_schema_version(conn) == CURRENT_SCHEMA_VERSION
+    finally:
+        conn.close()
+
+
 def _columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})")}

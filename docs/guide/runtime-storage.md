@@ -45,6 +45,7 @@ tags
   name
   description
   examples_json
+  taxonomy_json
   shortcut
   color
 
@@ -179,6 +180,8 @@ idx_event_outbox_pending(project_id, flushed_at, created_at)
 ```
 
 Mutation path 使用 SQLite outbox：domain rows 和 event payload 在同一个 transaction 中写入，随后 pending outbox rows flush 到 `events.jsonl`。这比“先提交 mutation、再单独写 JSONL”更容易保持 runtime state 和 audit trail 对齐。
+
+`tags.taxonomy_json` 保存可选的机器可读理论元数据。当前内置 Engagement tags 使用 Appraisal / Engagement hierarchy、稳定 path 和 `proposition|cue` 默认 scope；普通自定义标签可保持 `NULL`。Tag create/update events 会携带该字段，rebuild 可以恢复；旧 Engagement events 未记录 taxonomy 时，会按稳定 tag id 推断并回填，不改变旧 event schema。
 
 `annotation_run_sentences` 与 `annotation_run_candidate_spans` 保存每次完整 suggestion run 的不可变句子级输出，包括零 span 的句子。Live `annotation_suggestions` 可以按现有策略清理或变更状态，而最近 run 的完整 span 集合仍可用于 Rosetta-compatible self-consistency；`suggestions.generated` event replay 会重建同一快照。
 

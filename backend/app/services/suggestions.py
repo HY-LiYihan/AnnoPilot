@@ -631,6 +631,7 @@ class SuggestionService:
                 "tag_name": row["tag_name"],
                 "tag_description": candidate_tag["description"] if candidate_tag else None,
                 "tag_examples": candidate_tag["examples"] if candidate_tag else [],
+                "tag_taxonomy": candidate_tag.get("taxonomy") if candidate_tag else None,
                 "start_token_index": row["start_token_index"],
                 "end_token_index": row["end_token_index"],
                 "lexical_confidence": row["lexical_confidence"],
@@ -835,6 +836,7 @@ class SuggestionService:
                 "name": tag["name"],
                 "description": tag.get("description"),
                 "examples": tag.get("examples", []),
+                "taxonomy": tag.get("taxonomy"),
                 "shortcut": tag["shortcut"],
                 "color": tag["color"],
             }
@@ -946,6 +948,7 @@ class SuggestionService:
             "name": tag["name"],
             "description": tag.get("description"),
             "examples": list(tag.get("examples") or [])[:MAX_REVIEW_CONTEXT_EXAMPLES],
+            "taxonomy": tag.get("taxonomy"),
             "shortcut": tag.get("shortcut"),
             "color": tag.get("color"),
         }

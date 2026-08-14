@@ -5,6 +5,7 @@ import json
 import sqlite3
 from typing import Any
 
+from ..engagement import APPRAISAL_ENGAGEMENT_TAXONOMIES
 
 REPLAYABLE_EVENT_FIELDS = {
     "project.reset": {"reset_at"},
@@ -105,8 +106,8 @@ def apply_replay_event(conn: sqlite3.Connection, project_id: str, event: dict[st
     elif event_type == "tag.created":
         conn.execute(
             """
-            INSERT OR REPLACE INTO tags (id, project_id, name, description, examples_json, shortcut, color)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO tags (id, project_id, name, description, examples_json, taxonomy_json, shortcut, color)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event["tag_id"],
@@ -114,6 +115,13 @@ def apply_replay_event(conn: sqlite3.Connection, project_id: str, event: dict[st
                 event["name"],
                 event.get("description"),
                 json.dumps(event.get("examples", []), ensure_ascii=False),
+                json.dumps(
+                    event.get("taxonomy") or APPRAISAL_ENGAGEMENT_TAXONOMIES.get(event["tag_id"]),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                if event.get("taxonomy") or event["tag_id"] in APPRAISAL_ENGAGEMENT_TAXONOMIES
+                else None,
                 event["shortcut"],
                 event["color"],
             ),
@@ -135,6 +143,9 @@ def apply_replay_event(conn: sqlite3.Connection, project_id: str, event: dict[st
         if "examples" in event:
             assignments.append("examples_json = ?")
             values.append(json.dumps(event.get("examples", []), ensure_ascii=False))
+        if "taxonomy" in event:
+            assignments.append("taxonomy_json = ?")
+            values.append(json.dumps(event.get("taxonomy"), ensure_ascii=False, sort_keys=True) if event.get("taxonomy") else None)
         if "shortcut" in event:
             assignments.append("shortcut = ?")
             values.append(event["shortcut"])

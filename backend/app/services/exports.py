@@ -167,6 +167,7 @@ class ExportService:
                     "name": tag["name"],
                     "description": tag.get("description"),
                     "examples": tag.get("examples", []),
+                    "taxonomy": tag.get("taxonomy"),
                     "shortcut": tag.get("shortcut"),
                     "color": tag.get("color"),
                 }
@@ -1348,6 +1349,7 @@ class ExportService:
                 "name": tag["name"],
                 "description": tag.get("description"),
                 "examples": tag.get("examples", []),
+                "taxonomy": tag.get("taxonomy"),
             }
             for tag in tag_schema.get("tags", [])
         ]
@@ -1454,7 +1456,9 @@ class ExportService:
         tag_lines = []
         for tag in tag_schema.get("tags", []):
             description = tag.get("description") or "No definition provided."
-            tag_lines.append(f"- {tag['name']}: {description}")
+            taxonomy_path = " > ".join((tag.get("taxonomy") or {}).get("path") or [])
+            hierarchy = f" [{taxonomy_path}]" if taxonomy_path else ""
+            tag_lines.append(f"- {tag['name']}{hierarchy}: {description}")
         return "Appraisal Theory 的 Engagement 系统用于标注作者如何打开或收缩对话空间。可用 span labels：\n" + "\n".join(tag_lines)
 
     @staticmethod
@@ -2316,6 +2320,7 @@ class ExportService:
                     "name": tag["name"],
                     "description": tag.get("description"),
                     "examples": tag.get("examples", []),
+                    "taxonomy": tag.get("taxonomy"),
                     "shortcut": tag.get("shortcut"),
                     "color": tag.get("color"),
                 }

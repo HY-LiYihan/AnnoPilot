@@ -5,6 +5,7 @@ import sqlite3
 from collections.abc import Callable
 from typing import Any
 
+from ..engagement import APPRAISAL_ENGAGEMENT_TAXONOMIES
 from ..hashing import payload_sha256
 from ..repositories import TagQueryRepository
 
@@ -62,7 +63,8 @@ class TagService:
         incoming_tags = self._validate_tag_schema_import(schema)
         source_hash = schema.get("content_sha256")
         content_hash = payload_sha256(self._tag_schema_content_payload(incoming_tags))
-        if source_hash and source_hash != content_hash:
+        legacy_content_hash = payload_sha256(self._legacy_tag_schema_content_payload(incoming_tags))
+        if source_hash and source_hash not in {content_hash, legacy_content_hash}:
             raise self.validation_error("Tag schema content_sha256 does not match tags payload.")
 
         created = 0
@@ -87,6 +89,7 @@ class TagService:
                         target["name"] != incoming["name"]
                         or target.get("description") != incoming.get("description")
                         or target.get("examples", []) != incoming.get("examples", [])
+                        or target.get("taxonomy") != incoming.get("taxonomy")
                         or target["shortcut"] != next_shortcut
                         or target["color"] != incoming["color"]
                     )
@@ -97,13 +100,14 @@ class TagService:
                     conn.execute(
                         """
                         UPDATE tags
-                        SET name = ?, description = ?, examples_json = ?, shortcut = ?, color = ?
+                        SET name = ?, description = ?, examples_json = ?, taxonomy_json = ?, shortcut = ?, color = ?
                         WHERE project_id = ? AND id = ?
                         """,
                         (
                             incoming["name"],
                             incoming.get("description"),
                             json.dumps(incoming.get("examples", []), ensure_ascii=False),
+                            self._serialize_taxonomy(incoming.get("taxonomy")),
                             next_shortcut,
                             incoming["color"],
                             project_id,
@@ -122,6 +126,8 @@ class TagService:
                             "description": incoming.get("description"),
                             "old_examples": target.get("examples", []),
                             "examples": incoming.get("examples", []),
+                            "old_taxonomy": target.get("taxonomy"),
+                            "taxonomy": incoming.get("taxonomy"),
                             "old_shortcut": target["shortcut"],
                             "shortcut": next_shortcut,
                             "old_color": target["color"],
@@ -134,8 +140,8 @@ class TagService:
                     next_shortcut = self.unique_shortcut(incoming.get("shortcut"), used_shortcuts)
                     conn.execute(
                         """
-                        INSERT INTO tags (id, project_id, name, description, examples_json, shortcut, color)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO tags (id, project_id, name, description, examples_json, taxonomy_json, shortcut, color)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             incoming["id"],
@@ -143,6 +149,7 @@ class TagService:
                             incoming["name"],
                             incoming.get("description"),
                             json.dumps(incoming.get("examples", []), ensure_ascii=False),
+                            self._serialize_taxonomy(incoming.get("taxonomy")),
                             next_shortcut,
                             incoming["color"],
                         ),
@@ -156,6 +163,7 @@ class TagService:
                             "name": incoming["name"],
                             "description": incoming.get("description"),
                             "examples": incoming.get("examples", []),
+                            "taxonomy": incoming.get("taxonomy"),
                             "shortcut": next_shortcut,
                             "color": incoming["color"],
                         },
@@ -370,12 +378,13 @@ class TagService:
             return
         conn.executemany(
             """
-            INSERT INTO tags (id, project_id, name, description, examples_json, shortcut, color)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tags (id, project_id, name, description, examples_json, taxonomy_json, shortcut, color)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id, id) DO UPDATE SET
               name = excluded.name,
               description = excluded.description,
               examples_json = excluded.examples_json,
+              taxonomy_json = excluded.taxonomy_json,
               shortcut = excluded.shortcut,
               color = excluded.color
             """,
@@ -386,6 +395,7 @@ class TagService:
                     tag["name"],
                     tag["description"],
                     json.dumps(tag["examples"], ensure_ascii=False),
+                    self._serialize_taxonomy(tag.get("taxonomy")),
                     tag["shortcut"],
                     tag["color"],
                 )
@@ -480,6 +490,19 @@ class TagService:
             [(json.dumps(tag["examples"], ensure_ascii=False), tag["id"]) for tag in self.default_tags],
         )
 
+    def backfill_known_tag_taxonomies(self, conn: sqlite3.Connection) -> None:
+        conn.executemany(
+            """
+            UPDATE tags
+            SET taxonomy_json = ?
+            WHERE id = ? AND (taxonomy_json IS NULL OR TRIM(taxonomy_json) = '')
+            """,
+            [
+                (self._serialize_taxonomy(taxonomy), tag_id)
+                for tag_id, taxonomy in APPRAISAL_ENGAGEMENT_TAXONOMIES.items()
+            ],
+        )
+
     @staticmethod
     def next_tag_shortcut(tags: list[dict[str, Any]]) -> str:
         used = {tag["shortcut"] for tag in tags}
@@ -562,6 +585,7 @@ class TagService:
                     "name": name,
                     "description": self.normalize_optional_text(raw_tag.get("description")),
                     "examples": self.normalize_examples(raw_tag.get("examples") if isinstance(raw_tag.get("examples"), list) else []),
+                    "taxonomy": self._normalize_taxonomy(raw_tag.get("taxonomy"), tag_id, index + 1),
                     "shortcut": str(raw_tag.get("shortcut") or index + 1).strip(),
                     "color": color or self.tag_colors[len(tags) % len(self.tag_colors)],
                 }
@@ -578,6 +602,7 @@ class TagService:
                 "name": tag["name"],
                 "description": tag.get("description"),
                 "examples": tag.get("examples", []),
+                "taxonomy": tag.get("taxonomy"),
                 "shortcut": tag["shortcut"],
                 "color": tag["color"],
             }
@@ -590,3 +615,67 @@ class TagService:
             "retrieval": "character_rag_lexical_examples",
             "tags": schema_tags,
         }
+
+    def _legacy_tag_schema_content_payload(self, tags: list[dict[str, Any]]) -> dict[str, Any]:
+        payload = self._tag_schema_content_payload(tags)
+        payload["tags"] = [
+            {key: value for key, value in tag.items() if key != "taxonomy"}
+            for tag in payload["tags"]
+        ]
+        return payload
+
+    def _normalize_taxonomy(self, value: Any, tag_id: str, item_number: int) -> dict[str, Any] | None:
+        taxonomy = value if isinstance(value, dict) else APPRAISAL_ENGAGEMENT_TAXONOMIES.get(tag_id)
+        if taxonomy is None:
+            return None
+
+        normalized = {
+            "framework": str(taxonomy.get("framework") or "").strip().casefold(),
+            "system": str(taxonomy.get("system") or "").strip().casefold(),
+            "dialogic_status": str(taxonomy.get("dialogic_status") or "").strip().casefold(),
+            "orientation": self.normalize_optional_text(taxonomy.get("orientation")),
+            "family": str(taxonomy.get("family") or "").strip().casefold(),
+            "subtype": self.normalize_optional_text(taxonomy.get("subtype")),
+            "path": [str(part).strip().casefold() for part in taxonomy.get("path", []) if str(part).strip()],
+            "default_scope": str(taxonomy.get("default_scope") or "").strip().casefold(),
+        }
+        if normalized["orientation"] is not None:
+            normalized["orientation"] = normalized["orientation"].casefold()
+        if normalized["subtype"] is not None:
+            normalized["subtype"] = normalized["subtype"].casefold()
+
+        prefix = f"Tag schema item {item_number} taxonomy"
+        if normalized["framework"] != "appraisal" or normalized["system"] != "engagement":
+            raise self.validation_error(f"{prefix} must target appraisal/engagement.")
+        if normalized["dialogic_status"] not in {"monogloss", "heterogloss"}:
+            raise self.validation_error(f"{prefix} has an invalid dialogic_status.")
+        if normalized["default_scope"] not in {"proposition", "cue"}:
+            raise self.validation_error(f"{prefix} has an invalid default_scope.")
+
+        if normalized["dialogic_status"] == "monogloss":
+            expected_path = ["engagement", "monogloss"]
+            valid = (
+                normalized["orientation"] is None
+                and normalized["family"] == "monogloss"
+                and normalized["subtype"] is None
+                and normalized["default_scope"] == "proposition"
+            )
+        else:
+            if normalized["orientation"] not in {"expansion", "contraction"}:
+                raise self.validation_error(f"{prefix} must define expansion or contraction.")
+            expected_path = [
+                "engagement",
+                "heterogloss",
+                normalized["orientation"],
+                normalized["family"],
+            ]
+            if normalized["subtype"]:
+                expected_path.append(normalized["subtype"])
+            valid = bool(normalized["family"]) and normalized["default_scope"] == "cue"
+        if not valid or normalized["path"] != expected_path:
+            raise self.validation_error(f"{prefix} path does not match its Engagement hierarchy fields.")
+        return normalized
+
+    @staticmethod
+    def _serialize_taxonomy(taxonomy: dict[str, Any] | None) -> str | None:
+        return json.dumps(taxonomy, ensure_ascii=False, sort_keys=True) if taxonomy else None

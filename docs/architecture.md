@@ -122,6 +122,7 @@ Backend 当前边界：
 - `api/*` 只做 routing、validation error mapping 和 response model 绑定。
 - `schemas.py` 集中维护 Pydantic request / response contracts。
 - `storage.py` 是当前 API 兼容 facade；SQLite migration 在 `db/`，event outbox/replay 在 `events/`，document import/merge/session、runtime settings、annotation、suggestion generation / decision、tag schema、audit/export workflow 已开始迁入 `services/`。
+- `engagement.py` 保存内置 Appraisal Engagement taxonomy；`tags.taxonomy_json` 将理论层级作为可选机器可读元数据持久化，普通手工标签流程无需编辑该字段。
 - `rag.py` 实现低算力 Character RAG：lexical exact、contains、char-ngram、Unicode NFKC、quote/dash/slash folding、casefold + whitespace normalization。
 - `llm.py` 使用 OpenAI-compatible `/chat/completions`，用于 suggestion LLM review，并在错误信息中 redact API key。
 - `rebuild.py` 支持从 `events.jsonl` 重建 SQLite 的 CLI / service 能力，并复用 `events/replay.py` 的可重放事件校验与 apply 逻辑；API 先提供 non-destructive preview。
@@ -198,7 +199,7 @@ annopilot.run_provenance.v1
 ### LLM Review
 
 1. UI 对 pending suggestion 发起 LLM review。
-2. `services/suggestions.py` 构造包含 sentence、candidate span、tag definitions/examples、existing annotations、Engagement boundary guidance 和 `span_context` 的结构化 context。
+2. `services/suggestions.py` 构造包含 sentence、candidate span、tag definitions/examples/taxonomy、existing annotations、Engagement boundary guidance 和 `span_context` 的结构化 context。
 3. OpenAI-compatible provider 返回 `accept`、`reject` 或 `uncertain` recommendation。
 4. Backend 保存 review row 和 `suggestion.llm_reviewed` event，并记录 `context_sha256`。
 
@@ -206,7 +207,7 @@ annopilot.run_provenance.v1
 
 - `import-annotations-jsonl` 可导入 Prodigy / AnnoPilot style JSONL annotation records，并尽量按 `sentence_id`、`sentence_index` 或 sentence text 匹配；`annotations.imported` event 会保留逐行 source manifest，记录 record hash、匹配结果、目标 sentence 和 Prodigy-style source metadata。
 - Task JSONL 以 sentence 为粒度导出 token、span、suggestion、answer、meta 和 Prodigy-style stable hashes / session metadata。
-- Prodigy export 保持 `ner_manual` / `spans_manual` compatible fields，并提供 bundle ZIP 把 Prodigy JSONL、label config、tag schema、Goldsmith review queue、label statistics、contrastive examples、reflection plans、prompt package、verification report、bootstrap report 和 manifest 收拢成一个交付包。
+- Prodigy export 保持 `ner_manual` / `spans_manual` compatible fields，并在 label definitions 和 task metadata 中保留可选 taxonomy；bundle ZIP 把 Prodigy JSONL、label config、tag schema、Goldsmith review queue、label statistics、contrastive examples、reflection plans、prompt package、verification report、bootstrap report 和 manifest 收拢成一个交付包。
 - Manifest 汇总 tasks、Prodigy、events、tag schema、run provenance、annotation import history、artifact hashes、audit summary 和稳定 content hash。
 
 ## Docker Deployment

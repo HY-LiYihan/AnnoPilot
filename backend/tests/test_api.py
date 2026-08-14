@@ -225,6 +225,7 @@ def test_import_fetch_annotate_complete_and_export(tmp_path: Path) -> None:
                 "name": "动词",
                 "description": None,
                 "examples": ["reduced"],
+                "taxonomy": None,
                 "shortcut": "1",
                 "color": "#0b7565",
             }
@@ -1799,6 +1800,33 @@ def test_import_tag_schema_merges_non_destructively(tmp_path: Path) -> None:
         role_tag = imported["tags"][0]
         assert role_tag["examples"] == ["老师", "小狗"]
 
+        legacy_tag = {
+            "id": "role",
+            "name": "角色",
+            "description": "故事中的人物或动物。",
+            "examples": ["老师", "小狗"],
+            "shortcut": "4",
+            "color": "#7a3db8",
+        }
+        legacy_content = {
+            "schema_version": "annopilot.tag_schema.v1",
+            "record_type": "tag_schema",
+            "tag_count": 1,
+            "retrieval": "character_rag_lexical_examples",
+            "tags": [legacy_tag],
+        }
+        legacy_hash_response = client.post(
+            "/api/projects/default/tags/schema/import",
+            json={
+                "schema_version": "annopilot.tag_schema.v1",
+                "record_type": "tag_schema",
+                "content_sha256": payload_sha256(legacy_content),
+                "tags": [legacy_tag],
+            },
+        )
+        assert legacy_hash_response.status_code == 200
+        assert legacy_hash_response.json()["skipped"] == 1
+
         bad_hash_response = client.post(
             "/api/projects/default/tags/schema/import",
             json={
@@ -1809,6 +1837,21 @@ def test_import_tag_schema_merges_non_destructively(tmp_path: Path) -> None:
             },
         )
         assert bad_hash_response.status_code == 400
+
+        invalid_taxonomy = {
+            **APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+            "tags": [
+                {
+                    **APPRAISAL_ENGAGEMENT_TAG_SCHEMA["tags"][1],
+                }
+            ],
+        }
+        invalid_taxonomy["tags"][0]["taxonomy"] = {
+            **APPRAISAL_ENGAGEMENT_TAG_SCHEMA["tags"][1]["taxonomy"],
+            "path": ["engagement", "heterogloss", "contraction", "entertain"],
+        }
+        invalid_taxonomy_response = client.post("/api/projects/default/tags/schema/import", json=invalid_taxonomy)
+        assert invalid_taxonomy_response.status_code == 400
 
         events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
         created_event = next(event for event in events if event["type"] == "tag.created" and event["tag_id"] == "role")
@@ -1834,6 +1877,24 @@ def test_appraisal_engagement_samples_generate_and_export_prodigy(tmp_path: Path
         imported_schema = schema_response.json()
         assert imported_schema["created"] == 9
         assert [tag["id"] for tag in imported_schema["tags"]] == [tag["id"] for tag in schema["tags"]]
+
+        exported_schema = client.get("/api/projects/default/tags/schema.json").json()
+        taxonomy_by_id = {tag["id"]: tag["taxonomy"] for tag in exported_schema["tags"]}
+        assert taxonomy_by_id["engagement_entertain"]["path"] == [
+            "engagement",
+            "heterogloss",
+            "expansion",
+            "entertain",
+        ]
+        assert taxonomy_by_id["engagement_disclaim_counter"]["path"] == [
+            "engagement",
+            "heterogloss",
+            "contraction",
+            "disclaim",
+            "counter",
+        ]
+        prodigy_labels = client.get("/api/projects/default/tags/prodigy-labels.json").json()
+        assert {tag["id"]: tag["taxonomy"] for tag in prodigy_labels["label_definitions"]} == taxonomy_by_id
 
         import_response = client.post(
             "/api/projects/default/import-txt",
@@ -1892,9 +1953,43 @@ def test_appraisal_engagement_samples_generate_and_export_prodigy(tmp_path: Path
         assert "Disclaim Counter 转折反驳" in exported_labels
         assert "Disclaim Deny 否认" in exported_labels
         assert any(line["_view_id"] == "ner_manual" for line in prodigy_lines)
+        assert {tag["id"]: tag["taxonomy"] for tag in prodigy_lines[0]["meta"]["tag_schema"]["labels"]} == taxonomy_by_id
         assert any(source["source"] == "accepted_suggestion" for line in prodigy_lines for source in line["meta"]["annotation_sources"])
         assert all(line["answer"] == "accept" for line in prodigy_lines if line["spans"])
         assert all(line["meta"]["answer"] == "pending" for line in prodigy_lines if line["spans"])
+
+
+def test_appraisal_engagement_taxonomy_rebuilds_from_events(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        response = client.post("/api/projects/default/tags/schema/import", json=APPRAISAL_ENGAGEMENT_TAG_SCHEMA)
+        assert response.status_code == 200
+        event_path = tmp_path / "projects" / "default" / "events.jsonl"
+
+    rebuilt_database = tmp_path / "rebuilt" / "annopilot.sqlite"
+    result = rebuild_project_from_events(
+        project_id="default",
+        event_path=event_path,
+        database_path=rebuilt_database,
+        data_root=tmp_path / "rebuilt-projects",
+        force=True,
+    )
+    assert result.ok
+    assert result.tags == 9
+
+    rebuilt = AnnotationStorage(database_path=rebuilt_database, data_root=tmp_path / "rebuilt-projects")
+    taxonomy_by_id = {tag["id"]: tag["taxonomy"] for tag in rebuilt.export_tag_schema("default")["tags"]}
+    assert taxonomy_by_id["engagement_monogloss"]["default_scope"] == "proposition"
+    assert taxonomy_by_id["engagement_attribute_distance"]["path"] == [
+        "engagement",
+        "heterogloss",
+        "expansion",
+        "attribute",
+        "distance",
+    ]
 
 
 def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None:
@@ -2317,10 +2412,12 @@ def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(
         assert first_prompt["review_task"]["sample_id"] == review_tasks[0]["sample_id"]
         assert first_prompt["output_contract"] == ["text", "annotation", "explanation", "selected_option_id", "answer"]
         assert first_prompt["tag_schema"]["tag_count"] == 9
+        assert all(tag["taxonomy"]["system"] == "engagement" for tag in first_prompt["tag_schema"]["tags"])
         assert first_prompt["context_examples"]
         assert first_prompt["context_examples"][0]["source_artifact"] == "tag_schema"
         assert "你正在执行科研标注任务" in first_prompt["prompt"]
         assert "操作化定义" in first_prompt["prompt"]
+        assert "engagement > heterogloss" in first_prompt["prompt"]
         assert "候选选项" in first_prompt["prompt"]
         assert "__manual__" in first_prompt["prompt"]
         assert "待标注样本" in first_prompt["prompt"]
@@ -2398,10 +2495,11 @@ def test_appraisal_engagement_review_context_includes_guidelines(tmp_path: Path)
     assert any("Monogloss" in rule for rule in context["review_guidance"]["framework"]["boundary_rules"])
     assert context["tag_schema"]["tag_count"] == 9
     assert len(context["tags"]) == 9
-    assert all("description" in tag and "examples" in tag for tag in context["tags"])
+    assert all("description" in tag and "examples" in tag and tag["taxonomy"] for tag in context["tags"])
     suggested_tag = next(tag for tag in context["tags"] if tag["id"] == context["suggestion"]["tag_id"])
     assert context["suggestion"]["tag_description"] == suggested_tag["description"]
     assert context["suggestion"]["tag_examples"] == suggested_tag["examples"]
+    assert context["suggestion"]["tag_taxonomy"] == suggested_tag["taxonomy"]
     assert context["suggestion"]["tag_examples"]
 
 

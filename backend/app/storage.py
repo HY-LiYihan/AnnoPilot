@@ -272,6 +272,7 @@ class AnnotationStorage:
             migrate_database(conn)
             self.tag_service.backfill_default_tag_descriptions(conn)
             self.tag_service.backfill_default_tag_examples(conn)
+            self.tag_service.backfill_known_tag_taxonomies(conn)
             self.tag_service.seed_tags(conn, DEFAULT_PROJECT_ID)
 
     def connect(self) -> sqlite3.Connection:

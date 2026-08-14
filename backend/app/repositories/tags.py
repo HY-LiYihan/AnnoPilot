@@ -19,6 +19,7 @@ class TagQueryRepository:
               tags.name,
               tags.description,
               tags.examples_json,
+              tags.taxonomy_json,
               tags.shortcut,
               tags.color,
               COUNT(DISTINCT a.id) AS usage_count,
@@ -29,15 +30,16 @@ class TagQueryRepository:
             LEFT JOIN annotations a ON a.sentence_id = s.id AND a.tag_id = tags.id
             LEFT JOIN annotation_suggestions sg ON sg.sentence_id = s.id AND sg.tag_id = tags.id
             WHERE tags.project_id = ?
-            GROUP BY tags.id, tags.name, tags.description, tags.examples_json, tags.shortcut, tags.color
+            GROUP BY tags.id, tags.name, tags.description, tags.examples_json, tags.taxonomy_json, tags.shortcut, tags.color
             """,
             (project_id,),
         ).fetchall()
         sort_order = {tag["id"]: index for index, tag in enumerate(self.default_tags)}
         tags = []
         for row in sorted(rows, key=lambda row: (sort_order.get(row["id"], len(sort_order)), self._shortcut_order(row["shortcut"]), row["name"])):
-            tag = self._row_dict(row, exclude={"examples_json"})
+            tag = self._row_dict(row, exclude={"examples_json", "taxonomy_json"})
             tag["examples"] = self._parse_examples_json(row["examples_json"])
+            tag["taxonomy"] = self._parse_taxonomy_json(row["taxonomy_json"])
             tag["count"] = row["usage_count"]
             tags.append(tag)
         return tags
@@ -53,6 +55,16 @@ class TagQueryRepository:
         if not isinstance(parsed, list):
             return []
         return cls._normalize_examples([str(item) for item in parsed])
+
+    @staticmethod
+    def _parse_taxonomy_json(value: str | None) -> dict[str, Any] | None:
+        if not value:
+            return None
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
 
     @staticmethod
     def _normalize_examples(values: list[str] | None) -> list[str]:

@@ -42,6 +42,30 @@ Web UI 空白阅读器中也会显示同一组内置样例按钮；点击后会�
 | `Disclaim Deny 否认` | not / cannot / 不是 / 不能 等否定线索 |
 | `Disclaim Counter 转折反驳` | but / however / 但是 / 然而 等转折反驳线索 |
 
+## 机器可读理论层级
+
+内置 Engagement schema 在每个 label 上附带可选 `taxonomy`。它不会增加人工标注表单字段，而是让 Character RAG、LLM review、Prodigy metadata 和 Goldsmith prompt package 使用同一套理论坐标：
+
+```text
+Engagement
+├── Monogloss
+└── Heterogloss
+    ├── Expansion
+    │   ├── Entertain
+    │   ├── Attribute / Acknowledge
+    │   └── Attribute / Distance
+    └── Contraction
+        ├── Proclaim / Endorse
+        ├── Proclaim / Pronounce
+        ├── Proclaim / Concur
+        ├── Disclaim / Deny
+        └── Disclaim / Counter
+```
+
+`taxonomy.path` 使用小写稳定路径，例如 `engagement / heterogloss / expansion / attribute / acknowledge`。Monogloss 的 `default_scope` 是 `proposition`，默认标完整命题；八个 Heterogloss labels 的 `default_scope` 是 `cue`，默认标触发对话立场的最小连续线索。Backend 会校验 `path` 与 `dialogic_status`、`orientation`、`family`、`subtype` 一致，避免 schema 中出现理论层级互相矛盾的标签。
+
+该字段是 `annopilot.tag_schema.v1` 的向后兼容扩展：旧 schema 可以不带 `taxonomy`，旧 `content_sha256` 仍可导入；已存在的内置 Engagement tag 会在 SQLite migration 后按稳定 tag id 回填已知层级。
+
 ## 建议工作流
 
 1. 在空白阅读器中选择一个内置样例：通用标注流程、新闻/政策叙事、学术/方法讨论、平台复核、客服反馈、合规/法律、社交舆情、财报/投资者沟通、医疗/科学传播、AI 教育、气候/能源转型、职场/劳动关系、产品安全/公众意见、危机回应/公共警示、选举/事实核查，或 Goldsmith/Rosetta 校准场景。

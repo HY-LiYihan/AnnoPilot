@@ -32,6 +32,7 @@ AnnoPilot 现在同时维护两个 surface：
 - 支持只为当前句生成 Character RAG suggestions，也支持全文 suggestions run、批量接受 / 拒绝和 LLM review。
 - Suggestion row 会展示匹配方法、标签、置信度、token/char range、evidence text 和原文上下文窗口，方便人工 review 时判断是否接受。
 - LLM review context 会包含 tag description/examples、candidate tag definition、已有句内 annotations、同标签 boundary feedback 和 Engagement-specific boundary guidance；review 可保留 Rosetta-style judge scores / risk flags，并在建议卡片中轻量显示 overall、boundary 和风险信号；`context_sha256` 用于审计当次复核依据。
+- 内置 Engagement schema 已包含机器可读 taxonomy：Monogloss 与 Heterogloss / Expansion / Contraction 层级、稳定 hierarchy path 和 proposition/cue 默认 scope 会进入 LLM review、Prodigy metadata 与 Goldsmith prompt package；普通标签编辑 UI 仍只要求名称并允许填写定义和词面样例。
 - 当前句可用 `Tab` / `Shift+Tab` 在 suggestions 间切换活跃 `Y/N target`，键盘 `Y` 接受活跃候选、`N` 拒绝活跃候选；`A` / `X` 仍用于当前句批量接受 / 拒绝。
 - 当前句 `A` / `X` 走 sentence-scoped batch endpoint，在一个 SQLite transaction 中处理该句所有 pending suggestions，避免前端逐条循环写入。
 - 支持独立 review queue API 和右侧 review queue 列表，可按原文位置、稳定随机 baseline、低 confidence、Goldsmith risk 或 hybrid calibration 排序；Goldsmith / hybrid 会把 latest LLM review 的 `reject` / `uncertain` 和同句 candidate label/boundary conflict 作为额外风险信号，并在 UI 与 Goldsmith JSONL 中显示 Rosetta `priority`、`rosetta_route`、全队列 `rosetta_route_counts`、action hint / review guidance 和同句 candidate options；summary metrics 会直接展示 Engagement label coverage、Prodigy 导出就绪度、建议状态、LLM 评审推荐分布、待审建议来源、置信度分布和 human-calibrated error discovery 曲线；处理完当前句建议后会自动跳到下一句待确认，保留 `R` 快捷键手动跳转，右侧 readiness 入口会优先定位已加载队列中 `priority` 最高的待审项。
@@ -131,6 +132,7 @@ GET    /api/projects/{project_id}/tags/prodigy-labels.json
 ### Runtime Storage
 
 当前 backend 使用 `backend/app/storage.py` 作为 API 兼容 facade，底层通过 SQLite 保存 runtime store，通过 JSONL event log 保存 durable audit trail；document import/merge/session、runtime settings、annotation mutation、tag schema、suggestion generation/review、suggestion decisions、audit/export 和 event replay/outbox 已逐步迁入 `services/` / `events/`。
+SQLite schema version 5 为 `tags` 增加可选 `taxonomy_json`；旧 tag schema、旧 hash 和旧 event log 保持兼容，已存在的内置 Engagement tags 会按稳定 id 回填理论元数据。
 右侧 Accuracy 指标当前定义为 LLM review recommendation 与已执行 accept/reject 动作的一致率；没有已 review 且已决策的样本时显示等待数据，不伪造 gold accuracy。
 Character RAG 会使用已确认 annotations 作为正例，并把项目内 human rejected suggestions 以及 latest LLM review 为 `reject` 的 pending suggestions 的 `tag_id + text` 作为负例，后续生成建议时跳过同样的词面/标签组合；匹配判断会对空白和大小写做归一化，因此英文大小写变体不会重复打扰 review 队列。重新运行 suggestions 时只清理未 review 的 pending suggestions，已带 LLM review 的 pending suggestions 会保留，避免丢失复核信号。
 候选 span 文本会根据 token offsets 还原英文词间空格，因此 `carbon emissions` 这类英文短语种子可以 exact match；中文连续字符仍按无空格词面匹配。导出的 suggestion text、evidence text 和 char offsets 保留原始文本，方便回放和审计。

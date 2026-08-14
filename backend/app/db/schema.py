@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS tags (
   name TEXT NOT NULL,
   description TEXT,
   examples_json TEXT NOT NULL DEFAULT '[]',
+  taxonomy_json TEXT,
   shortcut TEXT NOT NULL,
   color TEXT NOT NULL,
   PRIMARY KEY (project_id, id)
@@ -169,6 +170,7 @@ CREATE INDEX IF NOT EXISTS idx_event_outbox_pending ON event_outbox(project_id, 
 LEGACY_COLUMN_MIGRATIONS = (
     ("tags", "description", "TEXT"),
     ("tags", "examples_json", "TEXT"),
+    ("tags", "taxonomy_json", "TEXT"),
     ("sentences", "answer", "TEXT NOT NULL DEFAULT 'pending'"),
     ("annotations", "source", "TEXT NOT NULL DEFAULT 'human'"),
     ("annotations", "source_suggestion_id", "TEXT"),
@@ -239,6 +241,25 @@ def create_run_candidate_snapshot_schema(conn: sqlite3.Connection) -> None:
           ON annotation_run_candidate_spans(run_id, sentence_id, start_token_index);
         """
     )
+
+
+def create_tag_taxonomy_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tags (
+          id TEXT NOT NULL,
+          project_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          examples_json TEXT NOT NULL DEFAULT '[]',
+          taxonomy_json TEXT,
+          shortcut TEXT NOT NULL,
+          color TEXT NOT NULL,
+          PRIMARY KEY (project_id, id)
+        )
+        """
+    )
+    ensure_column(conn, "tags", "taxonomy_json", "TEXT")
 
 
 def ensure_legacy_columns(conn: sqlite3.Connection) -> None:

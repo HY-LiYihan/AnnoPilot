@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -29,6 +29,17 @@ class LlmSettingsResponse(BaseModel):
 
 class UpdateLlmSettingsRequest(BaseModel):
     model_option_id: str = Field(min_length=1, max_length=80)
+
+
+class EngagementTaxonomyResponse(BaseModel):
+    framework: Literal["appraisal"]
+    system: Literal["engagement"]
+    dialogic_status: Literal["monogloss", "heterogloss"]
+    orientation: Optional[Literal["expansion", "contraction"]] = None
+    family: str = Field(min_length=1, max_length=40)
+    subtype: Optional[str] = Field(default=None, max_length=40)
+    path: list[str] = Field(min_length=2, max_length=6)
+    default_scope: Literal["proposition", "cue"]
 
 
 class TagResponse(BaseModel):
@@ -60,6 +71,7 @@ class ImportTagSchemaItemRequest(BaseModel):
     name: str = Field(min_length=1, max_length=32)
     description: Optional[str] = Field(default=None, max_length=280)
     examples: list[str] = Field(default_factory=list)
+    taxonomy: Optional[EngagementTaxonomyResponse] = None
     shortcut: Optional[str] = Field(default=None, max_length=12)
     color: Optional[str] = Field(default=None, max_length=32)
 
@@ -679,6 +691,7 @@ class TagSchemaItemResponse(BaseModel):
     name: str
     description: Optional[str] = None
     examples: list[str] = Field(default_factory=list)
+    taxonomy: Optional[EngagementTaxonomyResponse] = None
     shortcut: str
     color: str
 
