@@ -177,8 +177,10 @@ class ExportVerificationService:
                     record_id=record_id,
                     sentence_id=sentence_id,
                 )
-            for span_index, span in enumerate(record.get("spans") or []):
+            spans = record.get("spans") or []
+            for span_index, span in enumerate(spans):
                 cls._verify_span(artifact, text, span, allowed_labels, issues, record_id, span_index, sentence_id)
+            cls._verify_non_overlapping_spans(artifact, spans, issues, record_id, sentence_id)
 
     @classmethod
     def _verify_candidate_runs(
@@ -362,6 +364,46 @@ class ExportVerificationService:
                 record_id=record_id,
                 sentence_id=sentence_id,
                 span_index=span_index,
+            )
+
+    @classmethod
+    def _verify_non_overlapping_spans(
+        cls,
+        artifact: str,
+        spans: list[dict[str, Any]],
+        issues: list[dict[str, Any]],
+        record_id: str,
+        sentence_id: Any,
+    ) -> None:
+        parsed_spans: list[tuple[int, int, int, str]] = []
+        for span_index, span in enumerate(spans):
+            try:
+                start = int(span.get("start"))
+                end = int(span.get("end"))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            parsed_spans.append((start, end, span_index, str(span.get("label") or "")))
+
+        sorted_spans = sorted(parsed_spans)
+        for left, right in zip(sorted_spans, sorted_spans[1:]):
+            left_start, left_end, left_index, left_label = left
+            right_start, right_end, right_index, right_label = right
+            if left_end <= right_start:
+                continue
+            cls._issue(
+                issues,
+                artifact=artifact,
+                code="overlapping_spans",
+                severity="warning",
+                message=(
+                    "Exported Prodigy spans overlap; review in spans.manual or resolve boundary conflicts before ner.manual."
+                ),
+                record_id=record_id,
+                sentence_id=sentence_id,
+                span_index=right_index,
+                overlapping_span_index=left_index,
+                left_span={"start": left_start, "end": left_end, "label": left_label},
+                right_span={"start": right_start, "end": right_end, "label": right_label},
             )
 
     @classmethod
