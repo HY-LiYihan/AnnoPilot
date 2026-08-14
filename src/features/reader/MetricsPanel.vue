@@ -186,13 +186,15 @@ function accuracyLabel(value: string, labels: UiLabels['metrics']) {
 
 function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics'], order: ReviewQueueOrder) {
   const suggestion = item.first_suggestion
+  const hint = item.action_hint || item.review_guidance?.action_hint || ''
   let score = `${Math.round(item.min_confidence * 100)}%`
   if (order === 'hybrid' && item.review_route === 'calibration') {
     score = `${labels.calibrationSample} ${Math.round(item.min_confidence * 100)}%`
   } else if (order === 'goldsmith' || order === 'hybrid') {
     score = `${labels.riskScore} ${item.risk_score.toFixed(2)}${riskBreakdownText(item, labels)}`
   }
-  return suggestion ? `${suggestion.tag_name}: ${suggestion.text} · ${score}` : labels.queuePreviewFallback(item.suggestion_count)
+  const candidate = suggestion ? `${suggestion.tag_name}: ${suggestion.text}` : labels.queuePreviewFallback(item.suggestion_count)
+  return hint ? `${candidate} · ${hint} · ${score}` : `${candidate} · ${score}`
 }
 
 function riskBreakdownText(item: ReviewQueueItem, labels: UiLabels['metrics']) {

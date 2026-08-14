@@ -390,6 +390,8 @@ class ExportService:
                 "risk_score": item["risk_score"],
                 "risk_reason_codes": item.get("risk_reason_codes", []),
                 "review_route": item["review_route"],
+                "action_hint": item.get("action_hint", ""),
+                "review_guidance": item.get("review_guidance", {}),
                 "first_suggestion": self._export_goldsmith_suggestion(item.get("first_suggestion")),
                 "meta": {
                     "source": "annopilot",

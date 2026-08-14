@@ -229,6 +229,7 @@ const currentReviewQueueInsight = computed<ReviewQueueInsight | null>(() => {
   return {
     headline,
     detail: reviewQueueInsightDetail(item),
+    actionHint: item.action_hint || item.review_guidance?.action_hint || '',
     reasons: riskReasonLabels(item).slice(0, 4),
   }
 })

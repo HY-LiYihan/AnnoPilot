@@ -118,12 +118,21 @@ export type ReviewQueueItem = {
   risk_score: number
   risk_reason_codes: string[]
   review_route: 'position' | 'uncertain' | 'risk' | 'calibration' | string
+  action_hint: string
+  review_guidance: {
+    domain?: string
+    primary_action?: string
+    risk_reason_codes?: string[]
+    action_hint?: string
+    boundary_checks?: string[]
+  }
   first_suggestion: SuggestionDef | null
 }
 
 export type ReviewQueueInsight = {
   headline: string
   detail: string
+  actionHint: string
   reasons: string[]
 }
 

@@ -673,6 +673,8 @@ class DocumentQueryRepository:
                 "first_suggestion": first_suggestion,
             }
             item["risk_reason_codes"] = self._review_queue_risk_reason_codes(item, first_suggestion)
+            item["action_hint"] = self._review_queue_action_hint(item, first_suggestion)
+            item["review_guidance"] = self._review_queue_guidance(item, first_suggestion)
             items.append(item)
 
         return {"items": items, "total": int(total or 0)}
@@ -773,6 +775,55 @@ class DocumentQueryRepository:
         if not codes and item.get("review_route") == "uncertain":
             codes.append("uncertain_confidence")
         return list(dict.fromkeys(codes))
+
+    @staticmethod
+    def _review_queue_action_hint(item: dict[str, Any], first_suggestion: dict[str, Any] | None) -> str:
+        latest_review = (first_suggestion or {}).get("latest_review") or {}
+        recommendation = latest_review.get("recommendation")
+        if recommendation == "reject":
+            return "Likely false positive: compare against the Engagement label definition before accepting."
+        if recommendation == "uncertain":
+            return "Boundary case: inspect whether the cue is explicit enough for this Engagement label."
+        if float(item.get("candidate_disagreement_score") or 0.0) > 0:
+            return "Conflicting candidates: compare label and token boundary before choosing or editing manually."
+        if float(item.get("judge_review_risk_score") or 0.0) > 0:
+            return "Judge risk: inspect boundary, missing-span, and extra-span signals before accepting."
+        if float(item.get("min_confidence") or 0.0) < MEDIUM_CONFIDENCE_THRESHOLD:
+            return "Low confidence: accept only if the highlighted span is an explicit Engagement cue."
+        if item.get("review_route") == "calibration":
+            return "Calibration sample: verify even if the candidate looks correct."
+        if not first_suggestion:
+            return "Manual review: inspect the sentence and add any missing Engagement cue."
+        return "Accept if the highlighted span and label are exact; otherwise edit the span or label manually."
+
+    @classmethod
+    def _review_queue_guidance(cls, item: dict[str, Any], first_suggestion: dict[str, Any] | None) -> dict[str, Any]:
+        risk_reason_codes = list(item.get("risk_reason_codes") or [])
+        if not first_suggestion:
+            primary_action = "manual_review"
+        elif float(item.get("candidate_disagreement_score") or 0.0) > 0:
+            primary_action = "compare_candidates"
+        elif (
+            float(item.get("llm_review_risk_score") or 0.0) > 0
+            or float(item.get("judge_review_risk_score") or 0.0) > 0
+            or float(item.get("min_confidence") or 0.0) < MEDIUM_CONFIDENCE_THRESHOLD
+        ):
+            primary_action = "expert_boundary_review"
+        elif item.get("review_route") == "calibration":
+            primary_action = "calibration_sample"
+        else:
+            primary_action = "verify_exact_match"
+        return {
+            "domain": "appraisal_engagement",
+            "primary_action": primary_action,
+            "risk_reason_codes": risk_reason_codes,
+            "action_hint": cls._review_queue_action_hint(item, first_suggestion),
+            "boundary_checks": [
+                "Choose the smallest text span that explicitly signals dialogic positioning.",
+                "Judge the label by Engagement function, not by sentiment polarity alone.",
+                "Use manual editing when candidates miss a cue, include extra context, or assign the wrong Engagement label.",
+            ],
+        }
 
     @staticmethod
     def _float_or_default(value: Any, default: float) -> float:

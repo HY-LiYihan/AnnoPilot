@@ -2530,6 +2530,12 @@ def test_review_queue_goldsmith_prioritizes_candidate_disagreement(tmp_path: Pat
         assert round(by_goldsmith["items"][0]["lexical_risk_score"], 2) == 0.04
         assert round(by_goldsmith["items"][0]["risk_score"], 2) == 1.04
         assert round(by_goldsmith["items"][1]["risk_score"], 2) == 0.40
+        assert by_goldsmith["items"][0]["action_hint"].startswith("Conflicting candidates")
+        assert by_goldsmith["items"][0]["review_guidance"]["domain"] == "appraisal_engagement"
+        assert by_goldsmith["items"][0]["review_guidance"]["primary_action"] == "compare_candidates"
+        assert by_goldsmith["items"][0]["review_guidance"]["action_hint"] == by_goldsmith["items"][0]["action_hint"]
+        assert "candidate_conflict" in by_goldsmith["items"][0]["review_guidance"]["risk_reason_codes"]
+        assert by_goldsmith["items"][0]["review_guidance"]["boundary_checks"]
 
         review_queue_export = client.get(
             f"/api/projects/default/documents/{document_id}/export.goldsmith.review-queue.jsonl?order=goldsmith&limit=2"
@@ -2538,6 +2544,8 @@ def test_review_queue_goldsmith_prioritizes_candidate_disagreement(tmp_path: Pat
         review_queue_lines = [json.loads(line) for line in review_queue_export.text.splitlines()]
         assert review_queue_lines[0]["sentence_id"] == first_sentence["id"]
         assert review_queue_lines[0]["candidate_disagreement_score"] == 1.0
+        assert review_queue_lines[0]["action_hint"] == by_goldsmith["items"][0]["action_hint"]
+        assert review_queue_lines[0]["review_guidance"]["primary_action"] == "compare_candidates"
 
 
 def test_review_queue_goldsmith_uses_llm_review_risk_signal(tmp_path: Path) -> None:

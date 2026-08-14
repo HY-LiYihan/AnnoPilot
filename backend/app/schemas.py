@@ -268,6 +268,8 @@ class ReviewQueueItemResponse(BaseModel):
     risk_score: float
     risk_reason_codes: list[str] = Field(default_factory=list)
     review_route: str = "risk"
+    action_hint: str = ""
+    review_guidance: dict[str, Any] = Field(default_factory=dict)
     first_suggestion: Optional[SuggestionResponse] = None
 
 

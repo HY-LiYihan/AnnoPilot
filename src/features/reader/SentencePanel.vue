@@ -520,6 +520,7 @@ function predicatePositionClasses(
         <span>
           <strong>{{ reviewQueueInsight.headline }}</strong>
           <small>{{ reviewQueueInsight.detail }}</small>
+          <small v-if="reviewQueueInsight.actionHint">{{ reviewQueueInsight.actionHint }}</small>
         </span>
         <em v-for="reason in reviewQueueInsight.reasons" :key="reason">{{ reason }}</em>
       </div>
