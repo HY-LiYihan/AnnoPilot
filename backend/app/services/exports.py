@@ -584,6 +584,7 @@ class ExportService:
                 "agreement": score["agreement"],
                 "pairwise_span_f1": score["pairwise_span_f1"],
                 "exact_match_rate": score["exact_match_rate"],
+                "consensus_match_rate": score["consensus_match_rate"],
                 "average_model_confidence": score["average_model_confidence"],
                 "avg_confidence": score["avg_confidence"],
                 "avg_rule_risk": score["avg_rule_risk"],
@@ -685,6 +686,7 @@ class ExportService:
                             "agreement": consistency_score["agreement"],
                             "pairwise_span_f1": consistency_score["pairwise_span_f1"],
                             "exact_match_rate": consistency_score["exact_match_rate"],
+                            "consensus_match_rate": consistency_score["consensus_match_rate"],
                             "average_model_confidence": consistency_score["average_model_confidence"],
                             "avg_confidence": consistency_score["avg_confidence"],
                             "avg_rule_risk": consistency_score["avg_rule_risk"],
@@ -747,6 +749,7 @@ class ExportService:
                         "score": consistency_score["score"],
                         "pairwise_span_f1": consistency_score["pairwise_span_f1"],
                         "exact_match_rate": consistency_score["exact_match_rate"],
+                        "consensus_match_rate": consistency_score["consensus_match_rate"],
                         "average_model_confidence": consistency_score["average_model_confidence"],
                         "uncertainty_score": consistency_score["uncertainty_score"],
                         "overlap_conflict_rate": consistency_score["overlap_conflict_rate"],
@@ -1022,7 +1025,9 @@ class ExportService:
         for signature in signatures:
             signature_counts[signature] = signature_counts.get(signature, 0) + 1
         consensus_signature = max(signature_counts, key=lambda key: (signature_counts[key], key))
-        exact_match_rate = signature_counts[consensus_signature] / len(suggestions)
+        consensus_match_rate = signature_counts[consensus_signature] / len(suggestions)
+        rosetta_reference_signature = signatures[0]
+        exact_match_rate = signature_counts[rosetta_reference_signature] / len(suggestions)
 
         confidences = [float(suggestion.get("confidence") or 0.0) for suggestion in suggestions]
         avg_confidence = sum(confidences) / len(confidences)
@@ -1072,6 +1077,7 @@ class ExportService:
             "agreement": round(agreement, 4),
             "pairwise_span_f1": pairwise_span_f1,
             "exact_match_rate": round(exact_match_rate, 4),
+            "consensus_match_rate": round(consensus_match_rate, 4),
             "average_model_confidence": round(avg_confidence, 4),
             "avg_confidence": round(avg_confidence, 4),
             "avg_rule_risk": round(avg_rule_risk, 4),

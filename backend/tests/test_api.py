@@ -2650,6 +2650,75 @@ def test_review_queue_goldsmith_prioritizes_candidate_disagreement(tmp_path: Pat
         ]
 
 
+def test_goldsmith_consistency_exact_match_rate_matches_rosetta_reference_candidate(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("rosetta-exact-rate.txt", "Alpha beta.", "text/plain")},
+        ).json()
+        document_id = imported["document_id"]
+        first_tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "Entertain", "description": "Engagement entertain cue."},
+        ).json()["tag"]
+        second_tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "Disclaim", "description": "Engagement disclaim cue."},
+        ).json()["tag"]
+        sentence = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=1").json()["sentences"][0]
+
+        with storage.connect() as conn:
+            now = "2026-01-01T00:00:00Z"
+
+            def insert_suggestion(suggestion_id: str, tag_id: str, token_offset: int, confidence: float) -> None:
+                token = sentence["tokens"][token_offset]
+                conn.execute(
+                    """
+                    INSERT INTO annotation_suggestions (
+                      id, sentence_id, tag_id, start_token_index, end_token_index,
+                      start_char, end_char, text, confidence, source, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                    """,
+                    (
+                        suggestion_id,
+                        sentence["id"],
+                        tag_id,
+                        token["token_index"],
+                        token["token_index"],
+                        token["start_char"],
+                        token["end_char"],
+                        token["text"],
+                        confidence,
+                        "test",
+                        now,
+                    ),
+                )
+
+            insert_suggestion("sg-reference-minority", first_tag["id"], 0, 0.97)
+            insert_suggestion("sg-consensus-a", second_tag["id"], 1, 0.97)
+            insert_suggestion("sg-consensus-b", second_tag["id"], 1, 0.96)
+
+        consistency_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.consistency-scores.jsonl")
+        assert consistency_response.status_code == 200
+        consistency_line = json.loads(consistency_response.text.splitlines()[0])
+        assert round(consistency_line["pairwise_span_f1"], 4) == 0.3333
+        assert round(consistency_line["exact_match_rate"], 4) == 0.3333
+        assert round(consistency_line["consensus_match_rate"], 4) == 0.6667
+        assert consistency_line["consensus_signature"].startswith(second_tag["id"])
+
+        candidate_runs = [
+            json.loads(line)
+            for line in client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.candidate-runs.jsonl").text.splitlines()
+        ]
+        first_candidate_consistency = candidate_runs[0]["meta"]["consistency"]
+        assert round(first_candidate_consistency["exact_match_rate"], 4) == 0.3333
+        assert round(first_candidate_consistency["consensus_match_rate"], 4) == 0.6667
+
+
 def test_review_queue_goldsmith_uses_llm_review_risk_signal(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",
