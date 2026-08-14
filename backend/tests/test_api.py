@@ -1302,6 +1302,7 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
             "appraisal-engagement-health-science-cn-en",
             "appraisal-engagement-ai-education-cn-en",
             "appraisal-engagement-climate-energy-cn-en",
+            "appraisal-engagement-workplace-labor-cn-en",
             "appraisal-engagement-calibration-cn-en",
         ]
         assert [preset["id"] for preset in presets] == expected_preset_ids
@@ -1381,6 +1382,7 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         assert loaded_by_id["appraisal-engagement-health-science-cn-en"]["suggestions_created"] >= 20
         assert loaded_by_id["appraisal-engagement-ai-education-cn-en"]["suggestions_created"] >= 20
         assert loaded_by_id["appraisal-engagement-climate-energy-cn-en"]["suggestions_created"] >= 20
+        assert loaded_by_id["appraisal-engagement-workplace-labor-cn-en"]["suggestions_created"] >= 20
         assert loaded_by_id["appraisal-engagement-calibration-cn-en"]["suggestions_created"] >= 20
 
 

@@ -225,6 +225,18 @@ Of course, one regional project cannot prove a full energy transition, yet analy
 """
 
 
+APPRAISAL_ENGAGEMENT_WORKPLACE_LABOR_TEXT = """The union said the new schedule may reduce burnout, but managers argue it does not guarantee higher retention.
+According to the staff survey, the pilot clearly shows shorter handover delays and demonstrates where weekend shifts remain unfair.
+Some supervisors reportedly claimed the complaints were exaggerated; however, the HR review does not support that claim.
+Of course, one workshop cannot resolve every workplace dispute, yet employees argue it suggests which policies need joint review.
+
+工会表示，新的排班可能减少倦怠，但管理层认为它并不能保证更高留任率。
+员工调查指出，试点清楚显示交接延迟缩短，并证明周末班次仍然不公平的地方。
+一些主管据称声称投诉被夸大；然而，人力复核并不支持这种说法。
+当然，一次工作坊不能解决所有职场争议，不过员工认为它提示哪些政策需要共同复核。
+"""
+
+
 APPRAISAL_ENGAGEMENT_CALIBRATION_TEXT = """The audit clearly shows where reviewers disagree, but it may also show only one pilot case.
 The memo allegedly claimed the model proves accuracy; however, the results only suggest improvement.
 The reviewer said the label is stable, yet the same evidence clearly shows uncertainty.
@@ -398,6 +410,15 @@ BUILTIN_SAMPLE_PRESETS = {
         description="面向气候政策、能源转型和基础设施争议的中英 engagement 线索，适合练习 hedging、industry claims、countering 和 evidence-backed planning。",
         filename="appraisal-engagement-climate-energy-cn-en.txt",
         text=APPRAISAL_ENGAGEMENT_CLIMATE_ENERGY_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-workplace-labor-cn-en": SamplePreset(
+        id="appraisal-engagement-workplace-labor-cn-en",
+        title="Engagement 职场/劳动关系样例",
+        description="面向工会沟通、HR 复核、排班争议和员工反馈的中英 engagement 线索，适合练习 institutional voice、countering、denial 和 policy review framing。",
+        filename="appraisal-engagement-workplace-labor-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_WORKPLACE_LABOR_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
     ),
