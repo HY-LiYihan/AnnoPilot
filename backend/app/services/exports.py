@@ -708,9 +708,10 @@ class ExportService:
             route = consistency_score["rosetta_route"]
             if route == "high":
                 continue
+            sorted_suggestions = sorted(suggestions, key=lambda suggestion: str(suggestion["id"]))
             options = [
                 self._goldsmith_review_option(index, sentence, suggestion, consistency_score)
-                for index, suggestion in enumerate(suggestions)
+                for index, suggestion in enumerate(sorted_suggestions)
             ]
             priority = self._goldsmith_review_task_priority(route, consistency_score["uncertainty_score"])
             tasks.append(
@@ -748,6 +749,7 @@ class ExportService:
                         "source": "annopilot",
                         "artifact": "review_tasks.jsonl",
                         "rosetta_reference": "human_review_queue.jsonl",
+                        "option_order": "candidate_id",
                         "manual_option_note": "Choose __manual__ when every candidate span or label is wrong and the sentence needs direct editing.",
                     },
                 }

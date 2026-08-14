@@ -1559,9 +1559,13 @@ def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(
         assert review_tasks[0]["candidate_count"] == len(review_tasks[0]["options"])
         assert review_tasks[0]["options"][0]["option_id"] == "A"
         assert review_tasks[0]["options"][0]["candidate_id"]
+        assert [option["candidate_id"] for option in review_tasks[0]["options"]] == sorted(
+            option["candidate_id"] for option in review_tasks[0]["options"]
+        )
         assert "[" in review_tasks[0]["options"][0]["annotation_markup"]
         assert review_tasks[0]["consistency"]["rosetta_route"] == review_tasks[0]["route"]
         assert review_tasks[0]["meta"]["rosetta_reference"] == "human_review_queue.jsonl"
+        assert review_tasks[0]["meta"]["option_order"] == "candidate_id"
 
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert manifest["artifacts"]["goldsmith_review_tasks_jsonl"]["schema_version"] == "annopilot.goldsmith_review_tasks.v1"
