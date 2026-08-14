@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
@@ -3808,6 +3809,58 @@ def test_sentence_llm_review_suggestions_reviews_current_queue(tmp_path: Path) -
         assert len(review_events) == len(suggestions)
         assert {event["suggestion_id"] for event in review_events} == {suggestion["id"] for suggestion in suggestions}
         assert all(event["actor_type"] == "llm" for event in review_events)
+
+
+def test_accept_suggestion_rolls_back_when_event_enqueue_fails(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        seed_pos_span_labels(client)
+        response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("story.txt", "清晨，小猫看见金色的叶子。", "text/plain")},
+        )
+        document_id = response.json()["document_id"]
+        suggestions = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 2, "min_confidence": 0.98},
+        ).json()["suggestions"]
+        suggestion_id = suggestions[0]["id"]
+
+        with storage.connect() as conn:
+            before_annotations = conn.execute("SELECT COUNT(*) AS count FROM annotations").fetchone()["count"]
+            before_events = conn.execute("SELECT COUNT(*) AS count FROM event_outbox").fetchone()["count"]
+
+        original_enqueue = storage.suggestion_decisions.enqueue_event
+
+        def fail_on_accept_event(conn, project_id, payload):
+            if payload.get("type") == "suggestion.accepted":
+                raise RuntimeError("forced outbox failure")
+            return original_enqueue(conn, project_id, payload)
+
+        storage.suggestion_decisions.enqueue_event = fail_on_accept_event
+        try:
+            with pytest.raises(RuntimeError, match="forced outbox failure"):
+                storage.accept_suggestion("default", suggestion_id)
+        finally:
+            storage.suggestion_decisions.enqueue_event = original_enqueue
+
+        with storage.connect() as conn:
+            annotation_count = conn.execute("SELECT COUNT(*) AS count FROM annotations").fetchone()["count"]
+            event_count = conn.execute("SELECT COUNT(*) AS count FROM event_outbox").fetchone()["count"]
+            suggestion = conn.execute(
+                "SELECT status FROM annotation_suggestions WHERE id = ?",
+                (suggestion_id,),
+            ).fetchone()
+
+        assert annotation_count == before_annotations
+        assert event_count == before_events
+        assert suggestion["status"] == "pending"
+        events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
+        assert not any(event.get("suggestion_id") == suggestion_id and event["type"] == "suggestion.accepted" for event in events)
+        assert not any(event.get("source_suggestion_id") == suggestion_id and event["type"] == "annotation.created" for event in events)
 
 
 def test_apply_sentence_llm_review_recommendations_updates_suggestions(tmp_path: Path) -> None:
