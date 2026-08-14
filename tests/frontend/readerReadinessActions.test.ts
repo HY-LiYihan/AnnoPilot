@@ -115,11 +115,18 @@ test('readiness actions surface conflicts, pending suggestions, and incomplete s
   )
 
   assert.deepEqual(
-    actions.map((action) => [action.id, action.kind, action.count, action.targetSentenceIndex, action.targetSuggestionId ?? null]),
+    actions.map((action) => [
+      action.id,
+      action.kind,
+      action.count,
+      action.targetSentenceIndex,
+      action.targetSuggestionId ?? null,
+      action.targetFocus ?? null,
+    ]),
     [
-      ['annotation_conflicts', 'review-sentence', 2, 1, null],
-      ['pending_suggestions', 'review-sentence', 4, 8, 'suggestion-risk'],
-      ['incomplete_sentences', 'review-sentence', 2, 1, null],
+      ['annotation_conflicts', 'review-sentence', 2, 1, null, 'annotation-conflict'],
+      ['pending_suggestions', 'review-sentence', 4, 8, 'suggestion-risk', 'suggestion'],
+      ['incomplete_sentences', 'review-sentence', 2, 1, null, null],
     ],
   )
 })

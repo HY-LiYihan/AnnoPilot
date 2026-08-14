@@ -5,6 +5,7 @@ import {
   buildAnnotationConflictPairs,
   conflictResolutionAnnotation,
   conflictResolutionAnnotationIds,
+  firstConflictAnnotationIds,
 } from '../../src/composables/readerAnnotationConflicts.ts'
 
 function makeAnnotation(overrides = {}) {
@@ -52,4 +53,14 @@ test('batch conflict resolution ids are unique across chained overlaps', () => {
 
   assert.deepEqual(conflictResolutionAnnotationIds(pairs, 'narrower'), ['middle', 'narrow'])
   assert.deepEqual(conflictResolutionAnnotationIds(pairs, 'wider'), ['wide', 'middle'])
+})
+
+test('firstConflictAnnotationIds returns the first visible conflict target pair', () => {
+  const left = makeAnnotation({ id: 'left', start_token_index: 0, end_token_index: 2 })
+  const right = makeAnnotation({ id: 'right', start_token_index: 1, end_token_index: 3 })
+  const third = makeAnnotation({ id: 'third', start_token_index: 4, end_token_index: 5 })
+  const pairs = buildAnnotationConflictPairs([left, right, third])
+
+  assert.deepEqual(firstConflictAnnotationIds(pairs), ['left', 'right'])
+  assert.deepEqual(firstConflictAnnotationIds([]), [])
 })

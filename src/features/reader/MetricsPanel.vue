@@ -5,6 +5,7 @@ import {
   buildReadinessActions,
   pendingSuggestionCount,
   type ReadinessAction,
+  type ReadinessTargetFocus,
 } from '../../composables/readerReadinessActions'
 import type { UiLabels } from '../../i18n'
 import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, LabelCount, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder, SentenceQueueItem } from '../../types/domain'
@@ -53,7 +54,7 @@ const emit = defineEmits<{
   'auto-mark-monogloss': []
   'import-annotations': [file: File]
   'reset-project': []
-  'review-sentence': [sentenceIndex: number, targetSuggestionId?: string | null]
+  'review-sentence': [sentenceIndex: number, targetSuggestionId?: string | null, targetFocus?: ReadinessTargetFocus | null]
   'review-order-change': [order: ReviewQueueOrder]
   'verify-rebuild': []
 }>()
@@ -201,7 +202,9 @@ function handleReadinessAction(action: ReadinessAction) {
     emit('auto-mark-monogloss')
     return
   }
-  if (action.targetSentenceIndex !== null) emit('review-sentence', action.targetSentenceIndex, action.targetSuggestionId ?? null)
+  if (action.targetSentenceIndex !== null) {
+    emit('review-sentence', action.targetSentenceIndex, action.targetSuggestionId ?? null, action.targetFocus ?? null)
+  }
 }
 
 function progressPercent(metrics: Metrics) {
@@ -384,7 +387,7 @@ function shortHash(value: string) {
           :key="item.id"
           class="review-queue-row"
           type="button"
-          @click="emit('review-sentence', item.index)"
+          @click="emit('review-sentence', item.index, null, 'annotation-conflict')"
         >
           <span>
             <strong>#{{ item.index + 1 }} · {{ item.annotation_overlap_count }} {{ labels.conflicts }}</strong>

@@ -56,6 +56,7 @@ const props = defineProps<{
   reviewingSuggestionId: string
   activeSuggestionTargetId: string
   activeSuggestionPosition: number
+  focusedConflictAnnotationIds: string[]
   annotationForToken: (sentence: SentenceDef, tokenIndex: number) => AnnotationDef | undefined
   suggestionForToken: (sentence: SentenceDef, tokenIndex: number) => SuggestionDef | undefined
   isTokenInDrag: (sentence: SentenceDef, tokenIndex: number) => boolean
@@ -73,6 +74,7 @@ const renderedSentences = computed(() =>
 const annotationConflictPairs = computed(() => buildAnnotationConflictPairs(props.activeAnnotations))
 
 const conflictedAnnotationIds = computed(() => new Set(annotationConflictPairs.value.flatMap((pair) => [pair.left.id, pair.right.id])))
+const focusedConflictAnnotationIdSet = computed(() => new Set(props.focusedConflictAnnotationIds))
 
 const narrowerConflictAnnotationIds = computed(() => uniqueConflictResolutionIds('narrower'))
 const widerConflictAnnotationIds = computed(() => uniqueConflictResolutionIds('wider'))
@@ -207,6 +209,14 @@ function isAnnotationConflicted(annotationId: string) {
   return conflictedAnnotationIds.value.has(annotationId)
 }
 
+function isAnnotationConflictFocused(annotationId: string) {
+  return focusedConflictAnnotationIdSet.value.has(annotationId)
+}
+
+function isConflictPairFocused(pair: { left: AnnotationDef; right: AnnotationDef }) {
+  return isAnnotationConflictFocused(pair.left.id) || isAnnotationConflictFocused(pair.right.id)
+}
+
 function uniqueConflictResolutionIds(mode: ConflictResolutionMode) {
   return conflictResolutionAnnotationIds(annotationConflictPairs.value, mode)
 }
@@ -255,6 +265,9 @@ function sentenceStatusLabel(sentence: SentenceDef, currentSentenceIndex: number
 }
 
 function tokenSpanClasses(sentence: SentenceDef, tokenIndex: number) {
+  const focusedConflictAnnotation = focusedConflictAnnotationForToken(sentence, tokenIndex)
+  if (focusedConflictAnnotation) return rangePositionClasses(focusedConflictAnnotation.start_token_index, focusedConflictAnnotation.end_token_index, tokenIndex)
+
   const annotation = props.annotationForToken(sentence, tokenIndex)
   if (annotation) return rangePositionClasses(annotation.start_token_index, annotation.end_token_index, tokenIndex)
 
@@ -265,6 +278,19 @@ function tokenSpanClasses(sentence: SentenceDef, tokenIndex: number) {
   if (props.isTokenPending(sentence, tokenIndex)) return predicatePositionClasses(sentence, tokenIndex, props.isTokenPending)
 
   return {}
+}
+
+function focusedConflictAnnotationForToken(sentence: SentenceDef, tokenIndex: number) {
+  if (sentence.index !== props.currentSentenceIndex) return undefined
+  return props.activeAnnotations.find((annotation) =>
+    focusedConflictAnnotationIdSet.value.has(annotation.id) &&
+      annotation.start_token_index <= tokenIndex &&
+      annotation.end_token_index >= tokenIndex,
+  )
+}
+
+function isConflictTargetForToken(sentence: SentenceDef, tokenIndex: number) {
+  return Boolean(focusedConflictAnnotationForToken(sentence, tokenIndex))
 }
 
 function isSuggestionTargetForToken(sentence: SentenceDef, tokenIndex: number) {
@@ -416,6 +442,7 @@ function predicatePositionClasses(
                   annotated: annotationForToken(sentence, token.token_index),
                   suggested: suggestionForToken(sentence, token.token_index),
                   targeted: isSuggestionTargetForToken(sentence, token.token_index),
+                  'conflict-targeted': isConflictTargetForToken(sentence, token.token_index),
                   selecting: isTokenInDrag(sentence, token.token_index),
                   pending: isTokenPending(sentence, token.token_index),
                 },
@@ -549,7 +576,12 @@ function predicatePositionClasses(
           </div>
         </div>
         <div class="annotation-conflict-list">
-          <div v-for="pair in annotationConflictPairs" :key="pair.id" class="annotation-conflict-pair">
+          <div
+            v-for="pair in annotationConflictPairs"
+            :key="pair.id"
+            class="annotation-conflict-pair"
+            :class="{ focused: isConflictPairFocused(pair) }"
+          >
             <span>
               <strong>{{ labels.annotationConflictPair(shortSpanText(pair.left.text), shortSpanText(pair.right.text)) }}</strong>
               <small>{{ annotationRangeText(pair.left, labels) }} · {{ annotationRangeText(pair.right, labels) }}</small>
@@ -576,7 +608,7 @@ function predicatePositionClasses(
           v-for="annotation in activeAnnotations"
           :key="annotation.id"
           class="candidate-row"
-          :class="{ conflict: isAnnotationConflicted(annotation.id) }"
+          :class="{ conflict: isAnnotationConflicted(annotation.id), focused: isAnnotationConflictFocused(annotation.id) }"
           :style="{ '--token-color': annotation.tag_color }"
           @click="emit('delete-annotation', annotation.id)"
         >

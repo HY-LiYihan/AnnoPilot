@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { CheckCircle, Settings } from '@lucide/vue'
 import { fetchRuntimeHealth } from '../../api/health'
 import { fetchLlmSettings, updateLlmSettings } from '../../api/settings'
+import { buildAnnotationConflictPairs, firstConflictAnnotationIds } from '../../composables/readerAnnotationConflicts'
+import type { ReadinessTargetFocus } from '../../composables/readerReadinessActions'
 import { useDocumentReader } from '../../composables/useDocumentReader'
 import { LANGUAGE_KEY, UI_LABELS, type Locale } from '../../i18n'
 import type { LlmModelOption, LlmSettingsState, ReviewQueueInsight, ReviewQueueItem, RuntimeHealth } from '../../types/domain'
@@ -212,6 +214,11 @@ const {
 
 const localizedReviewSummary = computed(() => labels.value.tags.suggestionsWaiting(metrics.value.suggestion_count))
 const annotationConflictItems = computed(() => queueItems.value.filter((sentence) => (sentence.annotation_overlap_count ?? 0) > 0))
+const focusedConflictSentenceIndex = ref<number | null>(null)
+const focusedConflictAnnotationIds = computed(() => {
+  if (focusedConflictSentenceIndex.value !== currentSentenceIndex.value) return []
+  return firstConflictAnnotationIds(buildAnnotationConflictPairs(activeAnnotations.value))
+})
 const localizedReviewQueueSummary = computed(() => {
   const conflictItems = annotationConflictItems.value
   if (conflictItems.length) {
@@ -282,7 +289,19 @@ function riskReasonLabels(item: ReviewQueueItem) {
 }
 const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.value.reader.undoTitle : labels.value.reader.undoTitle))
 
-function focusReviewSentence(sentenceIndex: number, targetSuggestionId?: string | null) {
+watch(currentSentenceIndex, (index) => {
+  if (focusedConflictSentenceIndex.value !== null && focusedConflictSentenceIndex.value !== index) {
+    focusedConflictSentenceIndex.value = null
+  }
+})
+
+function moveToSentence(sentenceIndex: number, scrollBehavior: ScrollBehavior = 'smooth') {
+  focusedConflictSentenceIndex.value = null
+  setCurrentSentence(sentenceIndex, scrollBehavior)
+}
+
+function focusReviewSentence(sentenceIndex: number, targetSuggestionId?: string | null, targetFocus?: ReadinessTargetFocus | null) {
+  focusedConflictSentenceIndex.value = targetFocus === 'annotation-conflict' ? sentenceIndex : null
   setCurrentSentence(sentenceIndex, 'smooth', targetSuggestionId ?? '')
 }
 
@@ -386,7 +405,7 @@ async function confirmProjectReset() {
         @tag-delete="deleteTag"
         @tag-schema-import="handleTagSchemaImport"
         @tag-schema-export="exportTagSchemaJson"
-        @sentence-click="setCurrentSentence"
+        @sentence-click="moveToSentence"
       />
 
       <SentencePanel
@@ -417,6 +436,7 @@ async function confirmProjectReset() {
         :reviewing-suggestion-id="reviewingSuggestionId"
         :active-suggestion-target-id="activeSuggestionTargetId"
         :active-suggestion-position="activeSuggestionPosition"
+        :focused-conflict-annotation-ids="focusedConflictAnnotationIds"
         :annotation-for-token="annotationForToken"
         :suggestion-for-token="suggestionForToken"
         :is-token-in-drag="isTokenInDrag"
@@ -457,8 +477,8 @@ async function confirmProjectReset() {
         @ignore="completeCurrentSentence('ignore')"
         @reject="completeCurrentSentence('reject')"
         @reopen="reopenCurrentSentence"
-        @previous="setCurrentSentence(currentSentenceIndex - 1)"
-        @next="setCurrentSentence(currentSentenceIndex + 1)"
+        @previous="moveToSentence(currentSentenceIndex - 1)"
+        @next="moveToSentence(currentSentenceIndex + 1)"
       />
 
       <MetricsPanel

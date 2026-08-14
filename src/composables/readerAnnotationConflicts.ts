@@ -32,6 +32,11 @@ export function conflictResolutionAnnotationIds(pairs: AnnotationConflictPair[],
   return Array.from(new Set(pairs.map((pair) => conflictResolutionAnnotation(pair, mode).id)))
 }
 
+export function firstConflictAnnotationIds(pairs: AnnotationConflictPair[]) {
+  const firstPair = pairs[0]
+  return firstPair ? [firstPair.left.id, firstPair.right.id] : []
+}
+
 function spanTokenLength(annotation: AnnotationDef) {
   return annotation.end_token_index - annotation.start_token_index + 1
 }

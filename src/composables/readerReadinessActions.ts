@@ -1,6 +1,7 @@
 import type { DocumentMeta, Metrics, ReviewQueueItem, SentenceQueueItem } from '../types/domain'
 
 export type ReadinessActionKind = 'review-sentence' | 'auto-mark-monogloss'
+export type ReadinessTargetFocus = 'annotation-conflict' | 'suggestion'
 
 export type ReadinessActionId =
   | 'annotation_conflicts'
@@ -15,6 +16,7 @@ export type ReadinessAction = {
   count: number
   targetSentenceIndex: number | null
   targetSuggestionId?: string | null
+  targetFocus?: ReadinessTargetFocus | null
 }
 
 export function pendingSuggestionCount(metrics: Metrics) {
@@ -60,6 +62,7 @@ export function buildReadinessActions(
       kind: 'review-sentence',
       count: overlapCount,
       targetSentenceIndex: firstAnnotationConflictIndex(queueItems),
+      targetFocus: 'annotation-conflict',
     })
   }
 
@@ -70,6 +73,7 @@ export function buildReadinessActions(
       count: suggestionCount,
       targetSentenceIndex: firstPendingSuggestionIndex(queueItems, reviewQueueDetails),
       targetSuggestionId: firstPendingSuggestionId(reviewQueueDetails),
+      targetFocus: 'suggestion',
     })
   }
 
