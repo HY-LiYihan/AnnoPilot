@@ -195,6 +195,10 @@ export function goldsmithContrastiveExamplesExportUrl(projectId: string, documen
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.contrastive-examples.jsonl`
 }
 
+export function goldsmithReflectionPlansExportUrl(projectId: string, documentId: string) {
+  return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.reflection-plans.jsonl`
+}
+
 export function goldsmithReviewTasksExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.review-tasks.jsonl`
 }

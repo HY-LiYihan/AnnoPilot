@@ -218,6 +218,20 @@ def export_goldsmith_contrastive_examples(
     return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
 
 
+@router.get("/documents/{document_id}/export.goldsmith.reflection-plans.jsonl")
+def export_goldsmith_reflection_plans(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> StreamingResponse:
+    try:
+        lines = storage.export_goldsmith_reflection_plan_lines(project_id, document_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.goldsmith.reflection-plans.jsonl"'}
+    return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
+
+
 @router.get("/documents/{document_id}/export.goldsmith.review-tasks.jsonl")
 def export_goldsmith_review_tasks(
     project_id: str,

@@ -1147,6 +1147,96 @@ def test_export_goldsmith_contrastive_examples_matches_rosetta_lexical_selection
         assert artifact["filename"] in readme
 
 
+def test_export_goldsmith_reflection_plans_flags_false_negatives_and_boundaries(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        tag = client.post("/api/projects/default/tags", json={"name": "Engagement"}).json()["tag"]
+        import_response = client.post(
+            "/api/projects/default/import-txt",
+            files={
+                "file": (
+                    "reflection.txt",
+                    "Clearly, auditors agreed. Clearly, reviewers agreed. Clearly, teams paused. The risk emerged. The risk changed.",
+                    "text/plain",
+                )
+            },
+        )
+        assert import_response.status_code == 200
+        document_id = import_response.json()["document_id"]
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+
+        for sentence in document["sentences"][:2]:
+            token = next(token for token in sentence["tokens"] if token["text"] == "Clearly")
+            response = client.post(
+                f"/api/projects/default/sentences/{sentence['id']}/annotations",
+                json={"tag_id": tag["id"], "start_token_index": token["token_index"], "end_token_index": token["token_index"]},
+            )
+            assert response.status_code == 200
+
+        risk_source_sentence = document["sentences"][3]
+        risk_source_token = next(token for token in risk_source_sentence["tokens"] if token["text"] == "risk")
+        response = client.post(
+            f"/api/projects/default/sentences/{risk_source_sentence['id']}/annotations",
+            json={
+                "tag_id": tag["id"],
+                "start_token_index": risk_source_token["token_index"],
+                "end_token_index": risk_source_token["token_index"],
+            },
+        )
+        assert response.status_code == 200
+
+        boundary_sentence = document["sentences"][4]
+        boundary_tokens = {token["text"]: token for token in boundary_sentence["tokens"]}
+        response = client.post(
+            f"/api/projects/default/sentences/{boundary_sentence['id']}/annotations",
+            json={
+                "tag_id": tag["id"],
+                "start_token_index": boundary_tokens["The"]["token_index"],
+                "end_token_index": boundary_tokens["risk"]["token_index"],
+            },
+        )
+        assert response.status_code == 200
+
+        export_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.reflection-plans.jsonl")
+        assert export_response.status_code == 200
+        assert export_response.headers["content-disposition"] == f'attachment; filename="{document_id}.goldsmith.reflection-plans.jsonl"'
+        plans = [json.loads(line) for line in export_response.text.splitlines()]
+        assert plans
+        by_sentence_index = {plan["sentence_index"]: plan for plan in plans}
+
+        missed_plan = by_sentence_index[2]
+        missed_items = [item for item in missed_plan["items"] if item["item_type"] == "possible_false_negative"]
+        assert missed_plan["schema_version"] == "annopilot.goldsmith_reflection_plans.v1"
+        assert missed_plan["record_type"] == "reflection_plan"
+        assert missed_items[0]["token"] == "clearly"
+        assert missed_items[0]["start"] == 0
+        assert "entity_probability=1.00" in missed_items[0]["reason"]
+        assert missed_plan["meta"]["rosetta_reference"] == "reflection.py"
+        assert missed_plan["meta"]["stats_scope"] == "leave_one_out_annotated_sentences"
+
+        boundary_plan = by_sentence_index[4]
+        boundary_items = [item for item in boundary_plan["items"] if item["item_type"] == "boundary_token"]
+        assert boundary_items[0]["token"] == "the"
+        assert boundary_items[0]["start"] == 0
+        assert boundary_plan["candidate"]["span_count"] == 1
+        assert boundary_plan["candidate"]["spans"][0]["text"] == "The risk"
+
+        manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
+        artifact = manifest["artifacts"]["goldsmith_reflection_plans_jsonl"]
+        assert artifact["schema_version"] == "annopilot.goldsmith_reflection_plans.v1"
+        assert artifact["line_count"] == len(plans)
+
+        bundle_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.bundle.zip")
+        assert bundle_response.status_code == 200
+        with ZipFile(BytesIO(bundle_response.content)) as archive:
+            assert artifact["filename"] in archive.namelist()
+            readme = archive.read("README.txt").decode("utf-8")
+        assert artifact["filename"] in readme
+
+
 def test_list_tags_persists_project_tag_schema_without_document(tmp_path: Path) -> None:
     with TestClient(
         create_app(

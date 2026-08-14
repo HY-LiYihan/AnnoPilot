@@ -45,6 +45,7 @@ class ExportService:
         goldsmith_risk_reasons_schema_version: str,
         goldsmith_label_statistics_schema_version: str,
         goldsmith_contrastive_examples_schema_version: str,
+        goldsmith_reflection_plans_schema_version: str,
         goldsmith_review_tasks_schema_version: str,
         medium_confidence_threshold: float,
     ) -> None:
@@ -75,6 +76,7 @@ class ExportService:
         self.goldsmith_risk_reasons_schema_version = goldsmith_risk_reasons_schema_version
         self.goldsmith_label_statistics_schema_version = goldsmith_label_statistics_schema_version
         self.goldsmith_contrastive_examples_schema_version = goldsmith_contrastive_examples_schema_version
+        self.goldsmith_reflection_plans_schema_version = goldsmith_reflection_plans_schema_version
         self.goldsmith_review_tasks_schema_version = goldsmith_review_tasks_schema_version
         self.medium_confidence_threshold = medium_confidence_threshold
 
@@ -188,6 +190,7 @@ class ExportService:
             "goldsmith_risk_reasons_jsonl": "".join(context["goldsmith_risk_reason_lines"]),
             "goldsmith_label_statistics_jsonl": "".join(context["goldsmith_label_statistics_lines"]),
             "goldsmith_contrastive_examples_jsonl": "".join(context["goldsmith_contrastive_example_lines"]),
+            "goldsmith_reflection_plans_jsonl": "".join(context["goldsmith_reflection_plan_lines"]),
             "goldsmith_review_tasks_jsonl": "".join(context["goldsmith_review_task_lines"]),
         }
         bundle_files: dict[str, str] = {
@@ -217,6 +220,7 @@ class ExportService:
         goldsmith_candidate_run_lines = self.export_goldsmith_candidate_runs_lines(project_id, document_id)
         goldsmith_label_statistics_lines = self.export_goldsmith_label_statistics_lines(project_id, document_id)
         goldsmith_contrastive_example_lines = self.export_goldsmith_contrastive_examples_lines(project_id, document_id)
+        goldsmith_reflection_plan_lines = self.export_goldsmith_reflection_plan_lines(project_id, document_id)
         goldsmith_review_task_lines = self.export_goldsmith_review_task_lines(project_id, document_id)
         goldsmith_risk_reason_lines = self._build_goldsmith_risk_reason_lines(
             project_id=project_id,
@@ -354,6 +358,12 @@ class ExportService:
                     lines=goldsmith_contrastive_example_lines,
                     content_sha256=self._jsonl_content_sha256(goldsmith_contrastive_example_lines),
                 ),
+                "goldsmith_reflection_plans_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.reflection-plans.jsonl",
+                    schema_version=self.goldsmith_reflection_plans_schema_version,
+                    lines=goldsmith_reflection_plan_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_reflection_plan_lines),
+                ),
                 "goldsmith_review_tasks_jsonl": self._artifact_summary(
                     filename=f"{document_id}.goldsmith.review-tasks.jsonl",
                     schema_version=self.goldsmith_review_tasks_schema_version,
@@ -378,6 +388,7 @@ class ExportService:
             "goldsmith_risk_reason_lines": goldsmith_risk_reason_lines,
             "goldsmith_label_statistics_lines": goldsmith_label_statistics_lines,
             "goldsmith_contrastive_example_lines": goldsmith_contrastive_example_lines,
+            "goldsmith_reflection_plan_lines": goldsmith_reflection_plan_lines,
             "goldsmith_review_task_lines": goldsmith_review_task_lines,
             "event_lines": event_lines,
             "tag_schema_line": tag_schema_line,
@@ -590,61 +601,7 @@ class ExportService:
         document = self.get_document(project_id, document_id)
         generated_at = self.now()
         context_window = 2
-        stats: dict[str, dict[str, Any]] = {}
-        sentence_count = 0
-        annotation_count = 0
-
-        for sentence in document["sentences"]:
-            tokens = self._goldsmith_label_tokens(sentence["text"])
-            if not tokens:
-                continue
-            sentence_count += 1
-            spans = []
-            sentence_start = int(sentence["start_char"])
-            for annotation in sentence.get("annotations", []):
-                spans.append(
-                    {
-                        "start": int(annotation["start_char"]) - sentence_start,
-                        "end": int(annotation["end_char"]) - sentence_start,
-                        "label": annotation["tag_name"],
-                    }
-                )
-            annotation_count += len(spans)
-            entity_indices: set[int] = set()
-            labels_by_index: dict[int, set[str]] = {}
-            for index, token in enumerate(tokens):
-                for span in spans:
-                    if token["start"] < span["end"] and token["end"] > span["start"]:
-                        entity_indices.add(index)
-                        labels_by_index.setdefault(index, set()).add(span["label"])
-            context_indices: set[int] = set()
-            for index in entity_indices:
-                for offset in range(1, context_window + 1):
-                    if index - offset >= 0:
-                        context_indices.add(index - offset)
-                    if index + offset < len(tokens):
-                        context_indices.add(index + offset)
-            context_indices -= entity_indices
-
-            for index, token in enumerate(tokens):
-                bucket = stats.setdefault(
-                    token["token"],
-                    {
-                        "entity_count": 0,
-                        "context_count": 0,
-                        "other_count": 0,
-                        "label_entity_counts": {},
-                    },
-                )
-                if index in entity_indices:
-                    bucket["entity_count"] += 1
-                    for label in sorted(labels_by_index.get(index, set())):
-                        label_counts = bucket["label_entity_counts"]
-                        label_counts[label] = int(label_counts.get(label, 0)) + 1
-                elif index in context_indices:
-                    bucket["context_count"] += 1
-                else:
-                    bucket["other_count"] += 1
+        stats, sentence_count, annotation_count = self._goldsmith_label_statistics(document, context_window=context_window)
 
         lines = []
         for token, counts in sorted(stats.items()):
@@ -733,6 +690,119 @@ class ExportService:
                     "similar_k": similar_limit,
                     "boundary_k": boundary_limit,
                     "candidate_sample_count": len(samples),
+                },
+            }
+            lines.append(json.dumps(line, ensure_ascii=False) + "\n")
+        return lines
+
+    def export_goldsmith_reflection_plan_lines(self, project_id: str, document_id: str) -> list[str]:
+        document = self.get_document(project_id, document_id)
+        generated_at = self.now()
+        entity_threshold = 0.6
+        max_items = 8
+        context_window = 2
+        lines = []
+        for sentence in document["sentences"]:
+            tokens = self._goldsmith_label_tokens(sentence["text"])
+            if not tokens:
+                continue
+            stats, stats_sentence_count, stats_annotation_count = self._goldsmith_label_statistics(
+                document,
+                context_window=context_window,
+                exclude_sentence_id=sentence["id"],
+                annotated_only=True,
+            )
+            spans = self._goldsmith_annotation_spans(sentence)
+            predicted_token_indices = {
+                index
+                for index, token in enumerate(tokens)
+                if any(self._goldsmith_token_overlaps_span(token, span) for span in spans)
+            }
+            items: list[dict[str, Any]] = []
+            for index, token in enumerate(tokens):
+                stat = stats.get(token["token"])
+                if stat is None and index not in predicted_token_indices:
+                    items.append(
+                        {
+                            "item_type": "unseen_token",
+                            "token": token["token"],
+                            "start": token["start"],
+                            "end": token["end"],
+                            "reason": "token 未出现在 gold/high-confidence 样本统计中，且当前未被标注",
+                        }
+                    )
+                elif stat is not None and index not in predicted_token_indices:
+                    entity_probability = self._goldsmith_stat_probability(stat, "entity_count")
+                    if entity_probability >= entity_threshold:
+                        items.append(
+                            {
+                                "item_type": "possible_false_negative",
+                                "token": token["token"],
+                                "start": token["start"],
+                                "end": token["end"],
+                                "reason": f"历史统计中 entity_probability={entity_probability:.2f}，但当前未标注",
+                            }
+                        )
+
+            for span in spans:
+                edge_tokens = [token for token in tokens if self._goldsmith_token_overlaps_span(token, span)]
+                for token in edge_tokens[:1] + edge_tokens[-1:]:
+                    stat = stats.get(token["token"])
+                    if stat is None:
+                        continue
+                    entity_probability = self._goldsmith_stat_probability(stat, "entity_count")
+                    context_probability = self._goldsmith_stat_probability(stat, "context_count")
+                    if context_probability > entity_probability:
+                        items.append(
+                            {
+                                "item_type": "boundary_token",
+                                "token": token["token"],
+                                "start": token["start"],
+                                "end": token["end"],
+                                "reason": (
+                                    "token 在历史统计中更常作为 context "
+                                    f"({context_probability:.2f}) 而非 entity ({entity_probability:.2f})"
+                                ),
+                            }
+                        )
+
+            deduped_items = self._dedupe_reflection_items(items, max_items=max_items)
+            if not deduped_items:
+                continue
+            item_counts: dict[str, int] = {}
+            for item in deduped_items:
+                item_counts[item["item_type"]] = item_counts.get(item["item_type"], 0) + 1
+            line = {
+                "schema_version": self.goldsmith_reflection_plans_schema_version,
+                "record_type": "reflection_plan",
+                "generated_at": generated_at,
+                "project_id": project_id,
+                "document_id": document_id,
+                "sentence_id": sentence["id"],
+                "sentence_index": sentence["index"],
+                "text": sentence["text"],
+                "sample_id": sentence["id"],
+                "candidate_id": f"current-annotations:{sentence['id']}",
+                "candidate": {
+                    "id": f"current-annotations:{sentence['id']}",
+                    "source": "current_annotations",
+                    "spans": spans,
+                    "span_count": len(spans),
+                },
+                "items": deduped_items,
+                "item_counts": dict(sorted(item_counts.items())),
+                "meta": {
+                    "source": "annopilot",
+                    "artifact": "reflection_plans.jsonl",
+                    "rosetta_reference": "reflection.py",
+                    "tokenizer": "rosetta_label_statistics_compatible_v1",
+                    "stats_scope": "leave_one_out_annotated_sentences",
+                    "entity_threshold": entity_threshold,
+                    "max_items": max_items,
+                    "context_window": context_window,
+                    "stats_sentence_count": stats_sentence_count,
+                    "stats_annotation_count": stats_annotation_count,
+                    "stats_token_count": len(stats),
                 },
             }
             lines.append(json.dumps(line, ensure_ascii=False) + "\n")
@@ -1693,8 +1763,68 @@ class ExportService:
             for match in GOLDSMITH_LABEL_TOKEN_PATTERN.finditer(text)
         ]
 
+    @classmethod
+    def _goldsmith_label_statistics(
+        cls,
+        document: dict[str, Any],
+        *,
+        context_window: int = 2,
+        exclude_sentence_id: str | None = None,
+        annotated_only: bool = False,
+    ) -> tuple[dict[str, dict[str, Any]], int, int]:
+        stats: dict[str, dict[str, Any]] = {}
+        sentence_count = 0
+        annotation_count = 0
+        for sentence in document["sentences"]:
+            if exclude_sentence_id is not None and sentence["id"] == exclude_sentence_id:
+                continue
+            if annotated_only and not sentence.get("annotations"):
+                continue
+            tokens = cls._goldsmith_label_tokens(sentence["text"])
+            if not tokens:
+                continue
+            sentence_count += 1
+            spans = cls._goldsmith_annotation_spans(sentence)
+            annotation_count += len(spans)
+            entity_indices: set[int] = set()
+            labels_by_index: dict[int, set[str]] = {}
+            for index, token in enumerate(tokens):
+                for span in spans:
+                    if cls._goldsmith_token_overlaps_span(token, span):
+                        entity_indices.add(index)
+                        labels_by_index.setdefault(index, set()).add(span["label"])
+            context_indices: set[int] = set()
+            for index in entity_indices:
+                for offset in range(1, context_window + 1):
+                    if index - offset >= 0:
+                        context_indices.add(index - offset)
+                    if index + offset < len(tokens):
+                        context_indices.add(index + offset)
+            context_indices -= entity_indices
+
+            for index, token in enumerate(tokens):
+                bucket = stats.setdefault(
+                    token["token"],
+                    {
+                        "entity_count": 0,
+                        "context_count": 0,
+                        "other_count": 0,
+                        "label_entity_counts": {},
+                    },
+                )
+                if index in entity_indices:
+                    bucket["entity_count"] += 1
+                    for label in sorted(labels_by_index.get(index, set())):
+                        label_counts = bucket["label_entity_counts"]
+                        label_counts[label] = int(label_counts.get(label, 0)) + 1
+                elif index in context_indices:
+                    bucket["context_count"] += 1
+                else:
+                    bucket["other_count"] += 1
+        return stats, sentence_count, annotation_count
+
     @staticmethod
-    def _goldsmith_contrastive_sample(project_id: str, document_id: str, sentence: dict[str, Any]) -> dict[str, Any]:
+    def _goldsmith_annotation_spans(sentence: dict[str, Any]) -> list[dict[str, Any]]:
         sentence_start = int(sentence["start_char"])
         spans = []
         for index, annotation in enumerate(sentence.get("annotations") or []):
@@ -1710,6 +1840,36 @@ class ExportService:
                     "token_end": annotation["end_token_index"],
                 }
             )
+        return spans
+
+    @staticmethod
+    def _goldsmith_token_overlaps_span(token: dict[str, Any], span: dict[str, Any]) -> bool:
+        if span.get("implicit"):
+            return False
+        return int(token["start"]) < int(span["end"]) and int(token["end"]) > int(span["start"])
+
+    @classmethod
+    def _goldsmith_stat_probability(cls, stat: dict[str, Any], bucket_name: str) -> float:
+        total = int(stat.get("entity_count") or 0) + int(stat.get("context_count") or 0) + int(stat.get("other_count") or 0)
+        return cls._safe_ratio(int(stat.get(bucket_name) or 0), total)
+
+    @staticmethod
+    def _dedupe_reflection_items(items: list[dict[str, Any]], *, max_items: int) -> list[dict[str, Any]]:
+        deduped = []
+        seen = set()
+        for item in items:
+            key = (item["item_type"], item["start"], item["end"], item["token"])
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+            if len(deduped) >= max_items:
+                break
+        return deduped
+
+    @staticmethod
+    def _goldsmith_contrastive_sample(project_id: str, document_id: str, sentence: dict[str, Any]) -> dict[str, Any]:
+        spans = ExportService._goldsmith_annotation_spans(sentence)
         return {
             "schema_version": "rosetta.prodigy_jsonl.v1",
             "id": sentence["id"],
@@ -1937,6 +2097,7 @@ class ExportService:
                 artifact_line("goldsmith_consistency_scores_jsonl", "sentence-level agreement and route diagnostics"),
                 artifact_line("goldsmith_label_statistics_jsonl", "Rosetta-style token label statistics for seed and negative-example optimization"),
                 artifact_line("goldsmith_contrastive_examples_jsonl", "Rosetta-style similar and boundary examples for prompt and guideline calibration"),
+                artifact_line("goldsmith_reflection_plans_jsonl", "Rosetta-style reflection plans for missed-span and boundary review"),
                 artifact_line("goldsmith_boundary_feedback_jsonl", "boundary feedback from hard examples and LLM review"),
                 artifact_line("goldsmith_hard_examples_jsonl", "human-disagreed or risky examples for guideline refinement"),
                 artifact_line("goldsmith_human_choices_jsonl", "accepted/rejected human decisions for calibration"),
