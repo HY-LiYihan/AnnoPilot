@@ -42,7 +42,7 @@ class GoldsmithBootstrapReportService:
             for item in plan.get("items", [])
         )
         top_tokens = sorted(
-            label_stats,
+            (item for item in label_stats if int(item.get("entity_count") or 0) > 0),
             key=lambda item: (
                 int(item.get("entity_count") or 0),
                 float(item.get("entity_probability") or 0.0),
