@@ -46,3 +46,18 @@ def test_document_query_repository_reads_document_workspace_state(tmp_path: Path
     assert documents[0]["id"] == document_id
     assert documents[0]["current_sentence_index"] == 1
     assert documents[0]["completed_count"] == 1
+
+
+def test_document_query_repository_counts_overlapping_annotations(tmp_path: Path) -> None:
+    storage = make_storage(tmp_path)
+    imported = storage.import_txt("default", "overlap-sample.txt", "第一句话。第二句话。".encode("utf-8"))
+    document_id = imported["document_id"]
+    tag = storage.create_tag("default", "实体", "测试标签")
+    first_sentence = storage.document_queries.get_document_sentences("default", document_id, offset=0, limit=1)["sentences"][0]
+
+    storage.create_annotation("default", first_sentence["id"], tag["id"], 0, 1)
+    storage.create_annotation("default", first_sentence["id"], tag["id"], 1, 2)
+
+    summary = storage.document_queries.get_document_summary("default", document_id)
+    assert summary["metrics"]["annotation_count"] == 2
+    assert summary["metrics"]["annotation_overlap_count"] == 1

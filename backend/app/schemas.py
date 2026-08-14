@@ -316,6 +316,7 @@ class MetricsResponse(BaseModel):
     answer_counts: dict[str, int] = Field(default_factory=dict)
     progress: float
     annotation_count: int
+    annotation_overlap_count: int = 0
     suggestion_count: int = 0
     annotation_label_counts: list[LabelCountResponse] = Field(default_factory=list)
     suggestion_label_counts: list[LabelCountResponse] = Field(default_factory=list)

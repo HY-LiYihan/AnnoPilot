@@ -72,6 +72,7 @@ export function emptyMetrics(): Metrics {
     answer_counts: { accept: 0, reject: 0, ignore: 0, pending: 0 },
     progress: 0,
     annotation_count: 0,
+    annotation_overlap_count: 0,
     suggestion_count: 0,
     annotation_label_counts: [],
     suggestion_label_counts: [],

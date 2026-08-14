@@ -201,6 +201,7 @@ export type Metrics = {
   answer_counts: Record<string, number>
   progress: number
   annotation_count: number
+  annotation_overlap_count: number
   suggestion_count: number
   annotation_label_counts: LabelCount[]
   suggestion_label_counts: LabelCount[]

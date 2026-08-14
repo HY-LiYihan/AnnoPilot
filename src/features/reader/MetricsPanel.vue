@@ -156,16 +156,28 @@ function pendingSuggestionCount(metrics: Metrics) {
   return metrics.suggestion_status_counts?.pending ?? metrics.suggestion_label_counts.reduce((total, item) => total + item.count, 0)
 }
 
+function annotationOverlapCount(metrics: Metrics) {
+  return metrics.annotation_overlap_count ?? 0
+}
+
 function progressPercent(metrics: Metrics) {
   return (metrics.progress * 100).toFixed(2)
 }
 
 function isProdigyExportReady(documentMeta: DocumentMeta | null, metrics: Metrics) {
-  return Boolean(documentMeta && metrics.sentence_count > 0 && metrics.completed_count >= metrics.sentence_count && pendingSuggestionCount(metrics) === 0 && metrics.annotation_count > 0)
+  return Boolean(
+    documentMeta
+      && metrics.sentence_count > 0
+      && metrics.completed_count >= metrics.sentence_count
+      && pendingSuggestionCount(metrics) === 0
+      && annotationOverlapCount(metrics) === 0
+      && metrics.annotation_count > 0,
+  )
 }
 
 function prodigyReadinessStatus(documentMeta: DocumentMeta | null, metrics: Metrics, labels: UiLabels['metrics']) {
   if (!documentMeta) return labels.noDocument
+  if (annotationOverlapCount(metrics) > 0) return labels.exportOverlapConflict
   if (pendingSuggestionCount(metrics) > 0) return labels.exportNeedsReview
   if (metrics.completed_count < metrics.sentence_count) return labels.exportInProgress
   if (metrics.annotation_count === 0) return labels.exportNoSpans
@@ -285,6 +297,10 @@ function shortHash(value: string) {
         <div>
           <span>{{ labels.pendingSuggestions }}</span>
           <strong>{{ pendingSuggestionCount(metrics) }}</strong>
+        </div>
+        <div>
+          <span>{{ labels.overlappingSpans }}</span>
+          <strong>{{ annotationOverlapCount(metrics) }}</strong>
         </div>
         <div>
           <span>{{ labels.exportFormat }}</span>

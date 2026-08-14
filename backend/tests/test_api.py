@@ -552,6 +552,39 @@ def test_document_summary_and_sentence_paging(tmp_path: Path) -> None:
         assert len(legacy_response.json()["sentences"]) == 4
 
 
+def test_document_summary_reports_overlapping_annotations(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("overlap.txt", "第一句话。第二句话。", "text/plain")},
+        )
+        assert imported.status_code == 200
+        document_id = imported.json()["document_id"]
+        tag_response = client.post("/api/projects/default/tags", json={"name": "实体", "description": "测试标签"})
+        assert tag_response.status_code == 200
+        tag_id = tag_response.json()["tag"]["id"]
+        sentence = client.get(f"/api/projects/default/documents/{document_id}/sentences?offset=0&limit=1").json()["sentences"][0]
+
+        first_annotation = client.post(
+            f"/api/projects/default/sentences/{sentence['id']}/annotations",
+            json={"tag_id": tag_id, "start_token_index": 0, "end_token_index": 1},
+        )
+        assert first_annotation.status_code == 200
+        overlapping_annotation = client.post(
+            f"/api/projects/default/sentences/{sentence['id']}/annotations",
+            json={"tag_id": tag_id, "start_token_index": 1, "end_token_index": 2},
+        )
+        assert overlapping_annotation.status_code == 200
+
+        metrics = client.get(f"/api/projects/default/documents/{document_id}/summary").json()["metrics"]
+        assert metrics["annotation_count"] == 2
+        assert metrics["annotation_overlap_count"] == 1
+
+
 def test_llm_settings_runtime_model_selection_updates_health(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LLM_BASE_URL", "https://llm.example.test/v1")
     monkeypatch.setenv("LLM_API_KEY", "test-secret")

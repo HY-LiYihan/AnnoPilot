@@ -150,6 +150,20 @@ class DocumentQueryRepository:
                 """,
                 (document_id,),
             ).fetchone()["count"]
+            annotation_overlap_count = conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM annotations left_a
+                JOIN annotations right_a
+                  ON right_a.sentence_id = left_a.sentence_id
+                 AND right_a.id > left_a.id
+                 AND left_a.start_token_index <= right_a.end_token_index
+                 AND left_a.end_token_index >= right_a.start_token_index
+                JOIN sentences s ON s.id = left_a.sentence_id
+                WHERE s.document_id = ?
+                """,
+                (document_id,),
+            ).fetchone()["count"]
             suggestion_count = conn.execute(
                 """
                 SELECT COUNT(*) AS count
@@ -320,6 +334,7 @@ class DocumentQueryRepository:
                 "answer_counts": answer_counts,
                 "progress": completed_count / sentence_count if sentence_count else 0,
                 "annotation_count": annotation_count,
+                "annotation_overlap_count": annotation_overlap_count,
                 "suggestion_count": suggestion_count,
                 "annotation_label_counts": self._label_counts(tags, tag_counts, include_zero=True),
                 "suggestion_label_counts": self._label_counts(tags, suggestion_tag_counts),
