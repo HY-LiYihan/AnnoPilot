@@ -32,11 +32,21 @@ export function firstAnnotationConflictIndex(queueItems: SentenceQueueItem[]) {
 }
 
 export function firstPendingSuggestionIndex(queueItems: SentenceQueueItem[], reviewQueueDetails: ReviewQueueItem[]) {
-  return reviewQueueDetails[0]?.index ?? queueItems.find((item) => item.suggestion_count > 0)?.index ?? null
+  return highestPriorityReviewQueueItem(reviewQueueDetails)?.index ?? queueItems.find((item) => item.suggestion_count > 0)?.index ?? null
 }
 
 export function firstPendingSuggestionId(reviewQueueDetails: ReviewQueueItem[]) {
-  return reviewQueueDetails[0]?.first_suggestion?.id ?? reviewQueueDetails[0]?.candidate_suggestions?.[0]?.id ?? null
+  const item = highestPriorityReviewQueueItem(reviewQueueDetails)
+  return item?.first_suggestion?.id ?? item?.candidate_suggestions?.[0]?.id ?? null
+}
+
+export function highestPriorityReviewQueueItem(reviewQueueDetails: ReviewQueueItem[]) {
+  return reviewQueueDetails.reduce<ReviewQueueItem | null>((best, item) => {
+    if (!best) return item
+    if ((item.priority ?? 0) !== (best.priority ?? 0)) return (item.priority ?? 0) > (best.priority ?? 0) ? item : best
+    if ((item.risk_score ?? 0) !== (best.risk_score ?? 0)) return (item.risk_score ?? 0) > (best.risk_score ?? 0) ? item : best
+    return item.index < best.index ? item : best
+  }, null)
 }
 
 export function firstIncompleteSentenceIndex(queueItems: SentenceQueueItem[]) {

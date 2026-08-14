@@ -5,6 +5,7 @@ import {
   buildReadinessActions,
   firstPendingSuggestionId,
   firstPendingSuggestionIndex,
+  highestPriorityReviewQueueItem,
   pendingSuggestionCount,
 } from '../../src/composables/readerReadinessActions.ts'
 
@@ -53,6 +54,7 @@ function makeReviewQueueItem(overrides = {}) {
     text: 'review me',
     suggestion_count: 1,
     priority_score: 0.2,
+    priority: 50,
     min_confidence: 0.2,
     lexical_risk_score: 0,
     llm_review_risk_score: 0,
@@ -131,19 +133,33 @@ test('readiness actions surface conflicts, pending suggestions, and incomplete s
   )
 })
 
-test('first pending suggestion prefers the Goldsmith review queue order', () => {
+test('first pending suggestion prefers the highest priority Goldsmith queue item', () => {
   assert.equal(
     firstPendingSuggestionIndex(
       [makeQueueItem({ index: 1, suggestion_count: 2 })],
-      [makeReviewQueueItem({ index: 7 })],
+      [
+        makeReviewQueueItem({ index: 7, priority: 50 }),
+        makeReviewQueueItem({ index: 4, priority: 108 }),
+      ],
     ),
-    7,
+    4,
   )
 })
 
 test('first pending suggestion id prefers first suggestion then candidate options', () => {
-  assert.equal(firstPendingSuggestionId([makeReviewQueueItem({ first_suggestion: makeSuggestion({ id: 'first' }) })]), 'first')
-  assert.equal(firstPendingSuggestionId([makeReviewQueueItem({ candidate_suggestions: [makeSuggestion({ id: 'candidate' })] })]), 'candidate')
+  assert.equal(firstPendingSuggestionId([makeReviewQueueItem({ priority: 100, first_suggestion: makeSuggestion({ id: 'first' }) })]), 'first')
+  assert.equal(firstPendingSuggestionId([makeReviewQueueItem({ priority: 100, candidate_suggestions: [makeSuggestion({ id: 'candidate' })] })]), 'candidate')
+})
+
+test('highestPriorityReviewQueueItem breaks ties by risk score then sentence position', () => {
+  assert.equal(
+    highestPriorityReviewQueueItem([
+      makeReviewQueueItem({ id: 'later', index: 9, priority: 70, risk_score: 0.7 }),
+      makeReviewQueueItem({ id: 'riskier', index: 8, priority: 70, risk_score: 0.9 }),
+      makeReviewQueueItem({ id: 'earlier', index: 3, priority: 70, risk_score: 0.9 }),
+    ])?.id,
+    'earlier',
+  )
 })
 
 test('no annotations offers both manual jump and Monogloss automation', () => {
