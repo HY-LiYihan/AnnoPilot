@@ -610,6 +610,7 @@ class ExportService:
             suggestions = sentence.get("suggestions", [])
             if not suggestions:
                 continue
+            sorted_suggestions = sorted(suggestions, key=lambda suggestion: str(suggestion["id"]))
             consistency_score = self._goldsmith_consistency_score(suggestions)
             rosetta_route = consistency_score["rosetta_route"]
             candidate_scores = {
@@ -617,7 +618,7 @@ class ExportService:
                 for candidate_score in consistency_score["candidate_scores"]
             }
             tokens = [self._export_prodigy_token(token, sentence["text"], sentence["start_char"]) for token in sentence["tokens"]]
-            for index, suggestion in enumerate(suggestions, start=1):
+            for index, suggestion in enumerate(sorted_suggestions, start=1):
                 local_start = int(suggestion["start_char"]) - int(sentence["start_char"])
                 local_end = int(suggestion["end_char"]) - int(sentence["start_char"])
                 candidate_score = candidate_scores.get(suggestion["id"], {})
@@ -655,6 +656,7 @@ class ExportService:
                         "source": "annopilot",
                         "artifact": "candidate_runs.jsonl",
                         "rosetta_reference": "candidate_runs.jsonl",
+                        "candidate_order": "sentence_index,candidate_id",
                         "project_id": project_id,
                         "document_id": document_id,
                         "sentence_id": sentence["id"],

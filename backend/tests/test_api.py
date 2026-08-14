@@ -1545,6 +1545,11 @@ def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(
         assert len(candidate_runs) == loaded["suggestions_created"]
         assert any(run["meta"]["consistency"]["overlap_conflict_rate"] > 0 for run in candidate_runs)
         assert all(run["schema_version"] == "rosetta.prodigy_candidate.v1" for run in candidate_runs)
+        assert all(run["meta"]["candidate_order"] == "sentence_index,candidate_id" for run in candidate_runs)
+        candidate_ids_by_sample: dict[str, list[str]] = {}
+        for run in candidate_runs:
+            candidate_ids_by_sample.setdefault(run["sample_id"], []).append(run["candidate_id"])
+        assert all(candidate_ids == sorted(candidate_ids) for candidate_ids in candidate_ids_by_sample.values())
 
         review_tasks_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.review-tasks.jsonl")
         assert review_tasks_response.status_code == 200
