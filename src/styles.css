@@ -2069,6 +2069,73 @@ kbd {
   white-space: nowrap;
 }
 
+.readiness-action-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.readiness-action-row {
+  min-width: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 9px;
+  border: 1px solid rgba(211, 154, 0, 0.24);
+  border-radius: 8px;
+  color: #6d4e00;
+  background: rgba(255, 255, 255, 0.72);
+  text-align: left;
+  cursor: pointer;
+}
+
+.readiness-action-row span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.readiness-action-row strong {
+  min-width: 0;
+  display: block;
+  color: #6d4e00;
+  font-size: 0.78rem;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readiness-action-row small {
+  min-width: 0;
+  color: #695b39;
+  font-size: 0.7rem;
+  font-weight: 850;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readiness-action-row em {
+  color: #8a6100;
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.readiness-action-row:hover:not(:disabled) {
+  border-color: rgba(177, 126, 0, 0.42);
+  background: #ffffff;
+}
+
+.readiness-action-row:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .actor-breakdown {
   display: flex;
   flex-wrap: wrap;
@@ -2656,6 +2723,15 @@ kbd {
 
   .sentence-text {
     font-size: 1rem;
+  }
+
+  .readiness-action-row {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .readiness-action-row em {
+    justify-self: start;
   }
 
   .model-option-grid {

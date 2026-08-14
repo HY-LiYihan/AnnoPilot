@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import { BarChart3, DatabaseZap, Download, Keyboard, MousePointer2, RotateCw, Route, Sparkles, Target, Trash2, Upload } from '@lucide/vue'
+import {
+  annotationOverlapCount,
+  buildReadinessActions,
+  pendingSuggestionCount,
+  type ReadinessAction,
+} from '../../composables/readerReadinessActions'
 import type { UiLabels } from '../../i18n'
 import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, LabelCount, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder, SentenceQueueItem } from '../../types/domain'
 
@@ -153,16 +159,48 @@ function totalLabelCount(metrics: Metrics) {
   return metrics.annotation_label_counts.length
 }
 
-function pendingSuggestionCount(metrics: Metrics) {
-  return metrics.suggestion_status_counts?.pending ?? metrics.suggestion_label_counts.reduce((total, item) => total + item.count, 0)
-}
-
-function annotationOverlapCount(metrics: Metrics) {
-  return metrics.annotation_overlap_count ?? 0
-}
-
 function annotationConflictItems(queueItems: SentenceQueueItem[]) {
   return queueItems.filter((item) => (item.annotation_overlap_count ?? 0) > 0).slice(0, 5)
+}
+
+function readinessActions(
+  documentMeta: DocumentMeta | null,
+  metrics: Metrics,
+  queueItems: SentenceQueueItem[],
+  reviewQueueDetails: ReviewQueueItem[],
+) {
+  return buildReadinessActions(documentMeta, metrics, queueItems, reviewQueueDetails)
+}
+
+function readinessActionTitle(action: ReadinessAction, labels: UiLabels['metrics']) {
+  if (action.id === 'annotation_conflicts') return labels.readinessConflict(action.count)
+  if (action.id === 'pending_suggestions') return labels.readinessPending(action.count)
+  if (action.id === 'incomplete_sentences') return labels.readinessIncomplete(action.count)
+  if (action.id === 'no_annotations') return labels.readinessNoAnnotations
+  return labels.readinessAutoMonogloss
+}
+
+function readinessActionDetail(action: ReadinessAction, labels: UiLabels['metrics']) {
+  if (action.kind === 'auto-mark-monogloss') return labels.readinessAutoMonoglossHint
+  if (action.targetSentenceIndex === null) return labels.readinessNoTarget
+  return labels.readinessJumpTarget(action.targetSentenceIndex + 1)
+}
+
+function readinessActionCta(action: ReadinessAction, labels: UiLabels['metrics']) {
+  return action.kind === 'auto-mark-monogloss' ? labels.run : labels.go
+}
+
+function readinessActionDisabled(action: ReadinessAction, isSaving: boolean) {
+  if (action.kind === 'auto-mark-monogloss') return isSaving
+  return action.targetSentenceIndex === null
+}
+
+function handleReadinessAction(action: ReadinessAction) {
+  if (action.kind === 'auto-mark-monogloss') {
+    emit('auto-mark-monogloss')
+    return
+  }
+  if (action.targetSentenceIndex !== null) emit('review-sentence', action.targetSentenceIndex)
 }
 
 function progressPercent(metrics: Metrics) {
@@ -311,6 +349,26 @@ function shortHash(value: string) {
           <span>{{ labels.exportFormat }}</span>
           <strong>Prodigy</strong>
         </div>
+      </div>
+      <div
+        v-if="readinessActions(documentMeta, metrics, queueItems, reviewQueueDetails).length"
+        class="readiness-action-list"
+        :aria-label="labels.readinessActions"
+      >
+        <button
+          v-for="action in readinessActions(documentMeta, metrics, queueItems, reviewQueueDetails)"
+          :key="action.id"
+          class="readiness-action-row"
+          type="button"
+          :disabled="readinessActionDisabled(action, isSaving)"
+          @click="handleReadinessAction(action)"
+        >
+          <span>
+            <strong>{{ readinessActionTitle(action, labels) }}</strong>
+            <small>{{ readinessActionDetail(action, labels) }}</small>
+          </span>
+          <em>{{ readinessActionCta(action, labels) }}</em>
+        </button>
       </div>
     </article>
 
