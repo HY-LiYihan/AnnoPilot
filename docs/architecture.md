@@ -204,7 +204,7 @@ annopilot.run_provenance.v1
 
 - `import-annotations-jsonl` 可导入 Prodigy / AnnoPilot style JSONL annotation records，并尽量按 `sentence_id`、`sentence_index` 或 sentence text 匹配；`annotations.imported` event 会保留逐行 source manifest，记录 record hash、匹配结果、目标 sentence 和 Prodigy-style source metadata。
 - Task JSONL 以 sentence 为粒度导出 token、span、suggestion、answer、meta 和 Prodigy-style stable hashes / session metadata。
-- Prodigy export 保持 `ner_manual` / `spans_manual` compatible fields，并提供 bundle ZIP 把 Prodigy JSONL、label config、tag schema、Goldsmith review queue、label statistics、contrastive examples、reflection plans、prompt package、verification report 和 manifest 收拢成一个交付包。
+- Prodigy export 保持 `ner_manual` / `spans_manual` compatible fields，并提供 bundle ZIP 把 Prodigy JSONL、label config、tag schema、Goldsmith review queue、label statistics、contrastive examples、reflection plans、prompt package、verification report、bootstrap report 和 manifest 收拢成一个交付包。
 - Manifest 汇总 tasks、Prodigy、events、tag schema、run provenance、annotation import history、artifact hashes、audit summary 和稳定 content hash。
 
 ## Docker Deployment

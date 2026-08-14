@@ -1907,6 +1907,17 @@ def test_calibration_preset_recommended_load_preserves_goldsmith_review_queue(tm
         assert manifest["artifacts"]["goldsmith_candidate_runs_jsonl"]["line_count"] == loaded["suggestions_created"]
         assert manifest["artifacts"]["goldsmith_consistency_scores_jsonl"]["line_count"] == queue["total"]
         assert manifest["artifacts"]["goldsmith_risk_reasons_jsonl"]["line_count"] >= 1
+        bootstrap_report_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.bootstrap-report.md")
+        assert bootstrap_report_response.status_code == 200
+        assert bootstrap_report_response.headers["content-disposition"] == f'attachment; filename="{document_id}.goldsmith.bootstrap-report.md"'
+        bootstrap_report = bootstrap_report_response.text
+        assert "# Goldsmith Bootstrap Report" in bootstrap_report
+        assert "## Review Routes" in bootstrap_report
+        assert "## Recommended Actions" in bootstrap_report
+        assert "Start with the hybrid Goldsmith review queue" in bootstrap_report
+        assert f"<!-- schema_version: {manifest['artifacts']['goldsmith_bootstrap_report_md']['schema_version']} -->" in bootstrap_report
+        assert manifest["artifacts"]["goldsmith_bootstrap_report_md"]["line_count"] == len(bootstrap_report.splitlines())
+        assert len(manifest["artifacts"]["goldsmith_bootstrap_report_md"]["content_sha256"]) == 64
 
         bundle_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.bundle.zip")
         assert bundle_response.status_code == 200
@@ -1920,6 +1931,7 @@ def test_calibration_preset_recommended_load_preserves_goldsmith_review_queue(tm
         assert manifest["artifacts"]["goldsmith_review_tasks_jsonl"]["filename"] in readme
         assert manifest["artifacts"]["goldsmith_risk_reasons_jsonl"]["filename"] in readme
         assert manifest["artifacts"]["goldsmith_candidate_runs_jsonl"]["filename"] in readme
+        assert manifest["artifacts"]["goldsmith_bootstrap_report_md"]["filename"] in readme
         assert bundled_manifest["content_sha256"] == manifest["content_sha256"]
         assert {artifact["filename"] for artifact in manifest["artifacts"].values()} <= bundle_names
 
@@ -2049,17 +2061,22 @@ def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(
         assert manifest["artifacts"]["goldsmith_prompt_package_jsonl"]["line_count"] == len(prompt_package)
         assert manifest["artifacts"]["goldsmith_verification_report_jsonl"]["schema_version"] == "annopilot.goldsmith_verification_report.v1"
         assert manifest["artifacts"]["goldsmith_verification_report_jsonl"]["line_count"] == 1
+        assert manifest["artifacts"]["goldsmith_bootstrap_report_md"]["schema_version"] == "annopilot.goldsmith_bootstrap_report.v1"
+        assert manifest["artifacts"]["goldsmith_bootstrap_report_md"]["line_count"] > 10
 
         bundle_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.bundle.zip")
         assert bundle_response.status_code == 200
         with ZipFile(BytesIO(bundle_response.content)) as archive:
             prompt_artifact = manifest["artifacts"]["goldsmith_prompt_package_jsonl"]
             verification_artifact = manifest["artifacts"]["goldsmith_verification_report_jsonl"]
+            bootstrap_artifact = manifest["artifacts"]["goldsmith_bootstrap_report_md"]
             assert prompt_artifact["filename"] in archive.namelist()
             assert verification_artifact["filename"] in archive.namelist()
+            assert bootstrap_artifact["filename"] in archive.namelist()
             readme = archive.read("README.txt").decode("utf-8")
         assert prompt_artifact["filename"] in readme
         assert verification_artifact["filename"] in readme
+        assert bootstrap_artifact["filename"] in readme
 
         events_response = client.get("/api/projects/default/events.jsonl")
         assert events_response.status_code == 200

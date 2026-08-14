@@ -29,6 +29,7 @@ const emit = defineEmits<{
   'export-events': []
   'export-tag-schema': []
   'export-run-provenance': [runId: string]
+  'export-goldsmith-bootstrap-report': []
   'export-goldsmith-review-queue': []
   'export-goldsmith-human-choices': []
   'export-goldsmith-hard-examples': []
@@ -558,6 +559,11 @@ function shortHash(value: string) {
 
     <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-manifest')">
       {{ labels.exportManifest }}
+      <Download :size="18" aria-hidden="true" />
+    </button>
+
+    <button class="export-button secondary" :disabled="!documentMeta" @click="emit('export-goldsmith-bootstrap-report')">
+      {{ labels.exportBootstrapReport }}
       <Download :size="18" aria-hidden="true" />
     </button>
 

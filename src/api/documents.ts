@@ -211,6 +211,10 @@ export function goldsmithVerificationReportExportUrl(projectId: string, document
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.verification-report.jsonl`
 }
 
+export function goldsmithBootstrapReportExportUrl(projectId: string, documentId: string) {
+  return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.bootstrap-report.md`
+}
+
 export function manifestExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.manifest.json`
 }

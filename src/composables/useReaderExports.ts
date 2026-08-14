@@ -2,6 +2,7 @@ import type { Ref } from 'vue'
 import {
   documentExportUrl,
   eventsExportUrl,
+  goldsmithBootstrapReportExportUrl,
   goldsmithBoundaryFeedbackExportUrl,
   goldsmithCandidateRunsExportUrl,
   goldsmithConsistencyScoresExportUrl,
@@ -127,8 +128,13 @@ export function useReaderExports(options: ReaderExportOptions) {
     withDocument(goldsmithVerificationReportExportUrl)
   }
 
+  function exportGoldsmithBootstrapReportMd() {
+    withDocument(goldsmithBootstrapReportExportUrl)
+  }
+
   return {
     exportEventsJsonl,
+    exportGoldsmithBootstrapReportMd,
     exportGoldsmithBoundaryFeedbackJsonl,
     exportGoldsmithCandidateRunsJsonl,
     exportGoldsmithConsistencyScoresJsonl,

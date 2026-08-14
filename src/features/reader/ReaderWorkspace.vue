@@ -191,6 +191,7 @@ const {
   exportEventsJsonl,
   exportTagSchemaJson,
   exportRunProvenanceJson,
+  exportGoldsmithBootstrapReportMd,
   exportGoldsmithReviewQueueJsonl,
   exportGoldsmithHumanChoicesJsonl,
   exportGoldsmithHardExamplesJsonl,
@@ -472,6 +473,7 @@ async function confirmProjectReset() {
         @export-events="exportEventsJsonl"
         @export-tag-schema="exportTagSchemaJson"
         @export-run-provenance="exportRunProvenanceJson"
+        @export-goldsmith-bootstrap-report="exportGoldsmithBootstrapReportMd"
         @export-goldsmith-review-queue="exportGoldsmithReviewQueueJsonl"
         @export-goldsmith-human-choices="exportGoldsmithHumanChoicesJsonl"
         @export-goldsmith-hard-examples="exportGoldsmithHardExamplesJsonl"

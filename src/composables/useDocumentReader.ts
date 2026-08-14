@@ -294,6 +294,7 @@ export function useDocumentReader() {
   })
   const {
     exportEventsJsonl,
+    exportGoldsmithBootstrapReportMd,
     exportGoldsmithBoundaryFeedbackJsonl,
     exportGoldsmithCandidateRunsJsonl,
     exportGoldsmithConsistencyScoresJsonl,
@@ -511,6 +512,7 @@ export function useDocumentReader() {
     exportEventsJsonl,
     exportTagSchemaJson,
     exportRunProvenanceJson,
+    exportGoldsmithBootstrapReportMd,
     exportGoldsmithReviewQueueJsonl,
     exportGoldsmithHumanChoicesJsonl,
     exportGoldsmithHardExamplesJsonl,

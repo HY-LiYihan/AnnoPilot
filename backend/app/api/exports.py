@@ -274,6 +274,20 @@ def export_goldsmith_verification_report(
     return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
 
 
+@router.get("/documents/{document_id}/export.goldsmith.bootstrap-report.md")
+def export_goldsmith_bootstrap_report(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> StreamingResponse:
+    try:
+        lines = storage.export_goldsmith_bootstrap_report_lines(project_id, document_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.goldsmith.bootstrap-report.md"'}
+    return StreamingResponse(iter(lines), media_type="text/markdown; charset=utf-8", headers=headers)
+
+
 @router.get("/events.jsonl")
 def export_events(
     project_id: str,
