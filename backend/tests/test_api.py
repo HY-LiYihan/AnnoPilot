@@ -2004,9 +2004,40 @@ def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(
         assert review_tasks[0]["meta"]["rosetta_reference"] == "human_review_queue.jsonl"
         assert review_tasks[0]["meta"]["option_order"] == "candidate_id"
 
+        prompt_package_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.prompt-package.jsonl")
+        assert prompt_package_response.status_code == 200
+        assert prompt_package_response.headers["content-disposition"] == f'attachment; filename="{document_id}.goldsmith.prompt-package.jsonl"'
+        prompt_package = [json.loads(line) for line in prompt_package_response.text.splitlines()]
+        assert len(prompt_package) == len(review_tasks)
+        first_prompt = prompt_package[0]
+        assert first_prompt["schema_version"] == "annopilot.goldsmith_prompt_package.v1"
+        assert first_prompt["record_type"] == "prompt_task"
+        assert first_prompt["review_task"]["sample_id"] == review_tasks[0]["sample_id"]
+        assert first_prompt["output_contract"] == ["text", "annotation", "explanation", "selected_option_id", "answer"]
+        assert first_prompt["tag_schema"]["tag_count"] == 9
+        assert first_prompt["context_examples"]
+        assert first_prompt["context_examples"][0]["source_artifact"] == "tag_schema"
+        assert "你正在执行科研标注任务" in first_prompt["prompt"]
+        assert "操作化定义" in first_prompt["prompt"]
+        assert "候选选项" in first_prompt["prompt"]
+        assert "__manual__" in first_prompt["prompt"]
+        assert "待标注样本" in first_prompt["prompt"]
+        assert first_prompt["meta"]["rosetta_reference"] == "prompting.py"
+        assert first_prompt["verification"]["rosetta_reference"] == "verifier.py"
+
         manifest = client.get(f"/api/projects/default/documents/{document_id}/export.manifest.json").json()
         assert manifest["artifacts"]["goldsmith_review_tasks_jsonl"]["schema_version"] == "annopilot.goldsmith_review_tasks.v1"
         assert manifest["artifacts"]["goldsmith_review_tasks_jsonl"]["line_count"] == len(review_tasks)
+        assert manifest["artifacts"]["goldsmith_prompt_package_jsonl"]["schema_version"] == "annopilot.goldsmith_prompt_package.v1"
+        assert manifest["artifacts"]["goldsmith_prompt_package_jsonl"]["line_count"] == len(prompt_package)
+
+        bundle_response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.bundle.zip")
+        assert bundle_response.status_code == 200
+        with ZipFile(BytesIO(bundle_response.content)) as archive:
+            prompt_artifact = manifest["artifacts"]["goldsmith_prompt_package_jsonl"]
+            assert prompt_artifact["filename"] in archive.namelist()
+            readme = archive.read("README.txt").decode("utf-8")
+        assert prompt_artifact["filename"] in readme
 
         events_response = client.get("/api/projects/default/events.jsonl")
         assert events_response.status_code == 200

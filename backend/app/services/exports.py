@@ -46,6 +46,7 @@ class ExportService:
         goldsmith_label_statistics_schema_version: str,
         goldsmith_contrastive_examples_schema_version: str,
         goldsmith_reflection_plans_schema_version: str,
+        goldsmith_prompt_package_schema_version: str,
         goldsmith_review_tasks_schema_version: str,
         medium_confidence_threshold: float,
     ) -> None:
@@ -77,6 +78,7 @@ class ExportService:
         self.goldsmith_label_statistics_schema_version = goldsmith_label_statistics_schema_version
         self.goldsmith_contrastive_examples_schema_version = goldsmith_contrastive_examples_schema_version
         self.goldsmith_reflection_plans_schema_version = goldsmith_reflection_plans_schema_version
+        self.goldsmith_prompt_package_schema_version = goldsmith_prompt_package_schema_version
         self.goldsmith_review_tasks_schema_version = goldsmith_review_tasks_schema_version
         self.medium_confidence_threshold = medium_confidence_threshold
 
@@ -191,6 +193,7 @@ class ExportService:
             "goldsmith_label_statistics_jsonl": "".join(context["goldsmith_label_statistics_lines"]),
             "goldsmith_contrastive_examples_jsonl": "".join(context["goldsmith_contrastive_example_lines"]),
             "goldsmith_reflection_plans_jsonl": "".join(context["goldsmith_reflection_plan_lines"]),
+            "goldsmith_prompt_package_jsonl": "".join(context["goldsmith_prompt_package_lines"]),
             "goldsmith_review_tasks_jsonl": "".join(context["goldsmith_review_task_lines"]),
         }
         bundle_files: dict[str, str] = {
@@ -221,6 +224,7 @@ class ExportService:
         goldsmith_label_statistics_lines = self.export_goldsmith_label_statistics_lines(project_id, document_id)
         goldsmith_contrastive_example_lines = self.export_goldsmith_contrastive_examples_lines(project_id, document_id)
         goldsmith_reflection_plan_lines = self.export_goldsmith_reflection_plan_lines(project_id, document_id)
+        goldsmith_prompt_package_lines = self.export_goldsmith_prompt_package_lines(project_id, document_id)
         goldsmith_review_task_lines = self.export_goldsmith_review_task_lines(project_id, document_id)
         goldsmith_risk_reason_lines = self._build_goldsmith_risk_reason_lines(
             project_id=project_id,
@@ -364,6 +368,12 @@ class ExportService:
                     lines=goldsmith_reflection_plan_lines,
                     content_sha256=self._jsonl_content_sha256(goldsmith_reflection_plan_lines),
                 ),
+                "goldsmith_prompt_package_jsonl": self._artifact_summary(
+                    filename=f"{document_id}.goldsmith.prompt-package.jsonl",
+                    schema_version=self.goldsmith_prompt_package_schema_version,
+                    lines=goldsmith_prompt_package_lines,
+                    content_sha256=self._jsonl_content_sha256(goldsmith_prompt_package_lines),
+                ),
                 "goldsmith_review_tasks_jsonl": self._artifact_summary(
                     filename=f"{document_id}.goldsmith.review-tasks.jsonl",
                     schema_version=self.goldsmith_review_tasks_schema_version,
@@ -389,6 +399,7 @@ class ExportService:
             "goldsmith_label_statistics_lines": goldsmith_label_statistics_lines,
             "goldsmith_contrastive_example_lines": goldsmith_contrastive_example_lines,
             "goldsmith_reflection_plan_lines": goldsmith_reflection_plan_lines,
+            "goldsmith_prompt_package_lines": goldsmith_prompt_package_lines,
             "goldsmith_review_task_lines": goldsmith_review_task_lines,
             "event_lines": event_lines,
             "tag_schema_line": tag_schema_line,
@@ -1017,6 +1028,294 @@ class ExportService:
             )
         tasks.sort(key=lambda task: (-int(task["priority"]), int(task["sentence_index"]), str(task["sentence_id"])))
         return [json.dumps({**task, "rank": rank}, ensure_ascii=False) + "\n" for rank, task in enumerate(tasks, start=1)]
+
+    def export_goldsmith_prompt_package_lines(self, project_id: str, document_id: str) -> list[str]:
+        generated_at = self.now()
+        tag_schema = self.export_tag_schema(project_id)
+        review_tasks = self._jsonl_payloads(self.export_goldsmith_review_task_lines(project_id, document_id))
+        hard_examples = self._jsonl_payloads(self.export_goldsmith_hard_examples_lines(project_id, document_id))
+        contrastive_examples = self._jsonl_payloads(self.export_goldsmith_contrastive_examples_lines(project_id, document_id))
+        reflection_plans = self._jsonl_payloads(self.export_goldsmith_reflection_plan_lines(project_id, document_id))
+        hard_by_sentence: dict[str, list[dict[str, Any]]] = {}
+        for example in hard_examples:
+            sentence_id = str(example.get("sentence_id") or "")
+            if sentence_id:
+                hard_by_sentence.setdefault(sentence_id, []).append(example)
+        contrastive_by_query = {str(item.get("query_id")): item for item in contrastive_examples if item.get("query_id")}
+        reflection_by_sentence = {str(item.get("sentence_id")): item for item in reflection_plans if item.get("sentence_id")}
+
+        lines = []
+        for task in review_tasks:
+            sentence_id = str(task["sentence_id"])
+            context_examples = self._goldsmith_prompt_context_examples(
+                tag_schema,
+                hard_by_sentence.get(sentence_id, []),
+                contrastive_by_query.get(sentence_id),
+            )
+            reflection_plan = reflection_by_sentence.get(sentence_id)
+            prompt = self._goldsmith_prompt_package_prompt(
+                tag_schema=tag_schema,
+                task=task,
+                context_examples=context_examples,
+                reflection_plan=reflection_plan,
+            )
+            payload = {
+                "schema_version": self.goldsmith_prompt_package_schema_version,
+                "record_type": "prompt_task",
+                "generated_at": generated_at,
+                "project_id": project_id,
+                "document_id": document_id,
+                "sample_id": task["sample_id"],
+                "sentence_id": sentence_id,
+                "sentence_index": task["sentence_index"],
+                "rank": task.get("rank"),
+                "route": task["route"],
+                "priority": task["priority"],
+                "text": task["text"],
+                "prompt": prompt,
+                "output_contract": self._goldsmith_prompt_output_contract(),
+                "tag_schema": self._goldsmith_prompt_tag_schema(tag_schema),
+                "context_examples": context_examples,
+                "reflection_items": (reflection_plan or {}).get("items", []),
+                "review_task": task,
+                "verification": {
+                    "annotation_format": "[原文]{标签} / [!隐含义]{标签}",
+                    "must_preserve_text": True,
+                    "rosetta_reference": "verifier.py",
+                    "checks": ["valid_json", "text_match", "valid_annotation_markup", "explicit_span_present_in_text"],
+                },
+                "meta": {
+                    "source": "annopilot",
+                    "artifact": "prompt_package.jsonl",
+                    "rosetta_reference": "prompting.py",
+                    "prompt_builder": "rosetta_prompting_compatible_v1",
+                    "review_task_schema_version": self.goldsmith_review_tasks_schema_version,
+                    "tag_schema_sha256": tag_schema["content_sha256"],
+                    "context_example_count": len(context_examples),
+                    "reflection_item_count": len((reflection_plan or {}).get("items", [])),
+                },
+            }
+            lines.append(json.dumps(payload, ensure_ascii=False) + "\n")
+        return lines
+
+    @staticmethod
+    def _goldsmith_prompt_output_contract() -> list[str]:
+        return ["text", "annotation", "explanation", "selected_option_id", "answer"]
+
+    @staticmethod
+    def _goldsmith_prompt_tag_schema(tag_schema: dict[str, Any]) -> dict[str, Any]:
+        tags = [
+            {
+                "id": tag["id"],
+                "name": tag["name"],
+                "description": tag.get("description"),
+                "examples": tag.get("examples", []),
+            }
+            for tag in tag_schema.get("tags", [])
+        ]
+        return {
+            "schema_version": tag_schema["schema_version"],
+            "record_type": "tag_schema_context",
+            "content_sha256": tag_schema["content_sha256"],
+            "tag_count": len(tags),
+            "tags": tags,
+        }
+
+    def _goldsmith_prompt_context_examples(
+        self,
+        tag_schema: dict[str, Any],
+        hard_examples: list[dict[str, Any]],
+        contrastive_selection: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        examples: list[dict[str, Any]] = []
+        for tag in tag_schema.get("tags", []):
+            for index, text in enumerate((tag.get("examples") or [])[:1], start=1):
+                examples.append(
+                    {
+                        "id": f"tag:{tag['id']}:{index}",
+                        "example_type": "canonical",
+                        "source_artifact": "tag_schema",
+                        "text": text,
+                        "annotation": self._inline_span_markup(text, 0, len(text), tag["name"]),
+                        "explanation": tag.get("description") or f"Lexical seed for {tag['name']}.",
+                        "rationale": "Bilingual lexical seed from the current span label schema.",
+                    }
+                )
+                if len(examples) >= 9:
+                    break
+            if len(examples) >= 9:
+                break
+
+        for example in hard_examples[:3]:
+            span = example.get("span") or {}
+            label = span.get("label") or example.get("tag_name") or "Engagement"
+            span_text = span.get("text") or example.get("text") or ""
+            examples.append(
+                {
+                    "id": f"hard:{example.get('suggestion_id')}",
+                    "example_type": "hard",
+                    "source_artifact": "hard_examples.jsonl",
+                    "text": example.get("text") or example.get("sentence_text") or span_text,
+                    "annotation": self._inline_span_markup(span_text, 0, len(span_text), label) if span_text else "",
+                    "explanation": example.get("failure_note") or "Human or LLM feedback marked this as a boundary case.",
+                    "rationale": ", ".join(example.get("hard_example_reasons") or example.get("risk_reason_codes") or []),
+                }
+            )
+
+        if contrastive_selection:
+            for role in ("similar", "boundary"):
+                for hit in (contrastive_selection.get(role) or [])[:1]:
+                    sample = hit.get("sample") or {}
+                    spans = sample.get("spans") or []
+                    examples.append(
+                        {
+                            "id": f"{role}:{hit.get('sample_id')}",
+                            "example_type": "canonical" if role == "similar" else "hard",
+                            "source_artifact": "contrastive_examples.jsonl",
+                            "text": sample.get("text", ""),
+                            "annotation": self._sample_annotation_markup(sample),
+                            "explanation": f"{role} example selected by lexical overlap score={hit.get('score')}.",
+                            "rationale": f"Rosetta contrastive role: {role}; span_count={len(spans)}.",
+                        }
+                    )
+        return examples[:12]
+
+    @classmethod
+    def _goldsmith_prompt_package_prompt(
+        cls,
+        *,
+        tag_schema: dict[str, Any],
+        task: dict[str, Any],
+        context_examples: list[dict[str, Any]],
+        reflection_plan: dict[str, Any] | None,
+    ) -> str:
+        sections = [
+            "你正在执行科研标注任务。请先严格根据定义判断，再返回结构化 JSON。",
+            "任务名称：Appraisal Engagement span annotation",
+            "任务说明：复核当前句的 Engagement span 候选；选择最准确的候选，或在所有候选都错误时给出手动标注。",
+            f"操作化定义：{cls._goldsmith_prompt_definition(tag_schema)}",
+            cls._format_prompt_rules("纳入标准", cls._goldsmith_prompt_inclusion_rules()),
+            cls._format_prompt_rules("排除标准", cls._goldsmith_prompt_exclusion_rules()),
+            cls._format_prompt_rules("负向约束", cls._goldsmith_prompt_negative_constraints()),
+            cls._format_prompt_examples(context_examples),
+            cls._format_prompt_options(task),
+            cls._format_prompt_reflection(reflection_plan),
+            (
+                "输出要求：仅返回 JSON，对象必须包含字段 "
+                + ", ".join(cls._goldsmith_prompt_output_contract())
+                + "。annotation 必须使用 [原文]{标签} / [!隐含义]{标签} 格式；text 必须与输入句子完全一致；"
+                + "selected_option_id 使用 A/B/C 或 __manual__；answer 使用 accept/reject/uncertain。"
+            ),
+            f"待标注样本（id={task['sample_id']}）：",
+            str(task["text"]),
+        ]
+        return "\n\n".join(section for section in sections if section.strip())
+
+    @staticmethod
+    def _goldsmith_prompt_definition(tag_schema: dict[str, Any]) -> str:
+        tag_lines = []
+        for tag in tag_schema.get("tags", []):
+            description = tag.get("description") or "No definition provided."
+            tag_lines.append(f"- {tag['name']}: {description}")
+        return "Appraisal Theory 的 Engagement 系统用于标注作者如何打开或收缩对话空间。可用 span labels：\n" + "\n".join(tag_lines)
+
+    @staticmethod
+    def _goldsmith_prompt_inclusion_rules() -> tuple[str, ...]:
+        return (
+            "标注显性表达 dialogic positioning 的最小充分文本 span。",
+            "英文和中文 cue 都要保留原文边界，不翻译、不改写。",
+            "候选之间冲突时，优先选择 label 功能与上下文最一致且边界最窄的候选。",
+            "Monogloss 只在没有显性 modality、attribution、denial、countering 或 proclaim cue 的直接断言中使用。",
+        )
+
+    @staticmethod
+    def _goldsmith_prompt_exclusion_rules() -> tuple[str, ...]:
+        return (
+            "不要仅因为文本有情绪、价值判断或主题重要就标注。",
+            "不要把无关上下文、完整从句或整句并入 span，除非 label 定义明确需要。",
+            "不要发明原文中不存在的显性 span；隐含标注只能用于确实需要的抽象义。",
+        )
+
+    @staticmethod
+    def _goldsmith_prompt_negative_constraints() -> tuple[str, ...]:
+        return (
+            "如果所有候选都错误，selected_option_id 必须是 __manual__。",
+            "如果边界或 label 仍不确定，answer 使用 uncertain，并在 explanation 中说明原因。",
+            "返回 JSON 之外不要输出任何额外解释。",
+        )
+
+    @staticmethod
+    def _format_prompt_rules(title: str, rules: tuple[str, ...]) -> str:
+        if not rules:
+            return f"{title}：无"
+        lines = [f"{title}："]
+        lines.extend(f"{index}. {rule}" for index, rule in enumerate(rules, start=1))
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_prompt_examples(examples: list[dict[str, Any]]) -> str:
+        if not examples:
+            return "上下文示例：无"
+        lines = ["上下文示例："]
+        for index, example in enumerate(examples, start=1):
+            label = "典型示例" if example.get("example_type") == "canonical" else "易错示例"
+            lines.append(f"示例 {index}（{label}, id={example.get('id')}）:")
+            lines.append(
+                json.dumps(
+                    {
+                        "text": example.get("text", ""),
+                        "annotation": example.get("annotation", ""),
+                        "explanation": example.get("explanation", ""),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            if example.get("rationale"):
+                lines.append(f"审查说明: {example['rationale']}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_prompt_options(task: dict[str, Any]) -> str:
+        lines = ["候选选项："]
+        for option in task.get("options") or []:
+            span = option.get("span") or {}
+            lines.append(
+                f"{option.get('option_id')}. {span.get('label')} -> `{span.get('text')}` "
+                f"(tokens {span.get('token_start')}-{span.get('token_end')})"
+            )
+            lines.append(f"   markup: {option.get('annotation_markup')}")
+            if option.get("action_hint"):
+                lines.append(f"   hint: {option['action_hint']}")
+        lines.append("__manual__. 所有候选都不对，需要人工直接修正。")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_prompt_reflection(reflection_plan: dict[str, Any] | None) -> str:
+        items = (reflection_plan or {}).get("items") or []
+        if not items:
+            return "反思检查：暂无自动反思项"
+        lines = ["反思检查："]
+        for item in items[:5]:
+            lines.append(f"- {item.get('item_type')}: `{item.get('token')}` chars {item.get('start')}-{item.get('end')}；{item.get('reason')}")
+        return "\n".join(lines)
+
+    @classmethod
+    def _sample_annotation_markup(cls, sample: dict[str, Any]) -> str:
+        text = str(sample.get("text") or "")
+        spans = sorted(sample.get("spans") or [], key=lambda span: (int(span.get("start") or 0), int(span.get("end") or 0)))
+        if not text or not spans:
+            return text
+        offset = 0
+        annotated = text
+        for span in spans:
+            start = int(span.get("start") or 0) + offset
+            end = int(span.get("end") or 0) + offset
+            label = str(span.get("label") or "Engagement")
+            replacement = cls._inline_span_markup(annotated, start, end, label)
+            offset += len(replacement) - len(annotated)
+            annotated = replacement
+        return annotated
 
     def _goldsmith_review_option(
         self,
@@ -2097,6 +2396,7 @@ class ExportService:
                 artifact_line("goldsmith_consistency_scores_jsonl", "sentence-level agreement and route diagnostics"),
                 artifact_line("goldsmith_label_statistics_jsonl", "Rosetta-style token label statistics for seed and negative-example optimization"),
                 artifact_line("goldsmith_contrastive_examples_jsonl", "Rosetta-style similar and boundary examples for prompt and guideline calibration"),
+                artifact_line("goldsmith_prompt_package_jsonl", "Rosetta-style prompt tasks for LLM or expert review"),
                 artifact_line("goldsmith_reflection_plans_jsonl", "Rosetta-style reflection plans for missed-span and boundary review"),
                 artifact_line("goldsmith_boundary_feedback_jsonl", "boundary feedback from hard examples and LLM review"),
                 artifact_line("goldsmith_hard_examples_jsonl", "human-disagreed or risky examples for guideline refinement"),

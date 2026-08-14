@@ -232,6 +232,20 @@ def export_goldsmith_reflection_plans(
     return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
 
 
+@router.get("/documents/{document_id}/export.goldsmith.prompt-package.jsonl")
+def export_goldsmith_prompt_package(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> StreamingResponse:
+    try:
+        lines = storage.export_goldsmith_prompt_package_lines(project_id, document_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"Content-Disposition": f'attachment; filename="{document_id}.goldsmith.prompt-package.jsonl"'}
+    return StreamingResponse(iter(lines), media_type="application/x-ndjson", headers=headers)
+
+
 @router.get("/documents/{document_id}/export.goldsmith.review-tasks.jsonl")
 def export_goldsmith_review_tasks(
     project_id: str,

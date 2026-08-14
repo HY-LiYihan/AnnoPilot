@@ -198,6 +198,7 @@ const {
   exportGoldsmithConsistencyScoresJsonl,
   exportGoldsmithCandidateRunsJsonl,
   exportGoldsmithContrastiveExamplesJsonl,
+  exportGoldsmithPromptPackageJsonl,
   exportGoldsmithReflectionPlansJsonl,
   exportGoldsmithRiskReasonsJsonl,
   exportGoldsmithLabelStatisticsJsonl,
@@ -477,6 +478,7 @@ async function confirmProjectReset() {
         @export-goldsmith-consistency-scores="exportGoldsmithConsistencyScoresJsonl"
         @export-goldsmith-candidate-runs="exportGoldsmithCandidateRunsJsonl"
         @export-goldsmith-contrastive-examples="exportGoldsmithContrastiveExamplesJsonl"
+        @export-goldsmith-prompt-package="exportGoldsmithPromptPackageJsonl"
         @export-goldsmith-reflection-plans="exportGoldsmithReflectionPlansJsonl"
         @export-goldsmith-risk-reasons="exportGoldsmithRiskReasonsJsonl"
         @export-goldsmith-label-statistics="exportGoldsmithLabelStatisticsJsonl"

@@ -199,6 +199,10 @@ export function goldsmithReflectionPlansExportUrl(projectId: string, documentId:
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.reflection-plans.jsonl`
 }
 
+export function goldsmithPromptPackageExportUrl(projectId: string, documentId: string) {
+  return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.prompt-package.jsonl`
+}
+
 export function goldsmithReviewTasksExportUrl(projectId: string, documentId: string) {
   return `/api/projects/${projectId}/documents/${documentId}/export.goldsmith.review-tasks.jsonl`
 }
