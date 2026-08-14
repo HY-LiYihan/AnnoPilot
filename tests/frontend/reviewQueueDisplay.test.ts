@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { reviewQueuePriorityRouteText, rosettaRouteLabel } from '../../src/composables/reviewQueueDisplay.ts'
+import { reviewQueuePriorityRouteText, reviewQueueRouteCounts, reviewQueueRouteSummary, rosettaRouteLabel } from '../../src/composables/reviewQueueDisplay.ts'
 
 const labels = {
   priority: 'Priority',
@@ -54,5 +54,29 @@ test('reviewQueuePriorityRouteText falls back to review guidance route', () => {
   assert.equal(
     reviewQueuePriorityRouteText(makeReviewQueueItem({ rosetta_route: '', review_guidance: { rosetta_route: 'medium' } }), labels as any),
     'Priority 108 · Route medium consistency',
+  )
+})
+
+test('reviewQueueRouteCounts groups visible queue items by Rosetta route', () => {
+  assert.deepEqual(
+    reviewQueueRouteCounts([
+      makeReviewQueueItem({ rosetta_route: 'low' }),
+      makeReviewQueueItem({ rosetta_route: 'low' }),
+      makeReviewQueueItem({ rosetta_route: 'high' }),
+      makeReviewQueueItem({ rosetta_route: '', review_guidance: { rosetta_route: 'medium' } }),
+    ]),
+    { low: 2, high: 1, medium: 1 },
+  )
+})
+
+test('reviewQueueRouteSummary orders low, medium, and high risk navigation buckets', () => {
+  assert.equal(
+    reviewQueueRouteSummary([
+      makeReviewQueueItem({ rosetta_route: 'high' }),
+      makeReviewQueueItem({ rosetta_route: 'low' }),
+      makeReviewQueueItem({ rosetta_route: 'medium' }),
+      makeReviewQueueItem({ rosetta_route: 'low' }),
+    ], labels as any),
+    'low consistency 2 · medium consistency 1 · high consistency 1',
   )
 })

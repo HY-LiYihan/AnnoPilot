@@ -7,7 +7,7 @@ import {
   type ReadinessAction,
   type ReadinessTargetFocus,
 } from '../../composables/readerReadinessActions'
-import { reviewQueuePriorityRouteText } from '../../composables/reviewQueueDisplay'
+import { reviewQueuePriorityRouteText, reviewQueueRouteSummary } from '../../composables/reviewQueueDisplay'
 import type { UiLabels } from '../../i18n'
 import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, LabelCount, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder, SentenceQueueItem } from '../../types/domain'
 
@@ -268,6 +268,10 @@ function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics'], or
   return hint
     ? `${priority} · ${optionCount}${candidate} · ${hint} · ${score}`
     : `${priority} · ${optionCount}${candidate} · ${score}`
+}
+
+function reviewRouteSummary(items: ReviewQueueItem[], labels: UiLabels['metrics']) {
+  return reviewQueueRouteSummary(items, labels)
 }
 
 function riskBreakdownText(item: ReviewQueueItem, labels: UiLabels['metrics']) {
@@ -557,6 +561,9 @@ function shortHash(value: string) {
         <span>{{ labels.reviewQueue }}</span>
         <strong>{{ reviewQueueTotal }} {{ labels.pending }}</strong>
       </div>
+      <small v-if="reviewRouteSummary(reviewQueueDetails, labels)" class="label-mix-heading">
+        {{ labels.routeMix }} {{ reviewRouteSummary(reviewQueueDetails, labels) }}
+      </small>
       <div class="review-order-toggle" :aria-label="labels.reviewQueue">
         <button type="button" :class="{ active: reviewQueueOrder === 'position' }" @click="emit('review-order-change', 'position')">
           {{ labels.position }}
