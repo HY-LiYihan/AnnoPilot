@@ -1,6 +1,6 @@
 import type { DocumentMeta, Metrics, ReviewQueueItem, SentenceQueueItem } from '../types/domain'
 
-export type ReadinessActionKind = 'review-sentence' | 'auto-mark-monogloss'
+export type ReadinessActionKind = 'review-sentence'
 export type ReadinessTargetFocus = 'annotation-conflict' | 'suggestion'
 
 export type ReadinessActionId =
@@ -8,7 +8,6 @@ export type ReadinessActionId =
   | 'pending_suggestions'
   | 'incomplete_sentences'
   | 'no_annotations'
-  | 'auto_monogloss'
 
 export type ReadinessAction = {
   id: ReadinessActionId
@@ -102,12 +101,6 @@ export function buildReadinessActions(
       kind: 'review-sentence',
       count: 0,
       targetSentenceIndex: queueItems[0]?.index ?? null,
-    })
-    actions.push({
-      id: 'auto_monogloss',
-      kind: 'auto-mark-monogloss',
-      count: incompleteCount,
-      targetSentenceIndex: null,
     })
   }
 

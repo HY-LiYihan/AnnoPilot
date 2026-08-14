@@ -170,8 +170,14 @@ def get_review_queue(
 def auto_mark_monogloss(
     project_id: str,
     document_id: str,
+    confirm: bool = Query(False, description="Explicitly confirm system-generated Monogloss annotations."),
     storage: AnnotationStorage = Depends(get_storage),
 ) -> AutoMarkMonoglossResponse:
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Bulk Monogloss marking is disabled by default; review and explicitly confirm this operation first.",
+        )
     try:
         result = storage.auto_mark_document_monogloss(project_id, document_id)
     except NotFoundError as exc:

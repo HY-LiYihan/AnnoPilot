@@ -54,7 +54,6 @@ const emit = defineEmits<{
   'export-goldsmith-label-statistics': []
   'export-goldsmith-review-tasks': []
   'export-goldsmith-verification-report': []
-  'auto-mark-monogloss': []
   'import-annotations': [file: File]
   'reset-project': []
   'review-sentence': [sentenceIndex: number, targetSuggestionId?: string | null, targetFocus?: ReadinessTargetFocus | null]
@@ -180,31 +179,24 @@ function readinessActionTitle(action: ReadinessAction, labels: UiLabels['metrics
   if (action.id === 'annotation_conflicts') return labels.readinessConflict(action.count)
   if (action.id === 'pending_suggestions') return labels.readinessPending(action.count)
   if (action.id === 'incomplete_sentences') return labels.readinessIncomplete(action.count)
-  if (action.id === 'no_annotations') return labels.readinessNoAnnotations
-  return labels.readinessAutoMonogloss
+  return labels.readinessNoAnnotations
 }
 
 function readinessActionDetail(action: ReadinessAction, labels: UiLabels['metrics']) {
-  if (action.kind === 'auto-mark-monogloss') return labels.readinessAutoMonoglossHint
   if (action.targetSentenceIndex === null) return labels.readinessNoTarget
   if (action.targetSuggestionId) return labels.readinessJumpSuggestionTarget(action.targetSentenceIndex + 1)
   return labels.readinessJumpTarget(action.targetSentenceIndex + 1)
 }
 
-function readinessActionCta(action: ReadinessAction, labels: UiLabels['metrics']) {
-  return action.kind === 'auto-mark-monogloss' ? labels.run : labels.go
+function readinessActionCta(_action: ReadinessAction, labels: UiLabels['metrics']) {
+  return labels.go
 }
 
 function readinessActionDisabled(action: ReadinessAction, isSaving: boolean) {
-  if (action.kind === 'auto-mark-monogloss') return isSaving
-  return action.targetSentenceIndex === null
+  return isSaving || action.targetSentenceIndex === null
 }
 
 function handleReadinessAction(action: ReadinessAction) {
-  if (action.kind === 'auto-mark-monogloss') {
-    emit('auto-mark-monogloss')
-    return
-  }
   if (action.targetSentenceIndex !== null) {
     emit('review-sentence', action.targetSentenceIndex, action.targetSuggestionId ?? null, action.targetFocus ?? null)
   }
@@ -326,11 +318,6 @@ function shortHash(value: string) {
       <button class="export-button secondary compact" @click="emit('export-prodigy-labels')">
         {{ labels.exportProdigyLabels }}
         <Download :size="17" aria-hidden="true" />
-      </button>
-
-      <button class="export-button secondary compact" :disabled="!documentMeta || isSaving" @click="emit('auto-mark-monogloss')">
-        {{ isSaving ? labels.markingMonogloss : labels.autoMarkMonogloss }}
-        <Sparkles :size="17" aria-hidden="true" />
       </button>
 
       <button class="export-button danger compact reset-project-button" :disabled="isResetting" @click="emit('reset-project')">

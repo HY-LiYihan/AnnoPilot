@@ -162,7 +162,7 @@ test('highestPriorityReviewQueueItem breaks ties by risk score then sentence pos
   )
 })
 
-test('no annotations offers both manual jump and Monogloss automation', () => {
+test('no annotations offers only a manual jump, never silent Monogloss automation', () => {
   const actions = buildReadinessActions(
     documentMeta,
     makeMetrics({ annotation_count: 0, completed_count: 0 }),
@@ -170,8 +170,7 @@ test('no annotations offers both manual jump and Monogloss automation', () => {
     [],
   )
 
-  assert.deepEqual(actions.slice(-2).map((action) => [action.id, action.kind, action.targetSentenceIndex]), [
+  assert.deepEqual(actions.slice(-1).map((action) => [action.id, action.kind, action.targetSentenceIndex]), [
     ['no_annotations', 'review-sentence', 0],
-    ['auto_monogloss', 'auto-mark-monogloss', null],
   ])
 })

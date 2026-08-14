@@ -1,5 +1,6 @@
 import { computed, ref, type Ref } from 'vue'
 import type { DragSelection, SentenceDef } from '../types/domain'
+import { sliceByCodePoint } from '../utils/unicode.ts'
 
 export function useTokenSelection(sentences: Ref<SentenceDef[]>) {
   const dragSelection = ref<DragSelection | null>(null)
@@ -14,7 +15,7 @@ export function useTokenSelection(sentences: Ref<SentenceDef[]>) {
     const startToken = sentence.tokens[startIndex]
     const endToken = sentence.tokens[endIndex]
     if (!startToken || !endToken) return ''
-    return sentence.text.slice(startToken.start_char - sentence.start_char, endToken.end_char - sentence.start_char)
+    return sliceByCodePoint(sentence.text, startToken.start_char - sentence.start_char, endToken.end_char - sentence.start_char)
   })
 
   function beginSelection(sentenceId: string, tokenIndex: number) {

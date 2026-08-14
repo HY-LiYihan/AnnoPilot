@@ -41,6 +41,8 @@ AnnoPilot 现在同时维护两个 surface：
 
 当前 backend 和 frontend 已支持 Prodigy / AnnoPilot style annotations JSONL 导入，入口位于右侧 metrics/export panel；导入结果会保留并本地化展示 skip reason counts，方便定位句子未匹配、spans 字段错误和 token 边界错误。
 
+内置样例 preset 默认只生成待确认 suggestions，不再自动 accept 或完成句子；需要演示自动化时必须由 API 请求显式传入 `auto_accept_suggestions=true` 和 `complete_sentences=true`。批量 Monogloss API 也默认拒绝执行，人工工作区只保留当前句 `M` 的逐句确认。
+
 当前默认 tags：
 
 ```text

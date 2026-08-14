@@ -147,7 +147,6 @@ const {
   jumpToNextReviewSentence,
   setReviewQueueOrder,
   markCurrentSentenceMonogloss,
-  autoMarkEmptySentencesMonogloss,
   completeCurrentSentence,
   reopenCurrentSentence,
   generateDocumentSuggestions,
@@ -525,7 +524,6 @@ async function confirmProjectReset() {
         @export-goldsmith-label-statistics="exportGoldsmithLabelStatisticsJsonl"
         @export-goldsmith-review-tasks="exportGoldsmithReviewTasksJsonl"
         @export-goldsmith-verification-report="exportGoldsmithVerificationReportJsonl"
-        @auto-mark-monogloss="autoMarkEmptySentencesMonogloss"
         @verify-rebuild="verifyRebuildPreview"
         @reset-project="confirmProjectReset"
       />

@@ -187,8 +187,8 @@ export function useReaderDocumentLifecycle(options: UseReaderDocumentLifecycleOp
     try {
       const preset = options.samplePresets.value.find((item) => item.id === presetId)
       const loaded = await loadSamplePresetApi(PROJECT_ID, presetId, {
-        autoAcceptSuggestions: preset?.auto_accept_on_load ?? true,
-        completeSentences: preset?.complete_sentences_on_load ?? true,
+        autoAcceptSuggestions: preset?.auto_accept_on_load ?? false,
+        completeSentences: preset?.complete_sentences_on_load ?? false,
       })
       options.setTags(loaded.tags, 'first')
       options.selection.clearSelection()

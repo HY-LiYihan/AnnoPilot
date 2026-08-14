@@ -112,3 +112,17 @@ test('tokenPrefix preserves whitespace between offset-based tokens', () => {
   assert.equal(tokenPrefix(sentence, 1), ' ')
   assert.equal(tokenPrefix(sentence, 99), '')
 })
+
+test('tokenPrefix uses backend code-point offsets for non-BMP text', () => {
+  const sentence = makeSentence({
+    text: '🙂研究员',
+    end_char: 4,
+    tokens: [
+      { id: 'token-emoji', token_index: 0, text: '🙂', start_char: 0, end_char: 1 },
+      { id: 'token-researcher', token_index: 1, text: '研究员', start_char: 1, end_char: 4 },
+    ],
+  })
+
+  assert.equal(tokenPrefix(sentence, 0), '')
+  assert.equal(tokenPrefix(sentence, 1), '')
+})

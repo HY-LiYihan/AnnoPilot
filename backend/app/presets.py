@@ -340,8 +340,9 @@ class SamplePreset:
     default_limit_per_sentence: int = 10
     default_min_confidence: float = 0.98
     calibration_candidates: tuple[CalibrationCandidate, ...] = ()
-    auto_accept_on_load: bool = True
-    complete_sentences_on_load: bool = True
+    # Loading a sample should open a review queue, not silently create gold labels.
+    auto_accept_on_load: bool = False
+    complete_sentences_on_load: bool = False
 
     def summary(self) -> dict[str, Any]:
         return {

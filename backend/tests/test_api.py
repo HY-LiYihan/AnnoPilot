@@ -2025,8 +2025,8 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         assert [preset["id"] for preset in presets] == expected_preset_ids
         assert all(preset["tag_count"] == 9 for preset in presets)
         preset_by_id = {preset["id"]: preset for preset in presets}
-        assert preset_by_id["appraisal-engagement-cn-en"]["auto_accept_on_load"] is True
-        assert preset_by_id["appraisal-engagement-cn-en"]["complete_sentences_on_load"] is True
+        assert preset_by_id["appraisal-engagement-cn-en"]["auto_accept_on_load"] is False
+        assert preset_by_id["appraisal-engagement-cn-en"]["complete_sentences_on_load"] is False
         assert preset_by_id["appraisal-engagement-calibration-cn-en"]["auto_accept_on_load"] is False
         assert preset_by_id["appraisal-engagement-calibration-cn-en"]["complete_sentences_on_load"] is False
 
@@ -2118,7 +2118,10 @@ def test_load_appraisal_preset_can_auto_accept_and_complete_for_prodigy(tmp_path
             )
         )
     ) as client:
-        load_response = client.post("/api/projects/default/sample-presets/appraisal-engagement-product-safety-cn-en/load")
+        load_response = client.post(
+            "/api/projects/default/sample-presets/appraisal-engagement-product-safety-cn-en/load",
+            json={"auto_accept_suggestions": True, "complete_sentences": True},
+        )
         assert load_response.status_code == 200
         loaded = load_response.json()
         document_id = loaded["document_id"]
@@ -2181,7 +2184,14 @@ def test_auto_mark_document_monogloss_only_marks_empty_no_suggestion_sentences(t
         assert suggestion_response.status_code == 200
         assert suggestion_response.json()["suggestions_created"] > 0
 
-        mark_response = client.post(f"/api/projects/default/documents/{document_id}/monogloss/auto-mark")
+        guarded_response = client.post(f"/api/projects/default/documents/{document_id}/monogloss/auto-mark")
+        assert guarded_response.status_code == 400
+        assert "explicitly confirm" in guarded_response.json()["detail"]
+        guarded_summary = client.get(f"/api/projects/default/documents/{document_id}/summary").json()
+        assert guarded_summary["metrics"]["annotation_count"] == 0
+        assert guarded_summary["metrics"]["completed_count"] == 0
+
+        mark_response = client.post(f"/api/projects/default/documents/{document_id}/monogloss/auto-mark?confirm=true")
         assert mark_response.status_code == 200
         marked = mark_response.json()
         assert marked["marked"] == 2
@@ -2202,7 +2212,7 @@ def test_auto_mark_document_monogloss_only_marks_empty_no_suggestion_sentences(t
         assert third["completed"] is True
         assert third["annotations"][0]["source"] == "auto_monogloss"
 
-        repeat_response = client.post(f"/api/projects/default/documents/{document_id}/monogloss/auto-mark")
+        repeat_response = client.post(f"/api/projects/default/documents/{document_id}/monogloss/auto-mark?confirm=true")
         assert repeat_response.status_code == 200
         assert repeat_response.json()["marked"] == 0
 

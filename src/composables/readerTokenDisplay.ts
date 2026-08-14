@@ -1,4 +1,5 @@
 import type { AnnotationDef, SentenceDef, SuggestionDef, TagDef } from '../types/domain'
+import { sliceByCodePoint } from '../utils/unicode.ts'
 
 type TokenStyleOptions = {
   activeSuggestion?: SuggestionDef | null
@@ -34,7 +35,7 @@ export function tokenPrefix(sentence: SentenceDef, tokenIndex: number) {
   const token = sentence.tokens[tokenIndex]
   if (!token) return ''
   const previousEnd = tokenIndex === 0 ? sentence.start_char : sentence.tokens[tokenIndex - 1]?.end_char ?? sentence.start_char
-  return sentence.text.slice(previousEnd - sentence.start_char, token.start_char - sentence.start_char)
+  return sliceByCodePoint(sentence.text, previousEnd - sentence.start_char, token.start_char - sentence.start_char)
 }
 
 export function tokenStyleForToken(
