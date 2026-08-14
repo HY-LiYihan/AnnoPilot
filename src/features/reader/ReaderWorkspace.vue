@@ -248,7 +248,7 @@ const currentReviewQueueInsight = computed<ReviewQueueInsight | null>(() => {
   const item = reviewQueueDetails.value.find((queueItem) => queueItem.index === currentSentenceIndex.value)
   if (!item) return null
   const orderLabel = reviewQueueOrderLabel()
-  const headline = `${orderLabel} · ${labels.value.metrics.riskScore} ${item.risk_score.toFixed(2)}`
+  const headline = `${orderLabel} · ${labels.value.metrics.priority} ${item.priority} · ${labels.value.metrics.riskScore} ${item.risk_score.toFixed(2)}`
   return {
     headline,
     detail: reviewQueueInsightDetail(item),

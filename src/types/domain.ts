@@ -111,6 +111,7 @@ export type ReviewQueueItem = {
   text: string
   suggestion_count: number
   priority_score: number
+  priority: number
   min_confidence: number
   lexical_risk_score: number
   llm_review_risk_score: number
@@ -119,9 +120,12 @@ export type ReviewQueueItem = {
   risk_score: number
   risk_reason_codes: string[]
   review_route: 'position' | 'uncertain' | 'risk' | 'calibration' | string
+  rosetta_route?: 'low' | 'medium' | 'high' | string
   action_hint: string
   review_guidance: {
     domain?: string
+    rosetta_route?: string
+    priority?: number
     primary_action?: string
     risk_reason_codes?: string[]
     action_hint?: string

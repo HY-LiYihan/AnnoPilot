@@ -263,7 +263,10 @@ function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics'], or
   }
   const candidate = suggestion ? `${suggestion.tag_name}: ${suggestion.text}` : labels.queuePreviewFallback(item.suggestion_count)
   const optionCount = candidateCount > 1 ? `${labels.candidateOptions(candidateCount)} · ` : ''
-  return hint ? `${optionCount}${candidate} · ${hint} · ${score}` : `${optionCount}${candidate} · ${score}`
+  const priority = `${labels.priority} ${item.priority}`
+  return hint
+    ? `${priority} · ${optionCount}${candidate} · ${hint} · ${score}`
+    : `${priority} · ${optionCount}${candidate} · ${score}`
 }
 
 function riskBreakdownText(item: ReviewQueueItem, labels: UiLabels['metrics']) {

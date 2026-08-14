@@ -705,6 +705,8 @@ class DocumentQueryRepository:
                 "first_suggestion": first_suggestion,
                 "candidate_suggestions": candidate_suggestions,
             }
+            item["rosetta_route"] = self._review_queue_rosetta_route(item)
+            item["priority"] = self._review_queue_priority(item)
             item["risk_reason_codes"] = self._review_queue_risk_reason_codes(item, first_suggestion)
             item["action_hint"] = self._review_queue_action_hint(item, first_suggestion)
             item["review_guidance"] = self._review_queue_guidance(item, first_suggestion)
@@ -848,6 +850,8 @@ class DocumentQueryRepository:
             primary_action = "verify_exact_match"
         return {
             "domain": "appraisal_engagement",
+            "rosetta_route": item.get("rosetta_route") or cls._review_queue_rosetta_route(item),
+            "priority": int(item.get("priority") or cls._review_queue_priority(item)),
             "primary_action": primary_action,
             "risk_reason_codes": risk_reason_codes,
             "action_hint": cls._review_queue_action_hint(item, first_suggestion),
@@ -858,6 +862,35 @@ class DocumentQueryRepository:
                 "Use manual editing when candidates miss a cue, include extra context, or assign the wrong Engagement label.",
             ],
         }
+
+    @classmethod
+    def _review_queue_priority(cls, item: dict[str, Any]) -> int:
+        route = item.get("rosetta_route") or cls._review_queue_rosetta_route(item)
+        uncertainty = max(
+            min(max(float(item.get("risk_score") or 0.0), 0.0), 1.0),
+            min(max(1.0 - float(item.get("min_confidence") or 0.0), 0.0), 1.0),
+            min(max(float(item.get("candidate_disagreement_score") or 0.0), 0.0), 1.0),
+            min(max(float(item.get("llm_review_risk_score") or 0.0), 0.0), 1.0),
+            min(max(float(item.get("judge_review_risk_score") or 0.0), 0.0), 1.0),
+        )
+        base = {"low": 100, "medium": 50, "high": 10}.get(str(route), 0)
+        return base + int(round(uncertainty * 10))
+
+    @staticmethod
+    def _review_queue_rosetta_route(item: dict[str, Any]) -> str:
+        candidate_disagreement = float(item.get("candidate_disagreement_score") or 0.0)
+        llm_risk = float(item.get("llm_review_risk_score") or 0.0)
+        judge_risk = float(item.get("judge_review_risk_score") or 0.0)
+        risk_score = float(item.get("risk_score") or 0.0)
+        min_confidence = float(item.get("min_confidence") or 0.0)
+        suggestion_count = int(item.get("suggestion_count") or 0)
+        review_route = str(item.get("review_route") or "")
+
+        if candidate_disagreement > 0 or llm_risk >= 1.0 or judge_risk >= 0.75:
+            return "low"
+        if risk_score >= 0.4 or min_confidence < MEDIUM_CONFIDENCE_THRESHOLD or suggestion_count >= 2 or review_route == "calibration":
+            return "medium"
+        return "high"
 
     @staticmethod
     def _float_or_default(value: Any, default: float) -> float:

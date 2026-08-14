@@ -2058,6 +2058,9 @@ def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(
         assert queue["items"]
         assert any(item["candidate_disagreement_score"] > 0 for item in queue["items"])
         assert queue["items"][0]["risk_score"] >= queue["items"][-1]["risk_score"]
+        assert queue["items"][0]["priority"] >= queue["items"][-1]["priority"]
+        assert queue["items"][0]["review_guidance"]["priority"] == queue["items"][0]["priority"]
+        assert queue["items"][0]["review_guidance"]["rosetta_route"] in {"low", "medium", "high"}
 
         consistency_response = client.get(f"/api/projects/default/documents/{document_id}/export.goldsmith.consistency-scores.jsonl")
         assert consistency_response.status_code == 200
@@ -3123,6 +3126,8 @@ def test_review_queue_goldsmith_prioritizes_candidate_disagreement(tmp_path: Pat
         assert [item["id"] for item in by_goldsmith["items"]] == [first_sentence["id"], second_sentence["id"]]
         assert by_goldsmith["items"][0]["candidate_disagreement_score"] == 1.0
         assert by_goldsmith["items"][1]["candidate_disagreement_score"] == 0.0
+        assert by_goldsmith["items"][0]["rosetta_route"] == "low"
+        assert by_goldsmith["items"][0]["priority"] > by_goldsmith["items"][1]["priority"]
         assert round(by_goldsmith["items"][0]["lexical_risk_score"], 2) == 0.04
         assert round(by_goldsmith["items"][0]["risk_score"], 2) == 1.04
         assert round(by_goldsmith["items"][1]["risk_score"], 2) == 0.40
@@ -3144,6 +3149,8 @@ def test_review_queue_goldsmith_prioritizes_candidate_disagreement(tmp_path: Pat
         assert review_queue_export.status_code == 200
         review_queue_lines = [json.loads(line) for line in review_queue_export.text.splitlines()]
         assert review_queue_lines[0]["sentence_id"] == first_sentence["id"]
+        assert review_queue_lines[0]["priority"] == by_goldsmith["items"][0]["priority"]
+        assert review_queue_lines[0]["rosetta_route"] == "low"
         assert review_queue_lines[0]["candidate_disagreement_score"] == 1.0
         assert review_queue_lines[0]["action_hint"] == by_goldsmith["items"][0]["action_hint"]
         assert review_queue_lines[0]["review_guidance"]["primary_action"] == "compare_candidates"

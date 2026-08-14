@@ -261,6 +261,7 @@ class ReviewQueueItemResponse(BaseModel):
     text: str
     suggestion_count: int
     priority_score: float
+    priority: int = 0
     min_confidence: float
     lexical_risk_score: float = 0.0
     llm_review_risk_score: float = 0.0
@@ -269,6 +270,7 @@ class ReviewQueueItemResponse(BaseModel):
     risk_score: float
     risk_reason_codes: list[str] = Field(default_factory=list)
     review_route: str = "risk"
+    rosetta_route: str = "medium"
     action_hint: str = ""
     review_guidance: dict[str, Any] = Field(default_factory=dict)
     first_suggestion: Optional[SuggestionResponse] = None
