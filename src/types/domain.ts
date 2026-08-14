@@ -339,6 +339,11 @@ export type LoadSamplePresetResponse = {
   suggestion_run_id: string | null
   source_counts: Record<string, number>
   confidence_counts: Record<string, number>
+  auto_accepted: number
+  auto_accept_skipped: number
+  auto_completed: number
+  auto_accepted_suggestion_ids: string[]
+  auto_completed_sentence_ids: string[]
 }
 
 export type ImportTxtResponse = {

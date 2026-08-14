@@ -1379,6 +1379,58 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         assert loaded_by_id["appraisal-engagement-calibration-cn-en"]["suggestions_created"] >= 20
 
 
+def test_load_appraisal_preset_can_auto_accept_and_complete_for_prodigy(tmp_path: Path) -> None:
+    with TestClient(
+        create_app(
+            AnnotationStorage(
+                database_path=tmp_path / "runtime" / "annopilot.sqlite",
+                data_root=tmp_path / "projects",
+            )
+        )
+    ) as client:
+        load_response = client.post(
+            "/api/projects/default/sample-presets/appraisal-engagement-cn-en/load",
+            json={
+                "generate_suggestions": True,
+                "auto_accept_suggestions": True,
+                "complete_sentences": True,
+            },
+        )
+        assert load_response.status_code == 200
+        loaded = load_response.json()
+        document_id = loaded["document_id"]
+        assert loaded["suggestions_created"] >= 20
+        assert loaded["auto_accepted"] == loaded["suggestions_created"]
+        assert loaded["auto_accept_skipped"] == 0
+        assert loaded["auto_completed"] > 0
+        assert len(loaded["auto_accepted_suggestion_ids"]) == loaded["auto_accepted"]
+        assert len(loaded["auto_completed_sentence_ids"]) == loaded["auto_completed"]
+
+        summary = client.get(f"/api/projects/default/documents/{document_id}/summary").json()
+        assert summary["metrics"]["annotation_count"] == loaded["auto_accepted"]
+        assert summary["metrics"]["completed_count"] == loaded["auto_completed"]
+        assert summary["metrics"]["suggestion_count"] == 0
+
+        prodigy_lines = [
+            json.loads(line)
+            for line in client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl").text.splitlines()
+        ]
+        annotated_lines = [line for line in prodigy_lines if line["spans"]]
+        assert annotated_lines
+        assert all(line["answer"] == "accept" for line in annotated_lines)
+        assert all(line["meta"]["answer"] == "accept" for line in annotated_lines)
+        assert all(line["meta"]["completed"] is True for line in annotated_lines)
+
+        events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
+        assert sum(1 for event in events if event["type"] == "sentence.completed") == loaded["auto_completed"]
+        assert all(
+            event["actor_type"] == "system"
+            for event in events
+            if event["type"] == "sentence.completed" and event.get("source") == "auto_accept_suggestions"
+        )
+        assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
+
+
 def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",

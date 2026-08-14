@@ -380,6 +380,9 @@ class LoadSamplePresetRequest(BaseModel):
     generate_suggestions: bool = True
     limit_per_sentence: Optional[int] = Field(default=None, ge=1, le=20)
     min_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    auto_accept_suggestions: bool = False
+    auto_accept_min_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    complete_sentences: bool = False
 
 
 class LoadSamplePresetResponse(BaseModel):
@@ -393,6 +396,11 @@ class LoadSamplePresetResponse(BaseModel):
     suggestion_run_id: Optional[str] = None
     source_counts: dict[str, int] = Field(default_factory=dict)
     confidence_counts: dict[str, int] = Field(default_factory=dict)
+    auto_accepted: int = 0
+    auto_accept_skipped: int = 0
+    auto_completed: int = 0
+    auto_accepted_suggestion_ids: list[str] = Field(default_factory=list)
+    auto_completed_sentence_ids: list[str] = Field(default_factory=list)
 
 
 class CreateAnnotationRequest(BaseModel):

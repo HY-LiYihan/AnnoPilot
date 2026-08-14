@@ -39,11 +39,16 @@ def load_preset(
             "suggestion_run_id": None,
             "source_counts": {},
             "confidence_counts": {},
+            "auto_accepted": 0,
+            "auto_accept_skipped": 0,
+            "auto_completed": 0,
+            "auto_accepted_suggestion_ids": [],
+            "auto_completed_sentence_ids": [],
         }
         if request.generate_suggestions:
+            confidence_floor = request.min_confidence if request.min_confidence is not None else preset.default_min_confidence
+            limit_per_sentence = request.limit_per_sentence or preset.default_limit_per_sentence
             if preset.calibration_candidates:
-                confidence_floor = request.min_confidence if request.min_confidence is not None else preset.default_min_confidence
-                limit_per_sentence = request.limit_per_sentence or preset.default_limit_per_sentence
                 candidates = []
                 candidate_counts_by_anchor: dict[str, int] = {}
                 for candidate in preset.calibration_candidates:
@@ -64,14 +69,36 @@ def load_preset(
                 generated = storage.generate_suggestions(
                     project_id,
                     imported["document_id"],
-                    request.limit_per_sentence or preset.default_limit_per_sentence,
-                    request.min_confidence if request.min_confidence is not None else preset.default_min_confidence,
+                    limit_per_sentence,
+                    confidence_floor,
+                )
+            accepted = {
+                "accepted": 0,
+                "skipped": 0,
+                "completed": 0,
+                "accepted_suggestion_ids": [],
+                "completed_sentence_ids": [],
+            }
+            if request.auto_accept_suggestions and generated["suggestions_created"]:
+                accept_floor = request.auto_accept_min_confidence
+                if accept_floor is None:
+                    accept_floor = max(confidence_floor, 0.9)
+                accepted = storage.auto_accept_document_suggestions(
+                    project_id,
+                    imported["document_id"],
+                    accept_floor,
+                    complete_sentences=request.complete_sentences,
                 )
             suggestion_result = {
                 "suggestions_created": generated["suggestions_created"],
                 "suggestion_run_id": generated["run_id"],
                 "source_counts": generated["source_counts"],
                 "confidence_counts": generated["confidence_counts"],
+                "auto_accepted": accepted["accepted"],
+                "auto_accept_skipped": accepted["skipped"],
+                "auto_completed": accepted["completed"],
+                "auto_accepted_suggestion_ids": accepted["accepted_suggestion_ids"],
+                "auto_completed_sentence_ids": accepted["completed_sentence_ids"],
             }
         return {
             "preset": preset.summary(),

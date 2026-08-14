@@ -59,7 +59,11 @@ export async function loadSamplePreset(projectId: string, presetId: string): Pro
   const response = await fetch(`/api/projects/${projectId}/sample-presets/${presetId}/load`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ generate_suggestions: true }),
+    body: JSON.stringify({
+      generate_suggestions: true,
+      auto_accept_suggestions: true,
+      complete_sentences: true,
+    }),
   })
   return parseJsonResponse<LoadSamplePresetResponse>(response)
 }
