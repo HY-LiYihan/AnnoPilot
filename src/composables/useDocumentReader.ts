@@ -1,16 +1,5 @@
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
-  fetchDocuments,
-  fetchDocumentSummary,
-  fetchSamplePresets,
-  importTxt,
-  loadSamplePreset as loadSamplePresetApi,
-  mergeTxt,
-  resetProject,
-} from '../api/documents'
-import {
-  ACTIVE_DOCUMENT_KEY,
-  PROJECT_ID,
   type AnnotationDef,
   type DocumentMeta,
   type DocumentListItem,
@@ -21,7 +10,6 @@ import {
   type SentenceQueueItem,
   type SessionState,
   type SuggestionDef,
-  type TxtImportMode,
 } from '../types/domain'
 import { useTokenSelection } from './useTokenSelection'
 import { useReaderKeyboardShortcuts } from './useReaderKeyboardShortcuts'
@@ -33,6 +21,7 @@ import { useReaderAnnotationActions } from './useReaderAnnotationActions'
 import { useReaderSentenceWindow } from './useReaderSentenceWindow'
 import { useReaderReviewQueue } from './useReaderReviewQueue'
 import { useReaderSentenceCompletion } from './useReaderSentenceCompletion'
+import { emptyMetrics, useReaderDocumentLifecycle } from './useReaderDocumentLifecycle'
 import {
   annotationForToken as findAnnotationForToken,
   suggestionForToken as findSuggestionForToken,
@@ -40,30 +29,6 @@ import {
   tokenPrefix as getTokenPrefix,
   tokenStyleForToken,
 } from './readerTokenDisplay'
-
-function emptyMetrics(): Metrics {
-  return {
-    sentence_count: 0,
-    completed_count: 0,
-    answer_counts: { accept: 0, reject: 0, ignore: 0, pending: 0 },
-    progress: 0,
-    annotation_count: 0,
-    suggestion_count: 0,
-    annotation_label_counts: [],
-    suggestion_label_counts: [],
-    suggestion_status_counts: { pending: 0, accepted: 0, rejected: 0 },
-    suggestion_source_counts: {},
-    suggestion_confidence_counts: {},
-    suggestion_review_counts: { accept: 0, reject: 0, uncertain: 0 },
-    reviewed_suggestion_count: 0,
-    accuracy: null,
-    accuracy_label: 'Waiting for review data',
-    calibration_count: 0,
-    calibration_disagreement_count: 0,
-    calibration_error_rate: null,
-    review_efficiency_curves: {},
-  }
-}
 
 export function useDocumentReader() {
   const samplePresets = ref<SamplePreset[]>([])
@@ -84,7 +49,17 @@ export function useDocumentReader() {
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
 
   const selection = useTokenSelection(sentences)
+  let applyDocumentSummaryImpl: (payload: DocumentSummaryPayload) => void = () => {}
+  let loadDocumentImpl: (documentId: string, preserveCurrent?: boolean) => Promise<void> = async () => {}
+  let loadDocumentListImpl: () => Promise<void> = async () => {}
+  let refreshDocumentSummaryImpl: () => Promise<void> = async () => {}
   let restoreSuggestionReviewsForLoadedSentences = (_sentences: SentenceDef[]) => {}
+
+  const applyDocumentSummary = (payload: DocumentSummaryPayload) => applyDocumentSummaryImpl(payload)
+  const loadDocument = (documentId: string, preserveCurrent = false) => loadDocumentImpl(documentId, preserveCurrent)
+  const loadDocumentList = () => loadDocumentListImpl()
+  const refreshDocumentSummary = () => refreshDocumentSummaryImpl()
+
   const {
     centerCurrentSentence,
     clampIndex,
@@ -273,6 +248,44 @@ export function useDocumentReader() {
   })
   restoreSuggestionReviewsForLoadedSentences = restoreSuggestionReviews
 
+  const readerDocuments = useReaderDocumentLifecycle({
+    activeSession,
+    activeSuggestionId,
+    centerCurrentSentence,
+    clampIndex,
+    currentSentenceIndex,
+    documentMeta,
+    documents,
+    isResetting,
+    isSuggesting,
+    isUploading,
+    lastAnnotationImport,
+    loadedWindow,
+    loadProjectTags,
+    loadSentenceWindow,
+    metrics,
+    persistSessionCursor,
+    readerError,
+    refreshAnnotationImportHistory,
+    refreshAuditSummary,
+    refreshReviewQueue,
+    refreshRunHistory,
+    resetAnnotationActionState,
+    resetAuditState,
+    resetReviewQueueState,
+    resetSuggestionState,
+    samplePresets,
+    selection,
+    sentenceElements,
+    sentenceQueue,
+    sentences,
+    setTags,
+  })
+  applyDocumentSummaryImpl = readerDocuments.applyDocumentSummary
+  loadDocumentImpl = readerDocuments.loadDocument
+  loadDocumentListImpl = readerDocuments.loadDocumentList
+  refreshDocumentSummaryImpl = readerDocuments.refreshDocumentSummary
+
   const readerExports = useReaderExports({
     documentMeta,
     reviewQueueOrder,
@@ -317,151 +330,6 @@ export function useDocumentReader() {
     tags,
     undoLastSpanAction,
   })
-
-  onMounted(async () => {
-    await loadDocumentList()
-    await loadSamplePresets()
-    const activeDocumentId = window.localStorage.getItem(ACTIVE_DOCUMENT_KEY)
-    if (activeDocumentId && documents.value.some((document) => document.id === activeDocumentId)) {
-      await loadDocument(activeDocumentId)
-    } else if (activeDocumentId) {
-      window.localStorage.removeItem(ACTIVE_DOCUMENT_KEY)
-      await loadProjectTags()
-      await refreshAuditSummary()
-    } else if (documents.value.length) {
-      await loadDocument(documents.value[0].id)
-    } else {
-      await loadProjectTags()
-      await refreshAuditSummary()
-    }
-  })
-
-  async function handleImport(file: File, mode: TxtImportMode = 'replace') {
-    readerError.value = ''
-    lastAnnotationImport.value = null
-    isUploading.value = true
-    try {
-      const shouldMerge = mode === 'merge' && Boolean(documentMeta.value)
-      const imported = shouldMerge && documentMeta.value
-        ? await mergeTxt(PROJECT_ID, documentMeta.value.id, file)
-        : await importTxt(PROJECT_ID, file)
-      setTags(imported.tags, 'first')
-      selection.clearSelection()
-      window.localStorage.setItem(ACTIVE_DOCUMENT_KEY, imported.document_id)
-      await loadDocument(imported.document_id, shouldMerge)
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Import failed.'
-    } finally {
-      isUploading.value = false
-    }
-  }
-
-  async function loadDocument(documentId: string, preserveCurrent = false) {
-    try {
-      const previousIndex = currentSentenceIndex.value
-      const payload = await fetchDocumentSummary(PROJECT_ID, documentId)
-      applyDocumentSummary(payload)
-      window.localStorage.setItem(ACTIVE_DOCUMENT_KEY, documentId)
-      selection.clearSelection()
-      currentSentenceIndex.value = preserveCurrent
-        ? clampIndex(previousIndex)
-        : initialSentenceIndex(payload)
-      activeSuggestionId.value = ''
-      if (currentSentenceIndex.value < 0) currentSentenceIndex.value = 0
-      await loadSentenceWindow(documentId, currentSentenceIndex.value, true)
-      await centerCurrentSentence()
-      await refreshAuditSummary()
-      await refreshAnnotationImportHistory(documentId)
-      await refreshRunHistory()
-      await refreshReviewQueue()
-      await loadDocumentList()
-      if (activeSession.value?.current_sentence_index !== currentSentenceIndex.value) {
-        void persistSessionCursor(currentSentenceIndex.value)
-      }
-    } catch (error) {
-      window.localStorage.removeItem(ACTIVE_DOCUMENT_KEY)
-      readerError.value = error instanceof Error ? error.message : 'Could not load document.'
-    }
-  }
-
-  async function loadDocumentList() {
-    try {
-      const payload = await fetchDocuments(PROJECT_ID)
-      documents.value = payload.documents
-    } catch {
-      documents.value = []
-    }
-  }
-
-  async function loadSamplePresets() {
-    try {
-      const payload = await fetchSamplePresets(PROJECT_ID)
-      samplePresets.value = payload.presets
-    } catch {
-      samplePresets.value = []
-    }
-  }
-
-  async function loadBuiltinSamplePreset(presetId: string) {
-    if (!presetId || isUploading.value || isSuggesting.value) return
-    isUploading.value = true
-    isSuggesting.value = true
-    readerError.value = ''
-    lastAnnotationImport.value = null
-    resetAnnotationActionState()
-    try {
-      const preset = samplePresets.value.find((item) => item.id === presetId)
-      const loaded = await loadSamplePresetApi(PROJECT_ID, presetId, {
-        autoAcceptSuggestions: preset?.auto_accept_on_load ?? true,
-        completeSentences: preset?.complete_sentences_on_load ?? true,
-      })
-      setTags(loaded.tags, 'first')
-      selection.clearSelection()
-      window.localStorage.setItem(ACTIVE_DOCUMENT_KEY, loaded.document_id)
-      await loadDocument(loaded.document_id)
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not load sample preset.'
-    } finally {
-      isUploading.value = false
-      isSuggesting.value = false
-    }
-  }
-
-  async function switchDocument(documentId: string) {
-    if (!documentId || documentId === documentMeta.value?.id) return
-    readerError.value = ''
-    lastAnnotationImport.value = null
-    resetAnnotationActionState()
-    selection.clearSelection()
-    await loadDocument(documentId)
-  }
-
-  function applyDocumentSummary(payload: DocumentSummaryPayload) {
-    documentMeta.value = payload.document
-    activeSession.value = payload.session
-    setTags(payload.tags)
-    metrics.value = payload.metrics
-    sentenceQueue.value = payload.queue
-    loadedWindow.value.total = payload.metrics.sentence_count
-  }
-
-  function initialSentenceIndex(payload: DocumentSummaryPayload) {
-    if (typeof payload.session.current_sentence_index === 'number') {
-      return clampIndex(payload.session.current_sentence_index)
-    }
-    return Math.max(
-      0,
-      payload.queue.find((sentence) => !sentence.completed)?.index ?? 0,
-    )
-  }
-
-  async function refreshDocumentSummary() {
-    if (!documentMeta.value) return
-    const payload = await fetchDocumentSummary(PROJECT_ID, documentMeta.value.id)
-    applyDocumentSummary(payload)
-    await loadDocumentList()
-    await refreshReviewQueue()
-  }
 
   function setActiveSuggestionTarget(suggestion: SuggestionDef) {
     if (!activeSuggestions.value.some((item) => item.id === suggestion.id)) return
@@ -540,37 +408,6 @@ export function useDocumentReader() {
     return findSuggestionForToken(sentence, tokenIndex)
   }
 
-  async function resetProjectData() {
-    if (isResetting.value) return
-    isResetting.value = true
-    readerError.value = ''
-    try {
-      await resetProject(PROJECT_ID)
-      window.localStorage.removeItem(ACTIVE_DOCUMENT_KEY)
-      documentMeta.value = null
-      activeSession.value = null
-      sentences.value = []
-      sentenceQueue.value = []
-      loadedWindow.value = { offset: 0, limit: 0, total: 0 }
-      metrics.value = emptyMetrics()
-      currentSentenceIndex.value = 0
-      activeSuggestionId.value = ''
-      resetSuggestionState()
-      resetAnnotationActionState()
-      sentenceElements.value = {}
-      resetAuditState()
-      resetReviewQueueState()
-      selection.clearSelection()
-      await loadDocumentList()
-      await loadProjectTags()
-      await refreshAuditSummary()
-    } catch (error) {
-      readerError.value = error instanceof Error ? error.message : 'Could not reset project.'
-    } finally {
-      isResetting.value = false
-    }
-  }
-
   return {
     tags,
     samplePresets,
@@ -613,9 +450,9 @@ export function useDocumentReader() {
     queueItems,
     pendingSelection: selection.pendingSelection,
     pendingSelectionText: selection.pendingSelectionText,
-    handleImport,
-    loadBuiltinSamplePreset,
-    switchDocument,
+    handleImport: readerDocuments.handleImport,
+    loadBuiltinSamplePreset: readerDocuments.loadBuiltinSamplePreset,
+    switchDocument: readerDocuments.switchDocument,
     setCurrentSentence,
     jumpToNextReviewSentence,
     setReviewQueueOrder,
@@ -676,7 +513,7 @@ export function useDocumentReader() {
     exportGoldsmithRiskReasonsJsonl,
     exportGoldsmithReviewTasksJsonl,
     verifyRebuildPreview,
-    resetProjectData,
+    resetProjectData: readerDocuments.resetProjectData,
     refreshAuditSummary,
     refreshRunHistory,
   }
