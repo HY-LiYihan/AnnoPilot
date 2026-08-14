@@ -53,7 +53,7 @@ const emit = defineEmits<{
   'auto-mark-monogloss': []
   'import-annotations': [file: File]
   'reset-project': []
-  'review-sentence': [sentenceIndex: number]
+  'review-sentence': [sentenceIndex: number, targetSuggestionId?: string | null]
   'review-order-change': [order: ReviewQueueOrder]
   'verify-rebuild': []
 }>()
@@ -183,6 +183,7 @@ function readinessActionTitle(action: ReadinessAction, labels: UiLabels['metrics
 function readinessActionDetail(action: ReadinessAction, labels: UiLabels['metrics']) {
   if (action.kind === 'auto-mark-monogloss') return labels.readinessAutoMonoglossHint
   if (action.targetSentenceIndex === null) return labels.readinessNoTarget
+  if (action.targetSuggestionId) return labels.readinessJumpSuggestionTarget(action.targetSentenceIndex + 1)
   return labels.readinessJumpTarget(action.targetSentenceIndex + 1)
 }
 
@@ -200,7 +201,7 @@ function handleReadinessAction(action: ReadinessAction) {
     emit('auto-mark-monogloss')
     return
   }
-  if (action.targetSentenceIndex !== null) emit('review-sentence', action.targetSentenceIndex)
+  if (action.targetSentenceIndex !== null) emit('review-sentence', action.targetSentenceIndex, action.targetSuggestionId ?? null)
 }
 
 function progressPercent(metrics: Metrics) {

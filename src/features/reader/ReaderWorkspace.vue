@@ -282,6 +282,10 @@ function riskReasonLabels(item: ReviewQueueItem) {
 }
 const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.value.reader.undoTitle : labels.value.reader.undoTitle))
 
+function focusReviewSentence(sentenceIndex: number, targetSuggestionId?: string | null) {
+  setCurrentSentence(sentenceIndex, 'smooth', targetSuggestionId ?? '')
+}
+
 async function confirmProjectReset() {
   if (!window.confirm(labels.value.metrics.resetConfirm)) return
   await resetProjectData()
@@ -478,7 +482,7 @@ async function confirmProjectReset() {
         @export-prodigy-spans="exportProdigySpansJsonl"
         @export-prodigy-labels="exportProdigyLabelsJson"
         @import-annotations="handleAnnotationImport"
-        @review-sentence="setCurrentSentence"
+        @review-sentence="focusReviewSentence"
         @review-order-change="setReviewQueueOrder"
         @export-manifest="exportManifestJson"
         @export-events="exportEventsJsonl"

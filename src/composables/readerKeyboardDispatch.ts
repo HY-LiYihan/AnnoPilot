@@ -34,7 +34,7 @@ export type KeyboardShortcutActions = {
   rejectSuggestedSpan: (suggestion: SuggestionDef) => void | Promise<void>
   reopenCurrentSentence: () => void | Promise<void>
   selectCurrentSentenceSpan: () => void
-  setCurrentSentence: (index: number, scrollBehavior?: ScrollBehavior) => void
+  setCurrentSentence: (index: number, scrollBehavior?: ScrollBehavior, targetSuggestionId?: string) => void
   undoLastSpanAction: () => void | Promise<void>
 }
 

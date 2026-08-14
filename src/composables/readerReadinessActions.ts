@@ -14,6 +14,7 @@ export type ReadinessAction = {
   kind: ReadinessActionKind
   count: number
   targetSentenceIndex: number | null
+  targetSuggestionId?: string | null
 }
 
 export function pendingSuggestionCount(metrics: Metrics) {
@@ -30,6 +31,10 @@ export function firstAnnotationConflictIndex(queueItems: SentenceQueueItem[]) {
 
 export function firstPendingSuggestionIndex(queueItems: SentenceQueueItem[], reviewQueueDetails: ReviewQueueItem[]) {
   return reviewQueueDetails[0]?.index ?? queueItems.find((item) => item.suggestion_count > 0)?.index ?? null
+}
+
+export function firstPendingSuggestionId(reviewQueueDetails: ReviewQueueItem[]) {
+  return reviewQueueDetails[0]?.first_suggestion?.id ?? reviewQueueDetails[0]?.candidate_suggestions?.[0]?.id ?? null
 }
 
 export function firstIncompleteSentenceIndex(queueItems: SentenceQueueItem[]) {
@@ -64,6 +69,7 @@ export function buildReadinessActions(
       kind: 'review-sentence',
       count: suggestionCount,
       targetSentenceIndex: firstPendingSuggestionIndex(queueItems, reviewQueueDetails),
+      targetSuggestionId: firstPendingSuggestionId(reviewQueueDetails),
     })
   }
 

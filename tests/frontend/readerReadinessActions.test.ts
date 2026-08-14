@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   buildReadinessActions,
+  firstPendingSuggestionId,
   firstPendingSuggestionIndex,
   pendingSuggestionCount,
 } from '../../src/composables/readerReadinessActions.ts'
@@ -68,6 +69,27 @@ function makeReviewQueueItem(overrides = {}) {
   }
 }
 
+function makeSuggestion(overrides = {}) {
+  return {
+    id: 'suggestion-1',
+    run_id: 'run-1',
+    sentence_id: 'sentence-99',
+    tag_id: 'tag-1',
+    tag_name: 'Engagement',
+    tag_color: '#0b7565',
+    start_token_index: 0,
+    end_token_index: 1,
+    start_char: 0,
+    end_char: 4,
+    text: 'text',
+    confidence: 0.82,
+    source: 'lexical_exact',
+    status: 'pending',
+    created_at: '2026-08-14T00:00:00Z',
+    ...overrides,
+  }
+}
+
 const documentMeta = { id: 'doc-1', filename: 'sample.txt', sentence_count: 3, token_count: 9 }
 
 test('pendingSuggestionCount falls back to label counts when status counts are absent', () => {
@@ -89,15 +111,15 @@ test('readiness actions surface conflicts, pending suggestions, and incomplete s
       makeQueueItem({ id: 's1', index: 0, completed: true, annotation_overlap_count: 0, suggestion_count: 0 }),
       makeQueueItem({ id: 's2', index: 1, completed: false, annotation_overlap_count: 2, suggestion_count: 1 }),
     ],
-    [makeReviewQueueItem({ index: 8 })],
+    [makeReviewQueueItem({ index: 8, first_suggestion: makeSuggestion({ id: 'suggestion-risk' }) })],
   )
 
   assert.deepEqual(
-    actions.map((action) => [action.id, action.kind, action.count, action.targetSentenceIndex]),
+    actions.map((action) => [action.id, action.kind, action.count, action.targetSentenceIndex, action.targetSuggestionId ?? null]),
     [
-      ['annotation_conflicts', 'review-sentence', 2, 1],
-      ['pending_suggestions', 'review-sentence', 4, 8],
-      ['incomplete_sentences', 'review-sentence', 2, 1],
+      ['annotation_conflicts', 'review-sentence', 2, 1, null],
+      ['pending_suggestions', 'review-sentence', 4, 8, 'suggestion-risk'],
+      ['incomplete_sentences', 'review-sentence', 2, 1, null],
     ],
   )
 })
@@ -110,6 +132,11 @@ test('first pending suggestion prefers the Goldsmith review queue order', () => 
     ),
     7,
   )
+})
+
+test('first pending suggestion id prefers first suggestion then candidate options', () => {
+  assert.equal(firstPendingSuggestionId([makeReviewQueueItem({ first_suggestion: makeSuggestion({ id: 'first' }) })]), 'first')
+  assert.equal(firstPendingSuggestionId([makeReviewQueueItem({ candidate_suggestions: [makeSuggestion({ id: 'candidate' })] })]), 'candidate')
 })
 
 test('no annotations offers both manual jump and Monogloss automation', () => {

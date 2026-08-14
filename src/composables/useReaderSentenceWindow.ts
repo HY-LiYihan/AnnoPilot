@@ -59,13 +59,14 @@ export function useReaderSentenceWindow(options: UseReaderSentenceWindowOptions)
     options.normalizeActiveSuggestionTarget()
   }
 
-  function setCurrentSentence(index: number, scrollBehavior: ScrollBehavior = 'smooth') {
+  function setCurrentSentence(index: number, scrollBehavior: ScrollBehavior = 'smooth', targetSuggestionId = '') {
     if (!options.metrics.value.sentence_count) return
     options.currentSentenceIndex.value = clampIndex(index)
     options.selection.clearSelection()
-    options.activeSuggestionId.value = ''
+    options.activeSuggestionId.value = targetSuggestionId
     void (async () => {
       if (options.documentMeta.value) await loadSentenceWindow(options.documentMeta.value.id, options.currentSentenceIndex.value)
+      if (targetSuggestionId) options.normalizeActiveSuggestionTarget()
       await centerCurrentSentence(scrollBehavior)
       void persistSessionCursor(options.currentSentenceIndex.value)
     })()
