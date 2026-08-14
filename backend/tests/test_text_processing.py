@@ -56,3 +56,12 @@ def test_sentence_splitting_keeps_english_closing_quote_with_sentence() -> None:
     sentences = split_sentences('She said, "It may work." Then left.')
 
     assert [sentence.text for sentence in sentences] == ['She said, "It may work."', "Then left."]
+
+
+def test_sentence_splitting_keeps_common_english_abbreviations_inside_sentence() -> None:
+    sentences = split_sentences("U.S. officials said counting may continue. Dr. Chen said the audit was clear.")
+
+    assert [sentence.text for sentence in sentences] == [
+        "U.S. officials said counting may continue.",
+        "Dr. Chen said the audit was clear.",
+    ]

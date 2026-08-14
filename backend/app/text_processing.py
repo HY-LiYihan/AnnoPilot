@@ -5,6 +5,31 @@ from dataclasses import dataclass
 
 SENTENCE_ENDINGS = set("。！？?!")
 SENTENCE_TRAILING_CLOSERS = set("\"'”’)]}〉》」』】）")
+ENGLISH_SENTENCE_ABBREVIATIONS = {
+    "co",
+    "corp",
+    "dept",
+    "dr",
+    "e.g",
+    "gov",
+    "i.e",
+    "inc",
+    "jr",
+    "ltd",
+    "mr",
+    "mrs",
+    "ms",
+    "no",
+    "prof",
+    "rep",
+    "sen",
+    "sr",
+    "st",
+    "u.k",
+    "u.n",
+    "u.s",
+    "vs",
+}
 
 
 @dataclass(frozen=True)
@@ -109,7 +134,30 @@ def _period_ends_sentence(text: str, index: int) -> bool:
     next_char = text[index + 1] if index + 1 < len(text) else ""
     if previous_char.isdigit() and next_char.isdigit():
         return False
+    if _period_is_english_abbreviation(text, index):
+        return False
     return next_char == "" or next_char.isspace() or next_char in SENTENCE_TRAILING_CLOSERS
+
+
+def _period_is_english_abbreviation(text: str, index: int) -> bool:
+    token_start = index
+    while token_start > 0 and (text[token_start - 1].isalpha() or text[token_start - 1] == "."):
+        token_start -= 1
+
+    token_end = index + 1
+    while token_end < len(text) and (text[token_end].isalpha() or text[token_end] == "."):
+        token_end += 1
+
+    token = text[token_start:token_end].strip(".")
+    if not token:
+        return False
+
+    key = token.casefold()
+    if key in ENGLISH_SENTENCE_ABBREVIATIONS:
+        return True
+
+    parts = token.split(".")
+    return len(parts) > 1 and all(len(part) == 1 and part.isalpha() for part in parts) and any(part.isupper() for part in parts)
 
 
 def _include_trailing_closers(text: str, index: int) -> int:
