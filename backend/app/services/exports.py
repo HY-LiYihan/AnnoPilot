@@ -716,6 +716,7 @@ class ExportService:
                 for index, suggestion in enumerate(sorted_suggestions)
             ]
             priority = self._goldsmith_review_task_priority(route, consistency_score["uncertainty_score"])
+            review_guidance = self._goldsmith_review_guidance(sentence, options, consistency_score)
             tasks.append(
                 {
                     "schema_version": self.goldsmith_review_tasks_schema_version,
@@ -732,6 +733,7 @@ class ExportService:
                     "text": sentence["text"],
                     "candidate_count": len(options),
                     "manual_option_id": "__manual__",
+                    "review_guidance": review_guidance,
                     "options": options,
                     "consistency": {
                         "diagnostic_scope": "visible_pending_suggestions",
@@ -778,6 +780,7 @@ class ExportService:
             "candidate_id": suggestion["id"],
             "annotation_markup": self._inline_span_markup(sentence["text"], local_start, local_end, suggestion["tag_name"]),
             "explanation": self._candidate_explanation(suggestion),
+            "action_hint": self._goldsmith_review_option_action_hint(suggestion, candidate_score),
             "model_confidence": suggestion["confidence"],
             "risk_reason_codes": suggestion.get("risk_reason_codes") or self._suggestion_risk_reason_codes(suggestion),
             "span": {
@@ -797,6 +800,65 @@ class ExportService:
     def _goldsmith_review_task_priority(route: str, uncertainty_score: float) -> int:
         base = {"low": 100, "medium": 50, "high": 10}.get(route, 0)
         return base + int(round(float(uncertainty_score or 0.0) * 10))
+
+    def _goldsmith_review_guidance(
+        self,
+        sentence: dict[str, Any],
+        options: list[dict[str, Any]],
+        consistency_score: dict[str, Any],
+    ) -> dict[str, Any]:
+        labels = sorted({str(option["span"]["label"]) for option in options})
+        token_ranges = sorted({(int(option["span"]["token_start"]), int(option["span"]["token_end"])) for option in options})
+        risk_reason_codes = {code for option in options for code in option.get("risk_reason_codes", [])}
+        if len(labels) > 1 or len(token_ranges) > 1 or float(consistency_score["overlap_conflict_rate"]) > 0:
+            risk_reason_codes.add("candidate_conflict")
+        route = str(consistency_score["rosetta_route"])
+        primary_action = "expert_boundary_review" if route == "low" else "compare_candidates"
+        if not options:
+            primary_action = "manual_review"
+        return {
+            "domain": "appraisal_engagement",
+            "task_goal": "Pick the candidate that best captures the Engagement cue, or choose __manual__ if none is correct.",
+            "primary_action": primary_action,
+            "route_reason": consistency_score["route_reason"],
+            "risk_reason_codes": sorted(risk_reason_codes),
+            "span_conflict_summary": {
+                "candidate_count": len(options),
+                "label_count": len(labels),
+                "labels": labels,
+                "unique_token_ranges": [
+                    {"token_start": start, "token_end": end}
+                    for start, end in token_ranges
+                ],
+                "has_label_conflict": len(labels) > 1,
+                "has_boundary_conflict": len(token_ranges) > 1,
+                "overlap_conflict_rate": consistency_score["overlap_conflict_rate"],
+            },
+            "boundary_checks": [
+                "Choose the smallest text span that explicitly signals dialogic positioning.",
+                "Judge the label by Engagement function, not by sentiment polarity alone.",
+                "Use __manual__ when candidates miss a cue, include extra context, or assign the wrong Engagement label.",
+            ],
+            "sentence_locator": {
+                "sentence_id": sentence["id"],
+                "sentence_index": sentence["index"],
+            },
+        }
+
+    def _goldsmith_review_option_action_hint(self, suggestion: dict[str, Any], candidate_score: dict[str, Any]) -> str:
+        latest_review = suggestion.get("latest_review") or {}
+        recommendation = latest_review.get("recommendation")
+        if recommendation == "reject":
+            return "Likely false positive: compare against the label definition before accepting."
+        if recommendation == "uncertain":
+            return "Boundary case: inspect whether the cue is explicit enough for this Engagement label."
+        if int(candidate_score.get("overlap_conflict_count") or 0) > 0:
+            return "Conflicting candidate: compare label and token boundary with the other options."
+        if float(candidate_score.get("span_f1_to_consensus") or 1.0) < 1.0:
+            return "Boundary differs from the consensus span; verify start/end tokens carefully."
+        if float(suggestion.get("confidence") or 0.0) < self.medium_confidence_threshold:
+            return "Low confidence: accept only if the span is an explicit Engagement cue."
+        return "Accept if the highlighted span and label are both exact; otherwise choose __manual__."
 
     @staticmethod
     def _goldsmith_review_prompt(sentence: dict[str, Any], consistency_score: dict[str, Any]) -> str:

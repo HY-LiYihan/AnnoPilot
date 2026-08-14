@@ -1564,10 +1564,23 @@ def test_load_appraisal_engagement_calibration_preset_seeds_conflict_candidates(
         assert review_tasks[0]["candidate_count"] == len(review_tasks[0]["options"])
         assert review_tasks[0]["options"][0]["option_id"] == "A"
         assert review_tasks[0]["options"][0]["candidate_id"]
+        assert review_tasks[0]["options"][0]["action_hint"]
         assert [option["candidate_id"] for option in review_tasks[0]["options"]] == sorted(
             option["candidate_id"] for option in review_tasks[0]["options"]
         )
         assert "[" in review_tasks[0]["options"][0]["annotation_markup"]
+        assert review_tasks[0]["review_guidance"]["domain"] == "appraisal_engagement"
+        assert review_tasks[0]["review_guidance"]["primary_action"] in {"expert_boundary_review", "compare_candidates"}
+        assert review_tasks[0]["review_guidance"]["risk_reason_codes"] == sorted(
+            review_tasks[0]["review_guidance"]["risk_reason_codes"]
+        )
+        assert "candidate_conflict" in review_tasks[0]["review_guidance"]["risk_reason_codes"]
+        assert review_tasks[0]["review_guidance"]["span_conflict_summary"]["candidate_count"] == review_tasks[0]["candidate_count"]
+        assert (
+            review_tasks[0]["review_guidance"]["span_conflict_summary"]["has_boundary_conflict"]
+            or review_tasks[0]["review_guidance"]["span_conflict_summary"]["has_label_conflict"]
+        )
+        assert review_tasks[0]["review_guidance"]["boundary_checks"]
         assert review_tasks[0]["consistency"]["rosetta_route"] == review_tasks[0]["route"]
         assert review_tasks[0]["meta"]["rosetta_reference"] == "human_review_queue.jsonl"
         assert review_tasks[0]["meta"]["option_order"] == "candidate_id"
