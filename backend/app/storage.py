@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import sqlite3
 import threading
 import uuid
@@ -21,6 +19,7 @@ from .services import (
     ExportService,
     ProjectService,
     RuntimeSettingsService,
+    SuggestionAutomationService,
     SuggestionDecisionService,
     SuggestionService,
     TagService,
@@ -223,6 +222,10 @@ class AnnotationStorage:
             high_confidence_threshold=HIGH_CONFIDENCE_THRESHOLD,
             medium_confidence_threshold=MEDIUM_CONFIDENCE_THRESHOLD,
             suggestion_context_chars=SUGGESTION_CONTEXT_CHARS,
+        )
+        self.suggestion_automation = SuggestionAutomationService(
+            generate_suggestions=self.suggestion_service.generate_suggestions,
+            auto_accept_document_suggestions=self.suggestion_decisions.auto_accept_document_suggestions,
         )
         self.export_service = ExportService(
             get_document=self.get_document,
@@ -505,21 +508,13 @@ class AnnotationStorage:
         *,
         complete_sentences: bool = False,
     ) -> dict[str, Any]:
-        generated = self.generate_suggestions(project_id, document_id, limit_per_sentence, min_confidence)
-        accepted = self.auto_accept_document_suggestions(
+        return self.suggestion_automation.auto_annotate_document_suggestions(
             project_id,
             document_id,
+            limit_per_sentence,
             min_confidence,
             complete_sentences=complete_sentences,
-            completion_source="auto_annotate_suggestions",
         )
-        return {
-            "run_id": generated["run_id"],
-            "suggestions_created": generated["suggestions_created"],
-            "source_counts": generated["source_counts"],
-            "confidence_counts": generated["confidence_counts"],
-            **accepted,
-        }
 
     def reject_suggestion(self, project_id: str, suggestion_id: str) -> dict[str, Any]:
         return self.suggestion_decisions.reject_suggestion(project_id, suggestion_id)
@@ -589,11 +584,6 @@ class AnnotationStorage:
 
     def _get_tags(self, conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:
         return self.tag_service.list_tags_from_conn(conn, project_id)
-
-    @staticmethod
-    def _payload_sha256(payload: dict[str, Any]) -> str:
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
     def _ranges_overlap(start_a: int, end_a: int, start_b: int, end_b: int) -> bool:

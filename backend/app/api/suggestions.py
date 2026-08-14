@@ -4,6 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from ..hashing import payload_sha256
 from ..llm import LlmError
 from ..schemas import (
     AcceptSentenceSuggestionsResponse,
@@ -218,7 +219,7 @@ def review_suggestion(
     try:
         context = storage.get_suggestion_review_context(project_id, suggestion_id)
         review = reviewer.review(context)
-        return storage.record_suggestion_review(project_id, suggestion_id, review, context_sha256=storage._payload_sha256(context))
+        return storage.record_suggestion_review(project_id, suggestion_id, review, context_sha256=payload_sha256(context))
     except LlmError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValidationError as exc:
@@ -241,7 +242,7 @@ def review_sentence_suggestions(
             context = storage.get_suggestion_review_context(project_id, suggestion_id)
             review = reviewer.review(context)
             reviews.append(
-                storage.record_suggestion_review(project_id, suggestion_id, review, context_sha256=storage._payload_sha256(context))
+                storage.record_suggestion_review(project_id, suggestion_id, review, context_sha256=payload_sha256(context))
             )
         return {
             "reviewed": len(reviews),

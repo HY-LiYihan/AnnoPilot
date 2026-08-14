@@ -7,6 +7,7 @@ from zipfile import ZipFile
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.app.hashing import payload_sha256
 from backend.app.main import create_app
 from backend.app.presets import APPRAISAL_ENGAGEMENT_TAG_SCHEMA
 from backend.app.rebuild import rebuild_project_from_events
@@ -4016,7 +4017,7 @@ def test_llm_review_suggestion_is_persisted_and_audited(tmp_path: Path) -> None:
         assert suggestion_response.json()["suggestions"]
         queue = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith").json()
         suggestion_id = queue["items"][0]["first_suggestion"]["id"]
-        expected_context_sha256 = storage._payload_sha256(storage.get_suggestion_review_context("default", suggestion_id))
+        expected_context_sha256 = payload_sha256(storage.get_suggestion_review_context("default", suggestion_id))
 
         review_response = client.post(f"/api/projects/default/suggestions/{suggestion_id}/llm-review")
         assert review_response.status_code == 200
