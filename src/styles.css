@@ -1189,6 +1189,20 @@ kbd {
   font-weight: 800;
 }
 
+.document-pill.conflict-pill {
+  max-width: 100%;
+  color: #9b2f22;
+  border-color: rgba(192, 0, 0, 0.22);
+  background: #fff5f2;
+}
+
+.document-pill.conflict-pill span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .reader-error {
   margin-bottom: 12px;
   padding: 10px 12px;
@@ -1593,11 +1607,114 @@ kbd {
   box-shadow: inset 0 0 0 1px rgba(196, 90, 46, 0.16);
 }
 
+.annotation-conflict-inline {
+  flex: 1 1 180px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgba(192, 0, 0, 0.2);
+  border-radius: 8px;
+  color: #9b2f22;
+  background: #fff5f2;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.annotation-conflict-inline strong,
+.annotation-conflict-inline span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotation-conflict-inline span {
+  flex: 0 0 auto;
+  color: #67463f;
+}
+
+.annotation-conflict-card {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(192, 0, 0, 0.22);
+  border-radius: 8px;
+  background: #fff5f2;
+}
+
+.annotation-conflict-card > span,
+.annotation-conflict-pair > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.annotation-conflict-card strong {
+  color: #9b2f22;
+  font-size: 0.82rem;
+}
+
+.annotation-conflict-card small {
+  min-width: 0;
+  color: #67463f;
+  font-size: 0.72rem;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.annotation-conflict-list {
+  display: grid;
+  gap: 8px;
+}
+
+.annotation-conflict-pair {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(192, 0, 0, 0.12);
+}
+
+.annotation-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.annotation-conflict-actions button {
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid rgba(155, 59, 59, 0.25);
+  border-radius: 8px;
+  color: #9b2f22;
+  background: #fff8f6;
+  font-size: 0.72rem;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .candidate-row {
   justify-content: space-between;
   min-height: 58px;
   padding: 10px 12px;
   box-shadow: inset 4px 0 0 var(--token-color);
+}
+
+.candidate-row.conflict {
+  border-color: rgba(192, 0, 0, 0.35);
+  background: #fff8f6;
+  box-shadow: inset 4px 0 0 var(--token-color), inset 0 0 0 1px rgba(192, 0, 0, 0.08);
 }
 
 .candidate-row em {
@@ -1618,6 +1735,11 @@ kbd {
   font-style: normal;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.candidate-row .conflict-badge {
+  color: #9b2f22;
+  background: #ffe9e3;
 }
 
 .suggestion-row {

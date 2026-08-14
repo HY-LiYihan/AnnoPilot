@@ -64,6 +64,22 @@ const renderedSentences = computed(() =>
     .sort((left, right) => left.index - right.index),
 )
 
+const annotationConflictPairs = computed(() => {
+  const pairs: Array<{ id: string; left: AnnotationDef; right: AnnotationDef }> = []
+  for (let leftIndex = 0; leftIndex < props.activeAnnotations.length; leftIndex += 1) {
+    const left = props.activeAnnotations[leftIndex]
+    for (let rightIndex = leftIndex + 1; rightIndex < props.activeAnnotations.length; rightIndex += 1) {
+      const right = props.activeAnnotations[rightIndex]
+      if (left.start_token_index <= right.end_token_index && left.end_token_index >= right.start_token_index) {
+        pairs.push({ id: `${left.id}:${right.id}`, left, right })
+      }
+    }
+  }
+  return pairs
+})
+
+const conflictedAnnotationIds = computed(() => new Set(annotationConflictPairs.value.flatMap((pair) => [pair.left.id, pair.right.id])))
+
 const emit = defineEmits<{
   import: [file: File, mode: TxtImportMode]
   'load-sample-preset': [presetId: string]
@@ -176,6 +192,21 @@ function documentTitleText(document: DocumentMeta | null, fallback: string) {
 
 function samplePresetButtonText(preset: SamplePreset, labels: UiLabels['reader']) {
   return labels.loadSamplePreset(truncateFilename(preset.title, 34))
+}
+
+function annotationRangeText(annotation: AnnotationDef, labels: UiLabels['reader']) {
+  const tokenRange = annotation.start_token_index === annotation.end_token_index
+    ? `${labels.tokenRange} ${annotation.start_token_index}`
+    : `${labels.tokenRange} ${annotation.start_token_index}-${annotation.end_token_index}`
+  return `${tokenRange} · ${labels.charRange} ${annotation.start_char}-${annotation.end_char}`
+}
+
+function shortSpanText(text: string) {
+  return text.length > 22 ? `${text.slice(0, 10)}...${text.slice(-8)}` : text
+}
+
+function isAnnotationConflicted(annotationId: string) {
+  return conflictedAnnotationIds.value.has(annotationId)
 }
 
 const swipeStart = ref<{ x: number; y: number; pointerId: number } | null>(null)
@@ -296,6 +327,9 @@ function predicatePositionClasses(
         <div class="document-pill">
           <span>{{ currentSentence ? labels.sentence(currentSentence.index + 1) : labels.noDocument }}</span>
         </div>
+        <div v-if="annotationConflictPairs.length" class="document-pill conflict-pill" :title="labels.annotationConflictHint">
+          <span>{{ labels.annotationConflictTitle }} · {{ labels.annotationConflictCount(annotationConflictPairs.length) }}</span>
+        </div>
       </div>
     </div>
 
@@ -396,6 +430,10 @@ function predicatePositionClasses(
           <h2 id="candidate-title">{{ labels.spansTitle }}</h2>
           <span>{{ labels.selectedSuggested(activeAnnotations.length, activeSuggestions.length) }}</span>
         </div>
+        <div v-if="annotationConflictPairs.length" class="annotation-conflict-inline" :title="labels.annotationConflictHint">
+          <strong>{{ labels.annotationConflictTitle }}</strong>
+          <span>{{ labels.annotationConflictCount(annotationConflictPairs.length) }}</span>
+        </div>
         <div class="candidate-actions">
           <label class="suggest-limit-control" :title="labels.limitTitle">
             <span>{{ labels.limit }}</span>
@@ -488,11 +526,34 @@ function predicatePositionClasses(
         </span>
         <em v-for="reason in reviewQueueInsight.reasons" :key="reason">{{ reason }}</em>
       </div>
+      <div v-if="annotationConflictPairs.length" class="annotation-conflict-card" :aria-label="labels.annotationConflictTitle">
+        <span>
+          <strong>{{ labels.annotationConflictTitle }}</strong>
+          <small>{{ labels.annotationConflictHint }}</small>
+        </span>
+        <div class="annotation-conflict-list">
+          <div v-for="pair in annotationConflictPairs" :key="pair.id" class="annotation-conflict-pair">
+            <span>
+              <strong>{{ labels.annotationConflictPair(shortSpanText(pair.left.text), shortSpanText(pair.right.text)) }}</strong>
+              <small>{{ annotationRangeText(pair.left, labels) }} · {{ annotationRangeText(pair.right, labels) }}</small>
+            </span>
+            <div class="annotation-conflict-actions">
+              <button type="button" @click="emit('delete-annotation', pair.left.id)">
+                {{ labels.deleteConflictSpan(shortSpanText(pair.left.text)) }}
+              </button>
+              <button type="button" @click="emit('delete-annotation', pair.right.id)">
+                {{ labels.deleteConflictSpan(shortSpanText(pair.right.text)) }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div v-if="activeAnnotations.length" class="candidate-list">
         <button
           v-for="annotation in activeAnnotations"
           :key="annotation.id"
           class="candidate-row"
+          :class="{ conflict: isAnnotationConflicted(annotation.id) }"
           :style="{ '--token-color': annotation.tag_color }"
           @click="emit('delete-annotation', annotation.id)"
         >
@@ -501,6 +562,7 @@ function predicatePositionClasses(
             <small>
               {{ annotation.tag_name }}
               <em v-if="annotation.source === 'accepted_suggestion'" class="source-badge">{{ labels.aiAccepted }}</em>
+              <em v-if="isAnnotationConflicted(annotation.id)" class="source-badge conflict-badge">{{ labels.conflictBadge }}</em>
             </small>
           </span>
           <em>{{ labels.remove }}</em>
