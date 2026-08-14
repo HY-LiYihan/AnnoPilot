@@ -1097,6 +1097,71 @@ def test_import_prodigy_jsonl_round_trips_mixed_language_char_offsets(tmp_path: 
         assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
 
+def test_import_prodigy_jsonl_does_not_overwrite_a_different_document(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        source_id = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("source.txt", "据报道，项目可能推迟。", "text/plain")},
+        ).json()["document_id"]
+        target_id = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("target.txt", "Analysts clearly endorse the plan.", "text/plain")},
+        ).json()["document_id"]
+        target_sentence = client.get(f"/api/projects/default/documents/{target_id}").json()["sentences"][0]
+        tag = client.post(
+            "/api/projects/default/tags",
+            json={"name": "Proclaim: Endorse", "description": "Writer presents external evidence as valid."},
+        ).json()["tag"]
+        annotation_response = client.post(
+            f"/api/projects/default/sentences/{target_sentence['id']}/annotations",
+            json={"tag_id": tag["id"], "start_token_index": 2, "end_token_index": 2},
+        )
+        assert annotation_response.status_code == 200
+        original_annotation = annotation_response.json()["annotations"][0]
+        assert client.post(
+            f"/api/projects/default/sentences/{target_sentence['id']}/complete",
+            json={"completed": True, "answer": "accept"},
+        ).status_code == 200
+
+        source_export = client.get(f"/api/projects/default/documents/{source_id}/export.prodigy.jsonl").text
+        mismatched_document_response = client.post(
+            f"/api/projects/default/documents/{target_id}/import-annotations-jsonl",
+            files={"file": ("wrong-document.prodigy.jsonl", source_export, "application/x-ndjson")},
+        )
+        assert mismatched_document_response.status_code == 400
+        assert "belongs to document" in mismatched_document_response.json()["detail"]
+
+        source_record = json.loads(source_export.splitlines()[0])
+        source_record["meta"] = {"sentence_index": 0}
+        mismatched_text_response = client.post(
+            f"/api/projects/default/documents/{target_id}/import-annotations-jsonl",
+            files={
+                "file": (
+                    "wrong-text.prodigy.jsonl",
+                    json.dumps(source_record, ensure_ascii=False) + "\n",
+                    "application/x-ndjson",
+                )
+            },
+        )
+        assert mismatched_text_response.status_code == 200
+        assert mismatched_text_response.json()["matched_count"] == 0
+        assert mismatched_text_response.json()["skipped_count"] == 1
+
+        target_after = client.get(f"/api/projects/default/documents/{target_id}").json()["sentences"][0]
+        assert target_after["answer"] == "accept"
+        assert target_after["completed"] is True
+        assert [annotation["id"] for annotation in target_after["annotations"]] == [original_annotation["id"]]
+        import_history = client.get(
+            f"/api/projects/default/annotation-imports?document_id={target_id}"
+        ).json()["imports"]
+        assert import_history[0]["matched_count"] == 0
+        assert import_history[0]["source_record_results"][0]["reason"] == "no_sentence_match"
+
+
 def test_export_goldsmith_label_statistics_supports_rosetta_token_priors(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",

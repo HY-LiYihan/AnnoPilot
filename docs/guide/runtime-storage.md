@@ -218,7 +218,8 @@ POST /api/projects/{project_id}/documents/{document_id}/import-annotations-jsonl
 导入规则：
 
 - 文件必须是 UTF-8 `.jsonl`，大小上限为 10 MB。
-- 句子优先按 `sentence_id` 匹配，其次可按 `sentence_index` 或 sentence text 匹配。
+- 如果记录显式携带 `project_id` / `document_id`（含 `meta` 中的字段），必须与当前导入目标一致，否则整批拒绝，避免把其他文档的 Prodigy 结果覆盖到当前文档。
+- 句子优先按 `sentence_id` 匹配，其次可按 `sentence_index` 或 sentence text 匹配；只要记录携带 `text`，按 id/index 找到的目标句也必须与其文本完全一致，否则该记录跳过，不会清除现有 annotations。
 - Span 可使用 Prodigy 的 `token_start` / `token_end`，也可使用 character offsets。
 - 如果导入 label 不存在，会自动创建 tag，description 标记为 `Imported from Prodigy/AnnoPilot JSONL.`。
 - 匹配到的 sentence 会先清除旧 annotations，再按导入 spans 写入 `source=prodigy_import` annotations。

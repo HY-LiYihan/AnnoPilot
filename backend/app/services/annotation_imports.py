@@ -69,6 +69,7 @@ class AnnotationImportService:
             ).fetchone()
             if document is None:
                 raise self.not_found_error("Document not found.")
+            self._validate_import_record_targets(records, project_id, document_id)
             self.seed_tags(conn, project_id)
 
             sentence_rows = conn.execute(
@@ -360,12 +361,16 @@ class AnnotationImportService:
         meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
         candidate_id = record.get("sentence_id") or meta.get("sentence_id")
         if isinstance(candidate_id, str) and candidate_id in sentence_by_id:
-            return sentence_by_id[candidate_id]
+            candidate = sentence_by_id[candidate_id]
+            if AnnotationImportService._record_text_matches_sentence(record, candidate):
+                return candidate
 
         candidate_index = record.get("sentence_index", meta.get("sentence_index"))
         try:
             if candidate_index is not None:
-                return sentence_by_index.get(int(candidate_index))
+                candidate = sentence_by_index.get(int(candidate_index))
+                if candidate and AnnotationImportService._record_text_matches_sentence(record, candidate):
+                    return candidate
         except (TypeError, ValueError):
             pass
 
@@ -375,6 +380,30 @@ class AnnotationImportService:
             if len(matches) == 1:
                 return matches[0]
         return None
+
+    def _validate_import_record_targets(
+        self,
+        records: list[tuple[int, dict[str, Any]]],
+        project_id: str,
+        document_id: str,
+    ) -> None:
+        for line_number, record in records:
+            meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
+            record_project_id = record.get("project_id") or meta.get("project_id")
+            if record_project_id is not None and str(record_project_id) != project_id:
+                raise self.validation_error(
+                    f"JSONL line {line_number} belongs to project '{record_project_id}', not '{project_id}'."
+                )
+            record_document_id = record.get("document_id") or meta.get("document_id")
+            if record_document_id is not None and str(record_document_id) != document_id:
+                raise self.validation_error(
+                    f"JSONL line {line_number} belongs to document '{record_document_id}', not '{document_id}'."
+                )
+
+    @staticmethod
+    def _record_text_matches_sentence(record: dict[str, Any], sentence: dict[str, Any]) -> bool:
+        record_text = record.get("text")
+        return not isinstance(record_text, str) or record_text == sentence["text"]
 
     def _normalize_import_answer(self, value: Any, has_spans: bool) -> str:
         if value is None or str(value).strip() == "":
