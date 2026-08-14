@@ -205,12 +205,32 @@ const {
 const localizedReviewSummary = computed(() => labels.value.tags.suggestionsWaiting(metrics.value.suggestion_count))
 const localizedReviewQueueSummary = computed(() => {
   const reviewQueueItems = queueItems.value.filter((sentence) => !sentence.completed && sentence.suggestion_count > 0)
-  if (!reviewQueueItems.length) return labels.value.reader.noReviewQueue
-  const queueIndex = reviewQueueItems.findIndex((sentence) => sentence.index === currentSentenceIndex.value)
-  return queueIndex >= 0
-    ? labels.value.reader.reviewProgress(queueIndex + 1, reviewQueueItems.length)
-    : labels.value.reader.pendingReviews(reviewQueueItems.length)
+  const orderedItems = reviewQueueOrder.value === 'position' || !reviewQueueDetails.value.length
+    ? reviewQueueItems
+    : reviewQueueDetails.value
+  const total = reviewQueueOrder.value === 'position'
+    ? reviewQueueItems.length
+    : reviewQueueTotal.value || orderedItems.length || reviewQueueItems.length
+  if (!total) return labels.value.reader.noReviewQueue
+  const queueIndex = orderedItems.findIndex((sentence) => sentence.index === currentSentenceIndex.value)
+  const prefix = reviewQueueOrderLabel()
+  const summary = queueIndex >= 0
+    ? labels.value.reader.reviewProgress(queueIndex + 1, total)
+    : labels.value.reader.pendingReviews(total)
+  return prefix ? `${prefix} · ${summary}` : summary
 })
+
+function reviewQueueOrderLabel() {
+  if (reviewQueueOrder.value === 'position') return ''
+  const metricLabels = labels.value.metrics
+  const labelsByOrder: Record<string, string> = {
+    random: metricLabels.random,
+    uncertain: metricLabels.uncertain,
+    goldsmith: metricLabels.goldsmith,
+    hybrid: metricLabels.hybrid,
+  }
+  return labelsByOrder[reviewQueueOrder.value] ?? reviewQueueOrder.value
+}
 const localizedUndoLabel = computed(() => (canUndoSpanAction.value ? labels.value.reader.undoTitle : labels.value.reader.undoTitle))
 
 async function confirmProjectReset() {

@@ -20,7 +20,7 @@ type UseReaderReviewQueueOptions = {
 export function useReaderReviewQueue(options: UseReaderReviewQueueOptions) {
   const reviewQueueDetails = ref<ReviewQueueItem[]>([])
   const reviewQueueTotal = ref(0)
-  const reviewQueueOrder = ref<ReviewQueueOrder>('position')
+  const reviewQueueOrder = ref<ReviewQueueOrder>('hybrid')
 
   const reviewQueueItems = computed(() => options.sentenceQueue.value.filter((sentence) => !sentence.completed && sentence.suggestion_count > 0))
   const reviewNavigationItems = computed(() => {
