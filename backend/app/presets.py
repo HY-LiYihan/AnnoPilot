@@ -237,6 +237,18 @@ Of course, one workshop cannot resolve every workplace dispute, yet employees ar
 """
 
 
+APPRAISAL_ENGAGEMENT_PRODUCT_SAFETY_TEXT = """Regulators said the battery warning may prevent injuries, but the company argues it does not prove a defect.
+According to the incident log, the recall clearly shows where overheating was reported and demonstrates why replacement notices were needed.
+Some customers allegedly claimed the repair program was too slow; however, the safety review does not support every complaint.
+Of course, one recall cannot settle every product dispute, yet advocates argue it suggests which warnings need clearer wording.
+
+监管机构表示，电池警示可能防止伤害，但公司认为它并不能证明存在缺陷。
+事故记录指出，召回清楚显示过热报告出现在哪里，并证明为什么需要更换通知。
+一些客户据称声称维修计划过于缓慢；然而，安全复核并不支持每一项投诉。
+当然，一次召回不能解决所有产品争议，不过倡导者认为它提示哪些警示需要更清楚的措辞。
+"""
+
+
 APPRAISAL_ENGAGEMENT_CALIBRATION_TEXT = """The audit clearly shows where reviewers disagree, but it may also show only one pilot case.
 The memo allegedly claimed the model proves accuracy; however, the results only suggest improvement.
 The reviewer said the label is stable, yet the same evidence clearly shows uncertainty.
@@ -419,6 +431,15 @@ BUILTIN_SAMPLE_PRESETS = {
         description="面向工会沟通、HR 复核、排班争议和员工反馈的中英 engagement 线索，适合练习 institutional voice、countering、denial 和 policy review framing。",
         filename="appraisal-engagement-workplace-labor-cn-en.txt",
         text=APPRAISAL_ENGAGEMENT_WORKPLACE_LABOR_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-product-safety-cn-en": SamplePreset(
+        id="appraisal-engagement-product-safety-cn-en",
+        title="Engagement 产品安全/公众意见样例",
+        description="面向召回、监管提醒、企业回应和消费者投诉的中英 engagement 线索，适合练习 defect claim、public warning、countering 和 safety review framing。",
+        filename="appraisal-engagement-product-safety-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_PRODUCT_SAFETY_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
     ),

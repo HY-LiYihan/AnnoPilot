@@ -1304,6 +1304,7 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
             "appraisal-engagement-ai-education-cn-en",
             "appraisal-engagement-climate-energy-cn-en",
             "appraisal-engagement-workplace-labor-cn-en",
+            "appraisal-engagement-product-safety-cn-en",
             "appraisal-engagement-calibration-cn-en",
         ]
         assert [preset["id"] for preset in presets] == expected_preset_ids
@@ -1384,6 +1385,7 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         assert loaded_by_id["appraisal-engagement-ai-education-cn-en"]["suggestions_created"] >= 20
         assert loaded_by_id["appraisal-engagement-climate-energy-cn-en"]["suggestions_created"] >= 20
         assert loaded_by_id["appraisal-engagement-workplace-labor-cn-en"]["suggestions_created"] >= 20
+        assert loaded_by_id["appraisal-engagement-product-safety-cn-en"]["suggestions_created"] >= 20
         assert loaded_by_id["appraisal-engagement-calibration-cn-en"]["suggestions_created"] >= 20
 
 
@@ -1397,7 +1399,7 @@ def test_load_appraisal_preset_can_auto_accept_and_complete_for_prodigy(tmp_path
         )
     ) as client:
         load_response = client.post(
-            "/api/projects/default/sample-presets/appraisal-engagement-cn-en/load",
+            "/api/projects/default/sample-presets/appraisal-engagement-product-safety-cn-en/load",
             json={
                 "generate_suggestions": True,
                 "auto_accept_suggestions": True,
@@ -1407,6 +1409,7 @@ def test_load_appraisal_preset_can_auto_accept_and_complete_for_prodigy(tmp_path
         assert load_response.status_code == 200
         loaded = load_response.json()
         document_id = loaded["document_id"]
+        assert loaded["preset"]["id"] == "appraisal-engagement-product-safety-cn-en"
         assert loaded["suggestions_created"] >= 20
         assert loaded["auto_accepted"] == loaded["suggestions_created"]
         assert loaded["auto_accept_skipped"] == 0
