@@ -2016,6 +2016,9 @@ def test_calibration_preset_recommended_load_preserves_goldsmith_review_queue(tm
         assert "## Review Routes" in bootstrap_report
         assert "## Recommended Actions" in bootstrap_report
         assert "Start with the hybrid Goldsmith review queue" in bootstrap_report
+        assert f"- Queue size: {queue['total']}" in bootstrap_report
+        for route, count in queue["rosetta_route_counts"].items():
+            assert f"| {route} | {count} |" in bootstrap_report
         assert f"<!-- schema_version: {manifest['artifacts']['goldsmith_bootstrap_report_md']['schema_version']} -->" in bootstrap_report
         assert manifest["artifacts"]["goldsmith_bootstrap_report_md"]["line_count"] == len(bootstrap_report.splitlines())
         assert len(manifest["artifacts"]["goldsmith_bootstrap_report_md"]["content_sha256"]) == 64

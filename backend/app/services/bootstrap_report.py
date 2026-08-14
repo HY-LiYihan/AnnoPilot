@@ -35,7 +35,7 @@ class GoldsmithBootstrapReportService:
         review_tasks = self._payloads(goldsmith_review_task_lines)
         verification_report = (self._payloads(goldsmith_verification_report_lines) or [{}])[0]
 
-        route_counts = Counter(str(item.get("rosetta_route") or item.get("route") or "none") for item in consistency_scores)
+        queue_total, route_counts = self._review_queue_summary(review_queue, consistency_scores)
         reflection_counts = Counter(
             str(item.get("item_type") or "unknown")
             for plan in reflection_plans
@@ -83,7 +83,7 @@ class GoldsmithBootstrapReportService:
                 "",
                 "## Human Review Queue",
                 "",
-                f"- Queue size: {len(review_queue)}",
+                f"- Queue size: {queue_total}",
                 f"- Review tasks: {len(review_tasks)}",
                 "- Policy: prioritize low/medium route items; sample high-confidence items for audit.",
                 "",
@@ -175,6 +175,39 @@ class GoldsmithBootstrapReportService:
         if status_counts.get("pending") is not None:
             return int(status_counts.get("pending") or 0)
         return int(metrics.get("suggestion_count") or 0)
+
+    @staticmethod
+    def _review_queue_summary(
+        review_queue: list[dict[str, Any]],
+        consistency_scores: list[dict[str, Any]],
+    ) -> tuple[int, Counter[str]]:
+        queue_total = len(review_queue)
+        route_counts = Counter(
+            str(item.get("rosetta_route") or item.get("route") or "none")
+            for item in consistency_scores
+        )
+        for item in review_queue:
+            meta = item.get("meta")
+            if not isinstance(meta, dict):
+                continue
+            try:
+                queue_total = max(0, int(meta.get("total_queue_items", queue_total)))
+            except (TypeError, ValueError):
+                pass
+            raw_counts = meta.get("rosetta_route_counts")
+            if isinstance(raw_counts, dict):
+                normalized_counts = Counter()
+                for route in ("high", "medium", "low", "none"):
+                    try:
+                        count = max(0, int(raw_counts.get(route, 0)))
+                    except (TypeError, ValueError):
+                        count = 0
+                    if count:
+                        normalized_counts[route] = count
+                if normalized_counts:
+                    route_counts = normalized_counts
+            break
+        return queue_total, route_counts
 
     @staticmethod
     def _recommended_actions(

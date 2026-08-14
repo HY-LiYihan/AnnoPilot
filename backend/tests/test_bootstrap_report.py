@@ -91,3 +91,38 @@ def test_bootstrap_report_top_entity_tokens_empty_when_no_entities() -> None:
 
     assert "| _none_ | 0 | 0.00 | 0.00 | 0.00 |" in report
     assert "| ordinary |" not in report
+
+
+def test_bootstrap_report_uses_full_review_queue_summary_from_truncated_export() -> None:
+    service = GoldsmithBootstrapReportService("annopilot.goldsmith_bootstrap_report.v1")
+    queue_meta = {
+        "total_queue_items": 150,
+        "rosetta_route_counts": {"low": 70, "medium": 60, "high": 20},
+    }
+
+    lines = service.build_lines(
+        project_id="default",
+        document_id="doc_large",
+        generated_at="2026-08-15T00:00:00+00:00",
+        document={
+            "document": {"filename": "large.txt"},
+            "metrics": {"suggestion_status_counts": {"pending": 150}},
+        },
+        prodigy_readiness={"status": "needs_attention", "blockers": ["pending suggestions"]},
+        goldsmith_review_queue_lines=[
+            _jsonl({"rank": rank, "sentence_index": rank - 1, "meta": queue_meta})
+            for rank in (1, 2)
+        ],
+        goldsmith_consistency_score_lines=[_jsonl({"rosetta_route": "high"})],
+        goldsmith_label_statistics_lines=[],
+        goldsmith_reflection_plan_lines=[],
+        goldsmith_review_task_lines=[],
+        goldsmith_verification_report_lines=[],
+    )
+
+    report = "".join(lines)
+
+    assert "- Queue size: 150" in report
+    assert "| high | 20 |" in report
+    assert "| medium | 60 |" in report
+    assert "| low | 70 |" in report
