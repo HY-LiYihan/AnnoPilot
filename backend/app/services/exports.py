@@ -8,6 +8,7 @@ from io import BytesIO
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from ..hashing import payload_sha256
 from .bootstrap_report import GoldsmithBootstrapReportService
 from .export_verification import ExportVerificationService
 
@@ -175,7 +176,7 @@ class ExportService:
             "ner_manual": f'prodigy ner.manual <dataset> blank:en <document>.prodigy.jsonl --label "{payload["labels_csv"]}"',
             "spans_manual": f'prodigy spans.manual <dataset> blank:en <document>.prodigy.spans.jsonl --label "{payload["labels_csv"]}"',
         }
-        payload["content_sha256"] = self._payload_sha256(self._prodigy_labels_content_payload(payload))
+        payload["content_sha256"] = payload_sha256(self._prodigy_labels_content_payload(payload))
         return payload
 
     def export_manifest(self, project_id: str, document_id: str) -> dict[str, Any]:
@@ -432,7 +433,7 @@ class ExportService:
                 ),
             },
         }
-        manifest["content_sha256"] = self._payload_sha256(self._manifest_content_payload(manifest))
+        manifest["content_sha256"] = payload_sha256(self._manifest_content_payload(manifest))
         return {
             "manifest": manifest,
             "task_lines": task_lines,
@@ -2639,12 +2640,12 @@ class ExportService:
     @classmethod
     def _jsonl_content_sha256(cls, lines: list[str]) -> str:
         records = [cls._without_volatile_export_fields(payload) for payload in cls._jsonl_payloads(lines)]
-        return cls._payload_sha256({"records": records})
+        return payload_sha256({"records": records})
 
     @classmethod
     def _markdown_content_sha256(cls, lines: list[str]) -> str:
         stable_lines = [line for line in lines if not line.startswith("- Generated at:")]
-        return cls._payload_sha256({"lines": stable_lines})
+        return payload_sha256({"lines": stable_lines})
 
     @classmethod
     def _without_volatile_export_fields(cls, value: Any) -> Any:
@@ -2657,11 +2658,6 @@ class ExportService:
         if isinstance(value, list):
             return [cls._without_volatile_export_fields(item) for item in value]
         return value
-
-    @staticmethod
-    def _payload_sha256(payload: dict[str, Any]) -> str:
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
     def _stable_hash(payload: dict[str, Any]) -> int:

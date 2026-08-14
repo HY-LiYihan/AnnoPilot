@@ -6,6 +6,8 @@ import sqlite3
 from collections.abc import Callable
 from typing import Any
 
+from ..hashing import payload_sha256
+
 
 class AnnotationImportService:
     """Import Prodigy/AnnoPilot JSONL annotations into an existing document."""
@@ -159,7 +161,7 @@ class AnnotationImportService:
             for line_number, record in records:
                 record_result: dict[str, Any] = {
                     "line_number": line_number,
-                    "record_sha256": self._payload_sha256(record),
+                    "record_sha256": payload_sha256(record),
                 }
                 source_metadata = self._import_record_source_metadata(record)
                 if source_metadata:
@@ -483,11 +485,6 @@ class AnnotationImportService:
         while str(next_number) in used:
             next_number += 1
         return str(next_number)
-
-    @staticmethod
-    def _payload_sha256(payload: dict[str, Any]) -> str:
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
     def _row_dict(row: sqlite3.Row, exclude: set[str] | None = None) -> dict[str, Any]:

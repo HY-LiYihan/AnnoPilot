@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from typing import Any
+
+from ..hashing import payload_sha256
 
 
 INLINE_MARKUP_PATTERN = re.compile(r"\[(!?)([^\[\]]+)\]\{([^{}]+)\}")
@@ -120,7 +121,7 @@ class ExportVerificationService:
                 "tag_schema_sha256": tag_schema.get("content_sha256"),
             },
         }
-        record["content_sha256"] = self._payload_sha256(self._without_volatile_fields(record))
+        record["content_sha256"] = payload_sha256(self._without_volatile_fields(record))
         return [json.dumps(record, ensure_ascii=False) + "\n"]
 
     @classmethod
@@ -539,11 +540,6 @@ class ExportVerificationService:
             "error_count": error_count,
             "warning_count": warning_count,
         }
-
-    @staticmethod
-    def _payload_sha256(payload: dict[str, Any]) -> str:
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
 
     @classmethod
     def _without_volatile_fields(cls, value: Any) -> Any:

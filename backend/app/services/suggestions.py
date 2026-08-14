@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from collections.abc import Callable
 from typing import Any
 
+from ..hashing import payload_sha256
 from ..rag import (
     CHARACTER_RAG_RETRIEVAL,
     build_examples,
@@ -86,7 +86,7 @@ class SuggestionService:
             tags = self.get_tags(conn, project_id)
             if not tags:
                 raise self.validation_error("At least one tag is required before generating suggestions.")
-            tag_schema_sha256 = self._payload_sha256(self._tag_schema_content_payload(tags))
+            tag_schema_sha256 = payload_sha256(self._tag_schema_content_payload(tags))
 
             project_annotations = conn.execute(
                 """
@@ -100,10 +100,10 @@ class SuggestionService:
             ).fetchall()
             examples = build_examples(tags, [self._row_dict(row) for row in project_annotations])
             example_count = sum(len(values) for values in examples.values())
-            examples_sha256 = self._payload_sha256(examples)
+            examples_sha256 = payload_sha256(examples)
             examples_match_keys = build_match_keys_by_tag(examples)
             examples_match_key_count = sum(len(values) for values in examples_match_keys.values())
-            examples_match_keys_sha256 = self._payload_sha256(examples_match_keys)
+            examples_match_keys_sha256 = payload_sha256(examples_match_keys)
 
             project_rejected_suggestions = conn.execute(
                 """
@@ -133,10 +133,10 @@ class SuggestionService:
             negative_examples = build_negative_examples(tags, [self._row_dict(row) for row in project_rejected_suggestions])
             negative_example_count = sum(len(values) for values in negative_examples.values())
             negative_example_source_counts = self._negative_example_source_counts(project_rejected_suggestions)
-            negative_examples_sha256 = self._payload_sha256(negative_examples)
+            negative_examples_sha256 = payload_sha256(negative_examples)
             negative_examples_match_keys = build_match_keys_by_tag(negative_examples)
             negative_examples_match_key_count = sum(len(values) for values in negative_examples_match_keys.values())
-            negative_examples_match_keys_sha256 = self._payload_sha256(negative_examples_match_keys)
+            negative_examples_match_keys_sha256 = payload_sha256(negative_examples_match_keys)
             run_config = {
                 "limit_per_sentence": limit_per_sentence,
                 "min_confidence": confidence_floor,
@@ -967,11 +967,6 @@ class SuggestionService:
         if confidence >= self.medium_confidence_threshold:
             return "medium"
         return "low"
-
-    @staticmethod
-    def _payload_sha256(payload: dict[str, Any]) -> str:
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
     def _row_dict(row: sqlite3.Row, exclude: set[str] | None = None) -> dict[str, Any]:

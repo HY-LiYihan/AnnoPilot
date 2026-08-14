@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from collections.abc import Callable
 from typing import Any
 
+from ..hashing import payload_sha256
 from ..repositories import TagQueryRepository
 
 
@@ -55,13 +55,13 @@ class TagService:
         return {
             **payload,
             "generated_at": self.now(),
-            "content_sha256": self._payload_sha256(self._tag_schema_content_payload(tags)),
+            "content_sha256": payload_sha256(self._tag_schema_content_payload(tags)),
         }
 
     def import_tag_schema(self, project_id: str, schema: dict[str, Any]) -> dict[str, Any]:
         incoming_tags = self._validate_tag_schema_import(schema)
         source_hash = schema.get("content_sha256")
-        content_hash = self._payload_sha256(self._tag_schema_content_payload(incoming_tags))
+        content_hash = payload_sha256(self._tag_schema_content_payload(incoming_tags))
         if source_hash and source_hash != content_hash:
             raise self.validation_error("Tag schema content_sha256 does not match tags payload.")
 
@@ -590,8 +590,3 @@ class TagService:
             "retrieval": "character_rag_lexical_examples",
             "tags": schema_tags,
         }
-
-    @staticmethod
-    def _payload_sha256(payload: dict[str, Any]) -> str:
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from collections.abc import Callable
 from typing import Any
+
+from ..hashing import payload_sha256
 
 
 class RunQueryRepository:
@@ -145,7 +146,7 @@ class RunQueryRepository:
         return {
             **content_payload,
             "generated_at": self.now(),
-            "content_sha256": self._payload_sha256(content_payload),
+            "content_sha256": payload_sha256(content_payload),
         }
 
     def _run_source_counts(self, project_id: str, run_ids: list[str]) -> dict[str, dict[str, int]]:
@@ -330,8 +331,3 @@ class RunQueryRepository:
         except json.JSONDecodeError:
             return None
         return payload if isinstance(payload, dict) else None
-
-    @staticmethod
-    def _payload_sha256(payload: dict[str, Any]) -> str:
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()
