@@ -70,10 +70,14 @@ class EventOutbox:
             project_dir = self.data_root / project_id
             project_dir.mkdir(parents=True, exist_ok=True)
             event_path = project_dir / "events.jsonl"
+            existing_event_ids = self._event_ids_in_file(event_path)
             flushed_ids = [row["id"] for row in rows]
             with event_path.open("a", encoding="utf-8") as handle:
                 for row in rows:
+                    if row["id"] in existing_event_ids:
+                        continue
                     handle.write(row["event_json"] + "\n")
+                    existing_event_ids.add(row["id"])
 
             placeholders = ", ".join("?" for _ in flushed_ids)
             with self.connect() as conn:
@@ -82,6 +86,22 @@ class EventOutbox:
                     (self.now(), *flushed_ids),
                 )
             return len(flushed_ids)
+
+    @staticmethod
+    def _event_ids_in_file(event_path: Path) -> set[str]:
+        if not event_path.exists():
+            return set()
+
+        event_ids: set[str] = set()
+        with event_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict) and payload.get("event_id"):
+                    event_ids.add(str(payload["event_id"]))
+        return event_ids
 
     def _event_actor(self, payload: dict[str, Any]) -> dict[str, str]:
         event_type = payload.get("type")
