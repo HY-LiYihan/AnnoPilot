@@ -191,9 +191,16 @@ class AnnotationImportService:
                     continue
                 answer = self._normalize_import_answer(record.get("answer"), has_spans=bool(spans))
                 tokens = tokens_by_sentence.get(sentence["id"], [])
+                offset_scope = self._import_record_offset_scope(record)
                 try:
                     annotation_specs = [
-                        self._build_import_annotation_spec(span, sentence, tokens, document["text"])
+                        self._build_import_annotation_spec(
+                            span,
+                            sentence,
+                            tokens,
+                            document["text"],
+                            offset_scope=offset_scope,
+                        )
                         for span in spans
                     ] if answer == "accept" else []
                 except self.validation_error as exc:
@@ -433,11 +440,18 @@ class AnnotationImportService:
         sentence: dict[str, Any],
         tokens: list[dict[str, Any]],
         document_text: str,
+        *,
+        offset_scope: str,
     ) -> dict[str, Any]:
         if not isinstance(span, dict):
             raise self.validation_error("Imported span must be an object.")
         label = self._import_span_label(span)
-        start_token_index, end_token_index = self._import_span_token_range(span, sentence, tokens)
+        start_token_index, end_token_index = self._import_span_token_range(
+            span,
+            sentence,
+            tokens,
+            offset_scope=offset_scope,
+        )
         token_by_index = {token["token_index"]: token for token in tokens}
         start_token = token_by_index[start_token_index]
         end_token = token_by_index[end_token_index]
@@ -463,41 +477,66 @@ class AnnotationImportService:
         span: dict[str, Any],
         sentence: dict[str, Any],
         tokens: list[dict[str, Any]],
+        *,
+        offset_scope: str,
     ) -> tuple[int, int]:
         if not tokens:
             raise self.validation_error("Imported span cannot be mapped because the sentence has no tokens.")
         token_by_index = {token["token_index"]: token for token in tokens}
+        raw_start_value = span.get("start")
+        raw_end_value = span.get("end")
+        if raw_start_value is not None or raw_end_value is not None:
+            if raw_start_value is None or raw_end_value is None:
+                raise self.validation_error("Imported span must include both start and end character offsets.")
+            raw_start = self._import_int(raw_start_value, "start")
+            raw_end = self._import_int(raw_end_value, "end")
+            if raw_start >= raw_end:
+                raise self.validation_error("Imported span character range is invalid.")
+
+            sentence_start = sentence["start_char"]
+            sentence_end = sentence["end_char"]
+            if offset_scope == "document":
+                if not sentence_start <= raw_start < raw_end <= sentence_end:
+                    raise self.validation_error("Imported document-relative span is outside the matched sentence.")
+                start_char = raw_start
+                end_char = raw_end
+            else:
+                if not 0 <= raw_start < raw_end <= len(sentence["text"]):
+                    raise self.validation_error("Imported sentence-relative span is outside the matched sentence.")
+                start_char = sentence_start + raw_start
+                end_char = sentence_start + raw_end
+
+            overlapping = [token for token in tokens if token["start_char"] < end_char and token["end_char"] > start_char]
+            if not overlapping:
+                raise self.validation_error("Imported span character range does not overlap sentence tokens.")
+            if overlapping[0]["start_char"] != start_char or overlapping[-1]["end_char"] != end_char:
+                raise self.validation_error("Imported span character range must align with local token boundaries.")
+            return overlapping[0]["token_index"], overlapping[-1]["token_index"]
+
         start_value = span.get("token_start", span.get("start_token_index"))
         end_value = span.get("token_end", span.get("end_token_index"))
-        if start_value is not None and end_value is not None:
-            start_index = self._import_int(start_value, "token_start")
-            end_index = self._import_int(end_value, "token_end")
-            if start_index > end_index or start_index not in token_by_index or end_index not in token_by_index:
-                raise self.validation_error("Imported span token range is invalid.")
-            return start_index, end_index
-
-        if "start" not in span or "end" not in span:
+        if start_value is None or end_value is None:
             raise self.validation_error("Imported span must include token range or character offsets.")
-        raw_start = self._import_int(span["start"], "start")
-        raw_end = self._import_int(span["end"], "end")
-        if raw_start >= raw_end:
-            raise self.validation_error("Imported span character range is invalid.")
+        start_index = self._import_int(start_value, "token_start")
+        end_index = self._import_int(end_value, "token_end")
+        if start_index > end_index or start_index not in token_by_index or end_index not in token_by_index:
+            raise self.validation_error("Imported span token range is invalid.")
+        return start_index, end_index
 
-        sentence_start = sentence["start_char"]
-        sentence_end = sentence["end_char"]
-        if 0 <= raw_start < raw_end <= len(sentence["text"]):
-            start_char = sentence_start + raw_start
-            end_char = sentence_start + raw_end
-        elif sentence_start <= raw_start < raw_end <= sentence_end:
-            start_char = raw_start
-            end_char = raw_end
-        else:
-            raise self.validation_error("Imported span character range is outside the matched sentence.")
-
-        overlapping = [token for token in tokens if token["start_char"] < end_char and token["end_char"] > start_char]
-        if not overlapping:
-            raise self.validation_error("Imported span character range does not overlap sentence tokens.")
-        return overlapping[0]["token_index"], overlapping[-1]["token_index"]
+    def _import_record_offset_scope(self, record: dict[str, Any]) -> str:
+        meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
+        explicit_scope = record.get("offset_scope") or meta.get("offset_scope")
+        if explicit_scope is not None:
+            normalized_scope = str(explicit_scope).strip().lower()
+            if normalized_scope in {"sentence", "local"}:
+                return "sentence"
+            if normalized_scope in {"document", "global"}:
+                return "document"
+            raise self.validation_error("Imported offset_scope must be sentence/local or document/global.")
+        schema_version = str(record.get("schema_version") or "")
+        if record.get("record_type") == "annotation_task" or schema_version.startswith("annopilot.task."):
+            return "document"
+        return "sentence"
 
     def _import_int(self, value: Any, field_name: str) -> int:
         try:

@@ -1162,6 +1162,117 @@ def test_import_prodigy_jsonl_does_not_overwrite_a_different_document(tmp_path: 
         assert import_history[0]["source_record_results"][0]["reason"] == "no_sentence_match"
 
 
+def test_import_prodigy_jsonl_prefers_character_offsets_across_tokenizers(tmp_path: Path) -> None:
+    storage = AnnotationStorage(
+        database_path=tmp_path / "runtime" / "annopilot.sqlite",
+        data_root=tmp_path / "projects",
+    )
+    with TestClient(create_app(storage)) as client:
+        imported = client.post(
+            "/api/projects/default/import-txt",
+            files={
+                "file": (
+                    "tokenizer-drift.txt",
+                    "第一句结束。Analysts clearly say 报告可能支持该计划。",
+                    "text/plain",
+                )
+            },
+        ).json()
+        document_id = imported["document_id"]
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        assert len(document["sentences"]) == 2
+        sentence = document["sentences"][1]
+        sentence_text = sentence["text"]
+
+        clearly_start = sentence_text.index("clearly")
+        possible_start = sentence_text.index("可能")
+        prodigy_record = {
+            "text": sentence_text,
+            "spans": [
+                {
+                    "start": clearly_start,
+                    "end": clearly_start + len("clearly"),
+                    "token_start": 0,
+                    "token_end": 0,
+                    "label": "Proclaim: Pronounce",
+                },
+                {
+                    "start": possible_start,
+                    "end": possible_start + len("可能"),
+                    "token_start": 4,
+                    "token_end": 4,
+                    "label": "Entertain",
+                },
+            ],
+            "answer": "accept",
+            "_view_id": "ner_manual",
+            "meta": {
+                "project_id": "default",
+                "document_id": document_id,
+                "sentence_id": sentence["id"],
+                "sentence_index": sentence["index"],
+            },
+        }
+        import_response = client.post(
+            f"/api/projects/default/documents/{document_id}/import-annotations-jsonl",
+            files={
+                "file": (
+                    "external-tokenizer.prodigy.jsonl",
+                    json.dumps(prodigy_record, ensure_ascii=False) + "\n",
+                    "application/x-ndjson",
+                )
+            },
+        )
+        assert import_response.status_code == 200
+        assert import_response.json()["created_annotation_count"] == 2
+
+        annotated_sentence = client.get(f"/api/projects/default/documents/{document_id}").json()["sentences"][1]
+        assert [annotation["text"] for annotation in annotated_sentence["annotations"]] == ["clearly", "可能"]
+        original_annotation_ids = [annotation["id"] for annotation in annotated_sentence["annotations"]]
+
+        partial_token_record = {
+            **prodigy_record,
+            "spans": [
+                {
+                    "start": clearly_start,
+                    "end": clearly_start + len("clear"),
+                    "label": "Proclaim: Pronounce",
+                }
+            ],
+        }
+        partial_response = client.post(
+            f"/api/projects/default/documents/{document_id}/import-annotations-jsonl",
+            files={
+                "file": (
+                    "partial-token.prodigy.jsonl",
+                    json.dumps(partial_token_record, ensure_ascii=False) + "\n",
+                    "application/x-ndjson",
+                )
+            },
+        )
+        assert partial_response.status_code == 200
+        assert partial_response.json()["matched_count"] == 0
+        assert partial_response.json()["skipped_count"] == 1
+        after_partial = client.get(f"/api/projects/default/documents/{document_id}").json()["sentences"][1]
+        assert [annotation["id"] for annotation in after_partial["annotations"]] == original_annotation_ids
+        import_history = client.get(
+            f"/api/projects/default/annotation-imports?document_id={document_id}"
+        ).json()["imports"]
+        assert import_history[0]["source_record_results"][0]["reason"] == "invalid_span"
+        assert "align with local token boundaries" in import_history[0]["source_record_results"][0]["message"]
+
+        task_export = client.get(f"/api/projects/default/documents/{document_id}/export.jsonl").text
+        task_reimport = client.post(
+            f"/api/projects/default/documents/{document_id}/import-annotations-jsonl",
+            files={"file": ("annopilot-roundtrip.jsonl", task_export, "application/x-ndjson")},
+        )
+        assert task_reimport.status_code == 200
+        assert task_reimport.json()["created_annotation_count"] == 2
+        assert task_reimport.json()["deleted_annotation_count"] == 2
+        round_tripped = client.get(f"/api/projects/default/documents/{document_id}").json()["sentences"][1]
+        assert [annotation["text"] for annotation in round_tripped["annotations"]] == ["clearly", "可能"]
+
+
 def test_export_goldsmith_label_statistics_supports_rosetta_token_priors(tmp_path: Path) -> None:
     storage = AnnotationStorage(
         database_path=tmp_path / "runtime" / "annopilot.sqlite",
