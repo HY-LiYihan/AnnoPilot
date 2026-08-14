@@ -15,6 +15,7 @@ defineProps<{
   reviewQueueOrder: ReviewQueueOrder
   lastAnnotationImport: AnnotationImportSummary | null
   isVerifyingRebuild: boolean
+  isSaving: boolean
   isResetting: boolean
 }>()
 
@@ -36,6 +37,7 @@ const emit = defineEmits<{
   'export-goldsmith-candidate-runs': []
   'export-goldsmith-risk-reasons': []
   'export-goldsmith-review-tasks': []
+  'auto-mark-monogloss': []
   'import-annotations': [file: File]
   'reset-project': []
   'review-sentence': [sentenceIndex: number]
@@ -248,6 +250,11 @@ function shortHash(value: string) {
       <button class="export-button secondary compact" @click="emit('export-prodigy-labels')">
         {{ labels.exportProdigyLabels }}
         <Download :size="17" aria-hidden="true" />
+      </button>
+
+      <button class="export-button secondary compact" :disabled="!documentMeta || isSaving" @click="emit('auto-mark-monogloss')">
+        {{ isSaving ? labels.markingMonogloss : labels.autoMarkMonogloss }}
+        <Sparkles :size="17" aria-hidden="true" />
       </button>
 
       <button class="export-button danger compact reset-project-button" :disabled="isResetting" @click="emit('reset-project')">

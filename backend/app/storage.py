@@ -314,6 +314,9 @@ class AnnotationStorage:
     def set_sentence_completed(self, project_id: str, sentence_id: str, completed: bool, answer: str | None = None) -> dict[str, Any]:
         return self.annotation_service.set_sentence_completed(project_id, sentence_id, completed, answer)
 
+    def auto_mark_document_monogloss(self, project_id: str, document_id: str) -> dict[str, Any]:
+        return self.annotation_service.auto_mark_document_monogloss(project_id, document_id)
+
     def get_sentence_annotations(self, project_id: str, sentence_id: str) -> list[dict[str, Any]]:
         return self.annotation_service.get_sentence_annotations(project_id, sentence_id)
 

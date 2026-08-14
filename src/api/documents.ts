@@ -1,4 +1,5 @@
 import type {
+  AutoMarkMonoglossResponse,
   DocumentListPayload,
   DocumentPayload,
   DocumentSummaryPayload,
@@ -118,6 +119,13 @@ export async function completeSentence(projectId: string, sentenceId: string, co
   })
   if (!response.ok) throw new Error(await responseMessage(response))
   return response.json() as Promise<{ completed: boolean; answer: string }>
+}
+
+export async function autoMarkDocumentMonogloss(projectId: string, documentId: string): Promise<AutoMarkMonoglossResponse> {
+  const response = await fetch(`/api/projects/${projectId}/documents/${documentId}/monogloss/auto-mark`, {
+    method: 'POST',
+  })
+  return parseJsonResponse<AutoMarkMonoglossResponse>(response)
 }
 
 export async function updateDocumentCursor(projectId: string, documentId: string, currentSentenceIndex: number) {

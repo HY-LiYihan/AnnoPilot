@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from ..schemas import (
+    AutoMarkMonoglossResponse,
     CompleteSentenceRequest,
     CompleteSentenceResponse,
     ImportAnnotationsResponse,
@@ -163,6 +164,21 @@ def get_review_queue(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/documents/{document_id}/monogloss/auto-mark", response_model=AutoMarkMonoglossResponse)
+def auto_mark_monogloss(
+    project_id: str,
+    document_id: str,
+    storage: AnnotationStorage = Depends(get_storage),
+) -> AutoMarkMonoglossResponse:
+    try:
+        result = storage.auto_mark_document_monogloss(project_id, document_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return AutoMarkMonoglossResponse(**result)
 
 
 @router.post("/sentences/{sentence_id}/complete", response_model=CompleteSentenceResponse)

@@ -180,6 +180,7 @@ export function useDocumentReader() {
 
   const {
     applyTagToSelection,
+    autoMarkEmptySentencesMonogloss,
     canUndoSpanAction,
     handleTagClick,
     markCurrentSentenceMonogloss,
@@ -457,6 +458,7 @@ export function useDocumentReader() {
     jumpToNextReviewSentence,
     setReviewQueueOrder,
     markCurrentSentenceMonogloss,
+    autoMarkEmptySentencesMonogloss,
     completeCurrentSentence,
     reopenCurrentSentence,
     generateDocumentSuggestions,

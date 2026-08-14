@@ -432,6 +432,14 @@ class CompleteSentenceResponse(BaseModel):
     answer: str = "pending"
 
 
+class AutoMarkMonoglossResponse(BaseModel):
+    marked: int
+    tag_id: str
+    tag_name: str
+    affected_sentence_ids: list[str] = Field(default_factory=list)
+    annotation_ids: list[str] = Field(default_factory=list)
+
+
 class UpdateSessionCursorRequest(BaseModel):
     current_sentence_index: int = Field(ge=0)
 

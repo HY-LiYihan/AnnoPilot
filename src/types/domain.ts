@@ -187,6 +187,14 @@ export type DocumentListItem = DocumentMeta & {
   session_updated_at?: string | null
 }
 
+export type AutoMarkMonoglossResponse = {
+  marked: number
+  tag_id: string
+  tag_name: string
+  affected_sentence_ids: string[]
+  annotation_ids: string[]
+}
+
 export type Metrics = {
   sentence_count: number
   completed_count: number

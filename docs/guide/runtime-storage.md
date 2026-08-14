@@ -159,7 +159,7 @@ Mutation path 使用 SQLite outbox：domain rows 和 event payload 在同一个 
 
 `annotation_sessions` 保存 Prodigy-style runtime workflow state，例如默认人工会话当前停留的 sentence index。它用于刷新后恢复 reader 位置，不写入 JSONL audit log，避免普通导航操作污染业务事件流。
 
-Annotation `source` 当前可能是 `human`、`accepted_suggestion` 或 `prodigy_import`。`source_suggestion_id` 用于追踪由 suggestion accept 创建的 annotation。
+Annotation `source` 当前可能是 `human`、`accepted_suggestion`、`auto_monogloss` 或 `prodigy_import`。`source_suggestion_id` 用于追踪由 suggestion accept 创建的 annotation；`auto_monogloss` 表示右侧效率入口为无 annotation、无 pending suggestion 的未完成句自动创建整句 Monogloss span。
 
 ## JSONL Event Log
 
@@ -197,7 +197,7 @@ actor_type
 actor_id
 ```
 
-`actor_type` 当前使用 `human`、`system`、`llm` 三类：人工导入、tag/annotation/sentence decision 记为 `annopilot-human`；Character RAG 生成建议和由建议落地的 annotation 记为 `annopilot-character-rag`；LLM review 记为对应模型名。Audit summary 会返回 `actor_type_counts` 和 `actor_id_counts`，用于快速检查一份事件日志里人工、系统建议和模型评审的来源比例。
+`actor_type` 当前使用 `human`、`system`、`llm` 三类：人工导入、tag/annotation/sentence decision 记为 `annopilot-human`；Character RAG 生成建议、由建议落地的 annotation、自动补空白 Monogloss 记为 `annopilot-character-rag`；LLM review 记为对应模型名。Audit summary 会返回 `actor_type_counts` 和 `actor_id_counts`，用于快速检查一份事件日志里人工、系统建议和模型评审的来源比例。
 
 `suggestions.generated` 支持 document scope 和 sentence scope。Sentence scope 用于 UI 的当前句 suggestion action，只清理并替换该句 pending suggestions；document scope 会清理并替换整个 document 的 pending suggestions。事件会保存 `source_counts` 与 `confidence_counts`，因此即使只查看 JSONL audit trail，也能快速判断本次候选主要来自 exact、contains 还是 char n-gram，以及高 / 中 / 低置信度分布。当前置信度 bucket 为 `high >= 0.90`、`medium >= 0.75`、`low < 0.75`。
 

@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
+from backend.app.presets import APPRAISAL_ENGAGEMENT_TAG_SCHEMA
 from backend.app.rebuild import rebuild_project_from_events
 from backend.app.storage import AnnotationStorage
 
@@ -1439,6 +1440,87 @@ def test_load_appraisal_preset_can_auto_accept_and_complete_for_prodigy(tmp_path
             for event in events
             if event["type"] == "sentence.completed" and event.get("source") == "auto_accept_suggestions"
         )
+        assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
+
+
+def test_auto_mark_document_monogloss_only_marks_empty_no_suggestion_sentences(tmp_path: Path) -> None:
+    with TestClient(
+        create_app(
+            AnnotationStorage(
+                database_path=tmp_path / "runtime" / "annopilot.sqlite",
+                data_root=tmp_path / "projects",
+            )
+        )
+    ) as client:
+        schema_response = client.post("/api/projects/default/tags/schema/import", json=APPRAISAL_ENGAGEMENT_TAG_SCHEMA)
+        assert schema_response.status_code == 200
+        source_text = "The project is ready.\nOfficials said it may change.\nThe archive remains public."
+        import_response = client.post(
+            "/api/projects/default/import-txt",
+            files={"file": ("monogloss-efficiency.txt", source_text, "text/plain")},
+        )
+        assert import_response.status_code == 200
+        document_id = import_response.json()["document_id"]
+
+        suggestion_response = client.post(
+            f"/api/projects/default/documents/{document_id}/suggestions/run",
+            json={"limit_per_sentence": 10, "min_confidence": 0.98},
+        )
+        assert suggestion_response.status_code == 200
+        assert suggestion_response.json()["suggestions_created"] > 0
+
+        mark_response = client.post(f"/api/projects/default/documents/{document_id}/monogloss/auto-mark")
+        assert mark_response.status_code == 200
+        marked = mark_response.json()
+        assert marked["marked"] == 2
+        assert marked["tag_id"] == "engagement_monogloss"
+        assert len(marked["affected_sentence_ids"]) == 2
+        assert len(marked["annotation_ids"]) == 2
+
+        document = client.get(f"/api/projects/default/documents/{document_id}").json()
+        first, second, third = document["sentences"]
+        assert first["completed"] is True
+        assert first["answer"] == "accept"
+        assert first["annotations"][0]["tag_id"] == "engagement_monogloss"
+        assert first["annotations"][0]["source"] == "auto_monogloss"
+        assert first["annotations"][0]["text"] == "The project is ready."
+        assert second["completed"] is False
+        assert second["annotations"] == []
+        assert second["suggestions"]
+        assert third["completed"] is True
+        assert third["annotations"][0]["source"] == "auto_monogloss"
+
+        repeat_response = client.post(f"/api/projects/default/documents/{document_id}/monogloss/auto-mark")
+        assert repeat_response.status_code == 200
+        assert repeat_response.json()["marked"] == 0
+
+        summary = client.get(f"/api/projects/default/documents/{document_id}/summary").json()
+        assert summary["metrics"]["completed_count"] == 2
+        assert summary["metrics"]["annotation_count"] == 2
+        assert summary["metrics"]["answer_counts"] == {"accept": 2, "reject": 0, "ignore": 0, "pending": 1}
+
+        prodigy_lines = [
+            json.loads(line)
+            for line in client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl").text.splitlines()
+        ]
+        assert prodigy_lines[0]["_annotator_id"] == "annopilot-auto-monogloss"
+        assert prodigy_lines[0]["answer"] == "accept"
+        assert prodigy_lines[0]["meta"]["annotation_sources"] == [
+            {"annotation_id": first["annotations"][0]["id"], "label_id": "engagement_monogloss", "source": "auto_monogloss"}
+        ]
+        assert prodigy_lines[1]["answer"] == "ignore"
+        assert prodigy_lines[1]["meta"]["answer"] == "pending"
+
+        events = [json.loads(line) for line in client.get("/api/projects/default/events.jsonl").text.splitlines()]
+        auto_annotation_events = [
+            event for event in events if event["type"] == "annotation.created" and event.get("source") == "auto_monogloss"
+        ]
+        auto_completion_events = [
+            event for event in events if event["type"] == "sentence.completed" and event.get("source") == "auto_mark_monogloss"
+        ]
+        assert len(auto_annotation_events) == 2
+        assert len(auto_completion_events) == 2
+        assert all(event["actor_type"] == "system" for event in auto_annotation_events + auto_completion_events)
         assert client.get("/api/projects/default/audit").json()["non_replayable_event_count"] == 0
 
 

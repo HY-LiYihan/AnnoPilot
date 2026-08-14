@@ -143,6 +143,7 @@ const {
   jumpToNextReviewSentence,
   setReviewQueueOrder,
   markCurrentSentenceMonogloss,
+  autoMarkEmptySentencesMonogloss,
   completeCurrentSentence,
   reopenCurrentSentence,
   generateDocumentSuggestions,
@@ -452,6 +453,7 @@ async function confirmProjectReset() {
         :review-queue-order="reviewQueueOrder"
         :last-annotation-import="lastAnnotationImport"
         :is-verifying-rebuild="isVerifyingRebuild"
+        :is-saving="isSaving"
         :is-resetting="isResetting"
         @export="exportJsonl"
         @export-prodigy="exportProdigyJsonl"
@@ -473,6 +475,7 @@ async function confirmProjectReset() {
         @export-goldsmith-candidate-runs="exportGoldsmithCandidateRunsJsonl"
         @export-goldsmith-risk-reasons="exportGoldsmithRiskReasonsJsonl"
         @export-goldsmith-review-tasks="exportGoldsmithReviewTasksJsonl"
+        @auto-mark-monogloss="autoMarkEmptySentencesMonogloss"
         @verify-rebuild="verifyRebuildPreview"
         @reset-project="confirmProjectReset"
       />

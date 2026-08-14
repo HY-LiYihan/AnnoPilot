@@ -22,6 +22,7 @@ GET  /api/projects/{project_id}/documents/{document_id}/sentences?offset=0&limit
 GET  /api/projects/{project_id}/documents/{document_id}/review-queue?limit=20&order=position|random|uncertain|goldsmith|hybrid
 GET  /api/projects/{project_id}/annotation-imports?document_id={document_id}&limit=5
 POST /api/projects/{project_id}/documents/{document_id}/session/cursor
+POST /api/projects/{project_id}/documents/{document_id}/monogloss/auto-mark
 POST /api/projects/{project_id}/sentences/{sentence_id}/complete
 ```
 
@@ -33,6 +34,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/complete
 - `review-queue` 返回未完成且存在 pending suggestions 的句子列表、每句第一条候选和同句 `candidate_suggestions` 候选包，供 UI 快速跳转并进行 Rosetta-style 多候选比较；`order=random` 提供稳定伪随机 baseline，`order=uncertain` 会按最低 Character RAG confidence 优先排序，`order=goldsmith` 会按低置信度、句内候选密度、latest LLM review 风险、Rosetta-style judge 风险和候选标签冲突综合排序，`order=hybrid` 会保留高风险优先，同时插入少量高置信且无 LLM / judge 风险的 `calibration` 抽检样本。队列 item 同时返回 `min_confidence`、`lexical_risk_score`、`llm_review_risk_score`、`judge_review_risk_score`、`candidate_disagreement_score`、`risk_score`、`risk_reason_codes`、`review_route`、`action_hint` 和 `review_guidance`，其中 `lexical_risk_score=(1-min_confidence)×suggestion_count`，`candidate_disagreement_score` 表示同一句 pending candidates 在 label 或边界上互相冲突的强度，`judge_review_risk_score` 来自 latest review 的 `judge` 中低 `overall_score` / `boundary_score`、高 `missed_span_risk` / `extra_span_risk`、`needs_review`、`error_types` 和 `risk_flags`，`risk_score=lexical_risk_score+llm_review_risk_score+judge_review_risk_score+candidate_disagreement_score`。`risk_reason_codes` 是稳定原因码，例如 `candidate_conflict`、`llm_reject`、`llm_uncertain`、`judge_boundary`、`judge_missing_span`、`low_confidence` 和 `dense_candidates`；`action_hint` / `review_guidance` 给 UI 和 Goldsmith JSONL 导出共用的人工复核提示、primary action 和边界检查清单；旧字段 `priority_score` 保持为 `min_confidence` 以兼容已有调用。
 - `annotation-imports` 从 `events.jsonl` 读取最近的 JSONL annotation import history；frontend 用它在刷新页面后恢复最近导入摘要。
 - `session/cursor` 保存默认人工会话的当前句位置，用于刷新后恢复标注阅读器状态；该状态保存在 SQLite runtime，不写入 JSONL audit log。
+- `monogloss/auto-mark` 是保守的 Engagement 效率入口：只为当前文档中未完成、无 annotation、无 pending suggestion 的句子创建整句 Monogloss span，并写入 `answer=accept`；annotation source 记为 `auto_monogloss`，audit actor 记为 system。
 - `complete` 写入 `completed` 和 Prodigy-compatible `answer`，当前支持 `accept`、`ignore`、`reject`，以及 `completed=false` reopen 回 `pending`。
 
 ## Sample Presets

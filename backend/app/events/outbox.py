@@ -110,9 +110,10 @@ class EventOutbox:
         if (
             event_type == "suggestions.generated"
             or (event_type == "annotation.created" and payload.get("source") == "accepted_suggestion")
+            or (event_type == "annotation.created" and payload.get("source") == "auto_monogloss")
             or (
                 event_type == "sentence.completed"
-                and payload.get("source") in {"auto_accept_suggestions", "auto_annotate_suggestions"}
+                and payload.get("source") in {"auto_accept_suggestions", "auto_annotate_suggestions", "auto_mark_monogloss"}
             )
         ):
             return {"actor_type": "system", "actor_id": self.system_actor_id}

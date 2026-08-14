@@ -1,5 +1,6 @@
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import { createAnnotation, deleteAnnotation } from '../api/annotations'
+import { autoMarkDocumentMonogloss } from '../api/documents'
 import {
   PROJECT_ID,
   type AnnotationDef,
@@ -76,6 +77,24 @@ export function useReaderAnnotationActions(options: UseReaderAnnotationActionsOp
     options.selectedTagId.value = tag.id
     const created = await createSentenceAnnotation(sentence, firstToken.token_index, lastToken.token_index, tag.id)
     if (created) await options.completeCurrentSentence('accept')
+  }
+
+  async function autoMarkEmptySentencesMonogloss() {
+    if (!options.documentMeta.value || options.isSaving.value) return
+    const documentId = options.documentMeta.value.id
+    options.isSaving.value = true
+    options.readerError.value = ''
+    try {
+      const result = await autoMarkDocumentMonogloss(PROJECT_ID, documentId)
+      await options.refreshDocumentSummary()
+      await options.loadSentenceWindow(documentId, options.currentSentenceIndex.value, true)
+      await options.refreshAuditSummary()
+      return result
+    } catch (error) {
+      options.readerError.value = error instanceof Error ? error.message : 'Could not auto-mark Monogloss sentences.'
+    } finally {
+      options.isSaving.value = false
+    }
   }
 
   function handleTagClick(tagId: string) {
@@ -205,6 +224,7 @@ export function useReaderAnnotationActions(options: UseReaderAnnotationActionsOp
 
   return {
     applyTagToSelection,
+    autoMarkEmptySentencesMonogloss,
     canUndoSpanAction,
     handleTagClick,
     markCurrentSentenceMonogloss,

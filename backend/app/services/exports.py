@@ -1719,6 +1719,8 @@ class ExportService:
             return "human"
         if sources == {"accepted_suggestion"}:
             return "character-rag"
+        if sources == {"auto_monogloss"}:
+            return "auto-monogloss"
         return "mixed"
 
     @staticmethod

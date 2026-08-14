@@ -175,6 +175,132 @@ class AnnotationService:
         self.flush_event_outbox(project_id)
         return {"completed": completed, "answer": normalized_answer}
 
+    def auto_mark_document_monogloss(self, project_id: str, document_id: str) -> dict[str, Any]:
+        now = self.now()
+        marked_sentence_ids: list[str] = []
+        annotation_ids: list[str] = []
+
+        with self.connect() as conn:
+            document = conn.execute(
+                "SELECT id, text FROM documents WHERE id = ? AND project_id = ?",
+                (document_id, project_id),
+            ).fetchone()
+            if document is None:
+                raise self.not_found_error("Document not found.")
+
+            tag = conn.execute(
+                """
+                SELECT id, name
+                FROM tags
+                WHERE project_id = ?
+                  AND (
+                    id = 'engagement_monogloss'
+                    OR lower(id) LIKE '%monogloss%'
+                    OR lower(name) LIKE '%monogloss%'
+                  )
+                ORDER BY CASE WHEN id = 'engagement_monogloss' THEN 0 ELSE 1 END, id
+                LIMIT 1
+                """,
+                (project_id,),
+            ).fetchone()
+            if tag is None:
+                raise self.validation_error("Monogloss label is not available in the current schema.")
+
+            rows = conn.execute(
+                """
+                SELECT s.id AS sentence_id, s.completed, s.answer,
+                       MIN(t.token_index) AS start_token_index,
+                       MAX(t.token_index) AS end_token_index,
+                       MIN(t.start_char) AS start_char,
+                       MAX(t.end_char) AS end_char
+                FROM sentences s
+                JOIN tokens t ON t.sentence_id = s.id
+                WHERE s.document_id = ?
+                  AND s.completed = 0
+                  AND NOT EXISTS (SELECT 1 FROM annotations a WHERE a.sentence_id = s.id)
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM annotation_suggestions sg
+                    WHERE sg.sentence_id = s.id AND sg.status = 'pending'
+                  )
+                GROUP BY s.id, s.completed, s.answer, s.sentence_index
+                ORDER BY s.sentence_index
+                """,
+                (document_id,),
+            ).fetchall()
+
+            for row in rows:
+                annotation_id = self.new_id("ann")
+                start_char = int(row["start_char"])
+                end_char = int(row["end_char"])
+                selected_text = document["text"][start_char:end_char]
+                conn.execute(
+                    """
+                    INSERT INTO annotations (
+                        id, sentence_id, tag_id, start_token_index, end_token_index,
+                        start_char, end_char, text, source, source_suggestion_id, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'auto_monogloss', NULL, ?)
+                    """,
+                    (
+                        annotation_id,
+                        row["sentence_id"],
+                        tag["id"],
+                        row["start_token_index"],
+                        row["end_token_index"],
+                        start_char,
+                        end_char,
+                        selected_text,
+                        now,
+                    ),
+                )
+                self.enqueue_event(
+                    conn,
+                    project_id,
+                    {
+                        "type": "annotation.created",
+                        "annotation_id": annotation_id,
+                        "sentence_id": row["sentence_id"],
+                        "tag_id": tag["id"],
+                        "start_token_index": int(row["start_token_index"]),
+                        "end_token_index": int(row["end_token_index"]),
+                        "start_char": start_char,
+                        "end_char": end_char,
+                        "text": selected_text,
+                        "source": "auto_monogloss",
+                        "source_suggestion_id": None,
+                        "created_at": now,
+                    },
+                )
+
+                old_answer = row["answer"] or ("accept" if row["completed"] else "pending")
+                conn.execute("UPDATE sentences SET completed = 1, answer = 'accept' WHERE id = ?", (row["sentence_id"],))
+                self.enqueue_event(
+                    conn,
+                    project_id,
+                    {
+                        "type": "sentence.completed",
+                        "sentence_id": row["sentence_id"],
+                        "old_completed": bool(row["completed"]),
+                        "old_answer": old_answer,
+                        "completed": True,
+                        "answer": "accept",
+                        "source": "auto_mark_monogloss",
+                        "annotation_id": annotation_id,
+                    },
+                )
+                marked_sentence_ids.append(row["sentence_id"])
+                annotation_ids.append(annotation_id)
+
+        self.flush_event_outbox(project_id)
+        return {
+            "marked": len(marked_sentence_ids),
+            "tag_id": tag["id"],
+            "tag_name": tag["name"],
+            "affected_sentence_ids": marked_sentence_ids,
+            "annotation_ids": annotation_ids,
+        }
+
     def get_sentence_annotations(self, project_id: str, sentence_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
