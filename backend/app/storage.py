@@ -16,6 +16,7 @@ from .services import (
     AnnotationService,
     AuditService,
     DocumentService,
+    EngagementCandidateService,
     ExportService,
     ProjectService,
     RuntimeSettingsService,
@@ -226,6 +227,17 @@ class AnnotationStorage:
         self.suggestion_automation = SuggestionAutomationService(
             generate_suggestions=self.suggestion_service.generate_suggestions,
             auto_accept_document_suggestions=self.suggestion_decisions.auto_accept_document_suggestions,
+        )
+        self.engagement_candidate_service = EngagementCandidateService(
+            self.connect,
+            new_id=self._new_id,
+            now=self._now,
+            enqueue_event=self._enqueue_event,
+            flush_event_outbox=self.flush_event_outbox,
+            get_tags=self._get_tags,
+            generator=None,
+            not_found_error=NotFoundError,
+            validation_error=ValidationError,
         )
         self.export_service = ExportService(
             get_document=self.get_document,
@@ -468,6 +480,25 @@ class AnnotationStorage:
             limit_per_sentence,
             min_confidence,
             sentence_id=sentence_id,
+        )
+
+    def generate_engagement_candidates(
+        self,
+        project_id: str,
+        document_id: str,
+        *,
+        candidate_count: int = 3,
+        temperature: float = 0.7,
+        sentence_id: str | None = None,
+        generator: Any | None = None,
+    ) -> dict[str, Any]:
+        return self.engagement_candidate_service.generate(
+            project_id,
+            document_id,
+            candidate_count=candidate_count,
+            temperature=temperature,
+            sentence_id=sentence_id,
+            generator=generator,
         )
 
     def seed_calibration_suggestions(

@@ -52,6 +52,9 @@ const props = defineProps<{
   isSuggesting: boolean
   suggestionLimit: number
   suggestionMinConfidence: number
+  engagementCandidateCount: number
+  engagementTemperature: number
+  lastEngagementRun: { runId: string; candidateCount: number; routeCounts: Record<string, number>; verifierFailures: number } | null
   suggestionReviews: Record<string, SuggestionReview>
   reviewingSuggestionId: string
   activeSuggestionTargetId: string
@@ -95,6 +98,7 @@ const emit = defineEmits<{
   undo: []
   'generate-current-suggestions': []
   'generate-suggestions': []
+  'generate-engagement-candidates': []
   'auto-annotate-document': []
   'accept-suggestion': [suggestion: SuggestionDef]
   'reject-suggestion': [suggestion: SuggestionDef]
@@ -109,6 +113,8 @@ const emit = defineEmits<{
   'apply-document-reviews': []
   'suggestion-limit-change': [limit: number]
   'suggestion-min-confidence-change': [minConfidence: number]
+  'engagement-candidate-count-change': [count: number]
+  'engagement-temperature-change': [temperature: number]
   'next-review': []
   complete: []
   ignore: []
@@ -126,6 +132,14 @@ function handleSuggestionLimitInput(event: Event) {
 function handleSuggestionMinConfidenceInput(event: Event) {
   const input = event.target as HTMLInputElement
   emit('suggestion-min-confidence-change', Number(input.value) / 100)
+}
+
+function handleEngagementCandidateCountInput(event: Event) {
+  emit('engagement-candidate-count-change', Number((event.target as HTMLInputElement).value))
+}
+
+function handleEngagementTemperatureInput(event: Event) {
+  emit('engagement-temperature-change', Number((event.target as HTMLInputElement).value))
 }
 
 function handleDocumentChange(event: Event) {
@@ -494,6 +508,30 @@ function predicatePositionClasses(
             />
             <span>%</span>
           </label>
+          <label class="suggest-limit-control engagement-control" :title="labels.engagementCandidateCountTitle">
+            <span>K</span>
+            <input
+              type="number"
+              min="3"
+              max="7"
+              step="1"
+              :value="engagementCandidateCount"
+              :disabled="isSuggesting"
+              @input="handleEngagementCandidateCountInput"
+            />
+          </label>
+          <label class="suggest-limit-control engagement-control" :title="labels.engagementTemperatureTitle">
+            <span>T</span>
+            <input
+              type="number"
+              min="0"
+              max="1.5"
+              step="0.1"
+              :value="engagementTemperature"
+              :disabled="isSuggesting"
+              @input="handleEngagementTemperatureInput"
+            />
+          </label>
           <button class="suggest-button" :disabled="!currentSentence || isSuggesting" @click="emit('generate-current-suggestions')">
             <Sparkles :size="16" aria-hidden="true" />
             {{ isSuggesting ? labels.suggesting : labels.suggestCurrent }}
@@ -501,6 +539,10 @@ function predicatePositionClasses(
           <button class="suggest-button secondary" :disabled="!documentMeta || isSuggesting" @click="emit('generate-suggestions')">
             <Sparkles :size="16" aria-hidden="true" />
             {{ labels.wholeDoc }}
+          </button>
+          <button class="suggest-button engagement-button" :disabled="!currentSentence || isSuggesting" @click="emit('generate-engagement-candidates')">
+            <Sparkles :size="16" aria-hidden="true" />
+            {{ isSuggesting ? labels.engagementSuggesting : labels.generateEngagementCandidates }}
           </button>
           <button class="suggest-button secondary" :disabled="!currentSentence || isSaving" @click="emit('select-current-sentence')">
             {{ labels.selectSentence }}
@@ -640,6 +682,12 @@ function predicatePositionClasses(
           @accept="emit('accept-suggestion', $event)"
           @reject="emit('reject-suggestion', $event)"
         />
+      </div>
+      <div v-if="lastEngagementRun" class="engagement-run-summary">
+        <strong>{{ labels.engagementRunSummary(lastEngagementRun.candidateCount) }}</strong>
+        <span>{{ labels.engagementRoutes(lastEngagementRun.routeCounts) }}</span>
+        <em v-if="lastEngagementRun.verifierFailures">{{ labels.engagementVerifierFailures(lastEngagementRun.verifierFailures) }}</em>
+        <em v-else>{{ labels.engagementReviewRequired }}</em>
       </div>
       <p v-if="!activeAnnotations.length && !activeSuggestions.length" class="candidate-empty">
         {{ labels.emptyCandidate }}

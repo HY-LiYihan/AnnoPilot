@@ -180,6 +180,7 @@ LEGACY_COLUMN_MIGRATIONS = (
     ("annotation_suggestions", "evidence_match_key", "TEXT"),
     ("annotation_suggestions", "context_before", "TEXT"),
     ("annotation_suggestions", "context_after", "TEXT"),
+    ("annotation_suggestions", "candidate_group_id", "TEXT"),
     ("annotation_suggestion_reviews", "context_sha256", "TEXT"),
     ("annotation_suggestion_reviews", "judge_json", "TEXT"),
 )
@@ -262,6 +263,44 @@ def create_tag_taxonomy_schema(conn: sqlite3.Connection) -> None:
     ensure_column(conn, "tags", "taxonomy_json", "TEXT")
 
 
+def create_engagement_candidate_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS annotation_candidate_groups (
+          id TEXT PRIMARY KEY,
+          run_id TEXT NOT NULL REFERENCES annotation_runs(id) ON DELETE CASCADE,
+          sentence_id TEXT NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
+          candidate_index INTEGER NOT NULL,
+          model TEXT NOT NULL,
+          temperature REAL NOT NULL,
+          prompt_sha256 TEXT NOT NULL,
+          source_text TEXT NOT NULL,
+          raw_response TEXT NOT NULL,
+          explanation TEXT NOT NULL DEFAULT '',
+          spans_json TEXT NOT NULL DEFAULT '[]',
+          verifier_status TEXT NOT NULL,
+          verifier_issues_json TEXT NOT NULL DEFAULT '[]',
+          consistency_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL,
+          UNIQUE (run_id, sentence_id, candidate_index)
+        )
+        """
+    )
+    if _table_exists(conn, "annotation_suggestions"):
+        ensure_column(conn, "annotation_suggestions", "candidate_group_id", "TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_annotation_suggestions_candidate_group ON annotation_suggestions(candidate_group_id)"
+        )
+    if _table_exists(conn, "annotation_run_candidate_spans"):
+        ensure_column(conn, "annotation_run_candidate_spans", "candidate_group_id", "TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_annotation_run_candidate_spans_group ON annotation_run_candidate_spans(candidate_group_id)"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_annotation_candidate_groups_sentence ON annotation_candidate_groups(sentence_id, created_at, candidate_index)"
+    )
+
+
 def ensure_legacy_columns(conn: sqlite3.Connection) -> None:
     for table_name, column_name, column_type in LEGACY_COLUMN_MIGRATIONS:
         ensure_column(conn, table_name, column_name, column_type)
@@ -273,6 +312,14 @@ def ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, c
     columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
     if column_name not in columns:
         conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+
+
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
 
 
 def _validate_identifier(identifier: str) -> None:

@@ -109,6 +109,9 @@ const {
   currentSentenceIndex,
   suggestionLimit,
   suggestionMinConfidence,
+  engagementCandidateCount,
+  engagementTemperature,
+  lastEngagementRun,
   isUploading,
   isSaving,
   isSuggesting,
@@ -151,8 +154,11 @@ const {
   reopenCurrentSentence,
   generateDocumentSuggestions,
   generateCurrentSentenceSuggestions,
+  generateEngagementCandidatesForCurrentSentence,
   setSuggestionLimit,
   setSuggestionMinConfidence,
+  setEngagementCandidateCount,
+  setEngagementTemperature,
   setSentenceElement,
   onSentenceClick,
   onTokenPointerDown,
@@ -433,6 +439,9 @@ async function confirmProjectReset() {
         :is-suggesting="isSuggesting"
         :suggestion-limit="suggestionLimit"
         :suggestion-min-confidence="suggestionMinConfidence"
+        :engagement-candidate-count="engagementCandidateCount"
+        :engagement-temperature="engagementTemperature"
+        :last-engagement-run="lastEngagementRun"
         :suggestion-reviews="suggestionReviews"
         :reviewing-suggestion-id="reviewingSuggestionId"
         :active-suggestion-target-id="activeSuggestionTargetId"
@@ -459,6 +468,7 @@ async function confirmProjectReset() {
         @undo="undoLastSpanAction"
         @generate-current-suggestions="generateCurrentSentenceSuggestions"
         @generate-suggestions="generateDocumentSuggestions"
+        @generate-engagement-candidates="generateEngagementCandidatesForCurrentSentence"
         @auto-annotate-document="autoAnnotateDocument"
         @accept-suggestion="acceptSuggestedSpan"
         @reject-suggestion="rejectSuggestedSpan"
@@ -473,6 +483,8 @@ async function confirmProjectReset() {
         @apply-document-reviews="applyDocumentSuggestionReviewsFromLlm"
         @suggestion-limit-change="setSuggestionLimit"
         @suggestion-min-confidence-change="setSuggestionMinConfidence"
+        @engagement-candidate-count-change="setEngagementCandidateCount"
+        @engagement-temperature-change="setEngagementTemperature"
         @next-review="jumpToNextReviewSentence"
         @complete="completeCurrentSentence"
         @ignore="completeCurrentSentence('ignore')"

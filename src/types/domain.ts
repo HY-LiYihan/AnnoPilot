@@ -58,6 +58,11 @@ export type SuggestionDef = {
   status: string
   created_at: string
   latest_review?: Omit<SuggestionReview, 'suggestion_id'> | null
+  candidate_group_id?: string | null
+  candidate_index?: number | null
+  verifier_status?: string | null
+  consistency_route?: string | null
+  auto_accept_eligible?: boolean
 }
 
 export type SuggestionReview = {

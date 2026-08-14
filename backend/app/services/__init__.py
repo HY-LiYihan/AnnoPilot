@@ -5,6 +5,7 @@ from .annotations import AnnotationService
 from .audit import AuditService
 from .documents import DocumentService
 from .exports import ExportService
+from .engagement_candidates import EngagementCandidateService
 from .projects import ProjectService
 from .runtime_settings import RuntimeSettingsService
 from .suggestion_automation import SuggestionAutomationService
@@ -18,6 +19,7 @@ __all__ = [
     "AuditService",
     "DocumentService",
     "ExportService",
+    "EngagementCandidateService",
     "ProjectService",
     "RuntimeSettingsService",
     "SuggestionAutomationService",

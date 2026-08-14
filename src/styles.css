@@ -1530,6 +1530,32 @@ kbd {
   background: #ffffff;
 }
 
+.suggest-button.engagement-button {
+  border-color: rgba(137, 78, 170, 0.3);
+  color: #70408d;
+  background: #faf4ff;
+}
+
+.engagement-run-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-left: 3px solid #70408d;
+  border-radius: 6px;
+  color: #5c4168;
+  background: #fbf7fd;
+  font-size: 0.78rem;
+}
+
+.engagement-run-summary span,
+.engagement-run-summary em {
+  color: #6f6373;
+  font-style: normal;
+}
+
 .candidate-list,
 .suggestion-list {
   display: grid;
@@ -1845,6 +1871,20 @@ kbd {
 .suggestion-meta-line .keyboard-target-badge {
   color: #00685b;
   background: #e7f3ef;
+}
+
+.suggestion-meta-line .consistency-badge {
+  color: #70408d;
+  background: #f2e9f8;
+}
+
+.suggestion-meta-line .verifier-failed {
+  color: #9b3b3b;
+  background: #fff0ed;
+}
+
+.suggestion-row .engagement-note {
+  color: #70408d;
 }
 
 .suggestion-row .evidence-copy {

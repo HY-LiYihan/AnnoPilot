@@ -245,6 +245,11 @@ class SuggestionResponse(BaseModel):
     status: str
     created_at: str
     latest_review: Optional[SuggestionReviewPayload] = None
+    candidate_group_id: Optional[str] = None
+    candidate_index: Optional[int] = None
+    verifier_status: Optional[str] = None
+    consistency_route: Optional[str] = None
+    auto_accept_eligible: bool = False
 
 
 class SentenceResponse(BaseModel):
@@ -478,6 +483,36 @@ class GenerateSuggestionsResponse(BaseModel):
     source_counts: dict[str, int] = Field(default_factory=dict)
     confidence_counts: dict[str, int] = Field(default_factory=dict)
     suggestions: list[SuggestionResponse]
+
+
+class GenerateEngagementCandidatesRequest(BaseModel):
+    candidate_count: int = Field(default=3, ge=3, le=7)
+    temperature: float = Field(default=0.7, ge=0.0, le=1.5)
+    sentence_id: Optional[str] = None
+
+
+class EngagementCandidateGroupResponse(BaseModel):
+    id: str
+    run_id: str
+    sentence_id: str
+    candidate_index: int
+    model: str
+    temperature: float
+    prompt_sha256: str
+    explanation: str = ""
+    spans: list[dict[str, Any]] = Field(default_factory=list)
+    verifier_status: str
+    verifier_issues: list[dict[str, Any]] = Field(default_factory=list)
+    consistency: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class GenerateEngagementCandidatesResponse(BaseModel):
+    run_id: str
+    candidate_count: int
+    sentence_count: int
+    groups: list[EngagementCandidateGroupResponse] = Field(default_factory=list)
+    suggestions: list[SuggestionResponse] = Field(default_factory=list)
 
 
 class AutoAcceptSuggestionsRequest(BaseModel):

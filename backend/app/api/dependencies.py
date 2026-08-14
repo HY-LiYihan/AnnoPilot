@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from ..llm import OpenAICompatibleSuggestionReviewer
+from ..llm import OpenAICompatibleEngagementCandidateGenerator, OpenAICompatibleSuggestionReviewer
 from ..settings import get_llm_model_option, get_llm_settings
 from ..storage import AnnotationStorage
 
@@ -30,3 +30,12 @@ def get_suggestion_reviewer(request: Request):
     if reviewer is not None:
         return reviewer
     return OpenAICompatibleSuggestionReviewer(get_effective_llm_settings(request))
+
+
+def get_engagement_candidate_generator(request: Request):
+    generator = getattr(request.app.state, "engagement_candidate_generator", None)
+    if generator is not None:
+        return generator
+    from ..llm import OpenAICompatibleEngagementCandidateGenerator
+
+    return OpenAICompatibleEngagementCandidateGenerator(get_effective_llm_settings(request))

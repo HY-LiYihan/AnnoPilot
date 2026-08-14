@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable
 from typing import Any
@@ -266,10 +267,12 @@ class SuggestionDecisionService:
             suggestions = conn.execute(
                 """
                 SELECT sg.id, sg.sentence_id, sg.tag_id, sg.start_token_index, sg.end_token_index,
-                       sg.start_char, sg.end_char, sg.text, sg.confidence, s.sentence_index
+                       sg.start_char, sg.end_char, sg.text, sg.confidence, s.sentence_index,
+                       sg.source, cg.verifier_status, cg.consistency_json
                 FROM annotation_suggestions sg
                 JOIN sentences s ON s.id = sg.sentence_id
                 JOIN documents d ON d.id = s.document_id
+                LEFT JOIN annotation_candidate_groups cg ON cg.id = sg.candidate_group_id
                 WHERE d.id = ? AND d.project_id = ? AND sg.status = 'pending' AND sg.confidence >= ?
                 ORDER BY sg.confidence DESC, s.sentence_index, sg.start_token_index, sg.id
                 """,
@@ -277,6 +280,9 @@ class SuggestionDecisionService:
             ).fetchall()
 
             for suggestion in suggestions:
+                if suggestion["source"] == "llm_engagement" and not self._engagement_auto_accept_allowed(suggestion):
+                    skipped += 1
+                    continue
                 blocked_ranges = blocked_by_sentence.setdefault(suggestion["sentence_id"], [])
                 if self._is_blocked(suggestion, blocked_ranges):
                     skipped += 1
@@ -473,6 +479,16 @@ class SuggestionDecisionService:
             self.ranges_overlap(suggestion["start_token_index"], suggestion["end_token_index"], start, end)
             for start, end in blocked_ranges
         )
+
+    @staticmethod
+    def _engagement_auto_accept_allowed(suggestion: sqlite3.Row) -> bool:
+        if suggestion["verifier_status"] != "passed":
+            return False
+        try:
+            consistency = json.loads(suggestion["consistency_json"] or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return False
+        return bool(consistency.get("auto_accept_eligible", False))
 
     @staticmethod
     def _append_unique(values: list[str], value: str) -> None:

@@ -5,10 +5,17 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
-from .schema import create_base_schema, create_run_candidate_snapshot_schema, create_tag_taxonomy_schema, ensure_column, ensure_legacy_columns
+from .schema import (
+    create_base_schema,
+    create_engagement_candidate_schema,
+    create_run_candidate_snapshot_schema,
+    create_tag_taxonomy_schema,
+    ensure_column,
+    ensure_legacy_columns,
+)
 
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 
 @dataclass(frozen=True)
@@ -24,6 +31,7 @@ MIGRATIONS = (
     Migration(version=3, name="ensure_review_judge_json", apply=lambda conn: ensure_column(conn, "annotation_suggestion_reviews", "judge_json", "TEXT")),
     Migration(version=4, name="run_candidate_snapshots", apply=create_run_candidate_snapshot_schema),
     Migration(version=5, name="tag_taxonomy_metadata", apply=create_tag_taxonomy_schema),
+    Migration(version=6, name="engagement_candidate_groups", apply=create_engagement_candidate_schema),
 )
 
 

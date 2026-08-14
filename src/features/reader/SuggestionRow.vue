@@ -52,6 +52,12 @@ function reviewJudgeLabel() {
   if (flags.length) parts.push(`${props.labels.judgeFlags} ${flags.slice(0, 2).join(', ')}`)
   return parts.join(' · ')
 }
+
+function consistencyLabel() {
+  if (!props.suggestion.consistency_route) return ''
+  const route = props.suggestion.consistency_route
+  return props.labels.consistencyRoutes[route as keyof typeof props.labels.consistencyRoutes] ?? route
+}
 </script>
 
 <template>
@@ -67,6 +73,9 @@ function reviewJudgeLabel() {
         <em class="suggestion-badge">{{ suggestionSourceLabel(suggestion.source) }}</em>
         <em>{{ suggestion.tag_name }}</em>
         <em>{{ Math.round(suggestion.confidence * 100) }}%</em>
+        <em v-if="suggestion.candidate_index !== null && suggestion.candidate_index !== undefined">{{ labels.candidateLabel(suggestion.candidate_index + 1) }}</em>
+        <em v-if="consistencyLabel()" :class="suggestion.verifier_status === 'failed' ? 'verifier-failed' : 'consistency-badge'">{{ consistencyLabel() }}</em>
+        <em v-if="suggestion.verifier_status === 'failed'" class="verifier-failed">{{ labels.verifierFailed }}</em>
         <em>{{ suggestionRangeLabel() }}</em>
         <em v-if="suggestion.run_id">{{ suggestion.run_id.slice(0, 10) }}</em>
         <em v-if="isKeyboardTarget" class="keyboard-target-badge">
@@ -84,6 +93,10 @@ function reviewJudgeLabel() {
       <small v-if="suggestion.context_before || suggestion.context_after" class="evidence-copy">
         <em>{{ labels.context }}</em>
         <strong>{{ suggestion.context_before }}[{{ suggestion.text }}]{{ suggestion.context_after }}</strong>
+      </small>
+      <small v-if="suggestion.source === 'llm_engagement'" class="review-copy engagement-note">
+        <em>{{ labels.engagementReviewRequired }}</em>
+        {{ suggestion.auto_accept_eligible ? labels.engagementAutoAcceptEligible : labels.engagementManualReview }}
       </small>
       <small v-if="review" class="review-copy">
         <em>{{ labels.llmReview }}</em>

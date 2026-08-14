@@ -770,6 +770,7 @@ class SuggestionService:
                 SELECT sg.id, sg.run_id, sg.sentence_id, sg.tag_id, tags.name AS tag_name, tags.color AS tag_color,
                        sg.start_token_index, sg.end_token_index, sg.start_char, sg.end_char, sg.text,
                        sg.confidence, sg.source, sg.evidence_text, sg.match_key, sg.evidence_match_key, sg.context_before, sg.context_after, sg.status, sg.created_at,
+                       sg.candidate_group_id, cg.candidate_index, cg.verifier_status, cg.consistency_json,
                        rev.model AS review_model, rev.recommendation AS review_recommendation,
                        rev.confidence AS review_confidence, rev.rationale AS review_rationale,
                        rev.context_sha256 AS review_context_sha256, rev.judge_json AS review_judge_json,
@@ -785,6 +786,7 @@ class SuggestionService:
                     ORDER BY latest.created_at DESC, latest.id DESC
                     LIMIT 1
                 )
+                LEFT JOIN annotation_candidate_groups cg ON cg.id = sg.candidate_group_id
                 WHERE d.project_id = ? AND sg.id IN ({placeholders})
                 ORDER BY s.sentence_index, sg.start_token_index
                 """,
@@ -1044,6 +1046,9 @@ class SuggestionService:
             "review_created_at",
         }
         data = self._row_dict(row, exclude=(exclude or set()) | review_keys)
+        consistency = self._decode_json_object(row["consistency_json"]) if "consistency_json" in row.keys() else None
+        data["consistency_route"] = consistency.get("route") if consistency else None
+        data["auto_accept_eligible"] = bool(consistency.get("auto_accept_eligible", False)) if consistency else False
         if row["review_model"] is not None:
             data["latest_review"] = {
                 "model": row["review_model"],

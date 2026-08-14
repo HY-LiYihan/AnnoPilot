@@ -1,4 +1,5 @@
 import { ref, type ComputedRef, type Ref } from 'vue'
+import { generateEngagementCandidates } from '../api/engagement'
 import {
   acceptSuggestion,
   acceptSentenceSuggestions,
@@ -48,6 +49,9 @@ export function useReaderSuggestions(options: UseReaderSuggestionsOptions) {
   const suggestionMinConfidence = ref(0.7)
   const suggestionReviews = ref<Record<string, SuggestionReview>>({})
   const reviewingSuggestionId = ref('')
+  const engagementCandidateCount = ref(3)
+  const engagementTemperature = ref(0.7)
+  const lastEngagementRun = ref<{ runId: string; candidateCount: number; routeCounts: Record<string, number>; verifierFailures: number } | null>(null)
 
   async function generateDocumentSuggestions() {
     const documentId = options.documentMeta.value?.id
@@ -81,6 +85,46 @@ export function useReaderSuggestions(options: UseReaderSuggestionsOptions) {
     } finally {
       options.isSuggesting.value = false
     }
+  }
+
+  async function generateEngagementCandidatesForCurrentSentence() {
+    const documentId = options.documentMeta.value?.id
+    const sentence = options.currentSentence.value
+    if (!documentId || !sentence || options.isSuggesting.value) return
+    options.isSuggesting.value = true
+    options.readerError.value = ''
+    try {
+      const payload = await generateEngagementCandidates(PROJECT_ID, documentId, engagementCandidateCount.value, engagementTemperature.value, sentence.id)
+      const routeCounts: Record<string, number> = {}
+      for (const group of payload.groups) {
+        const route = String(group.consistency.route ?? 'unknown')
+        routeCounts[route] = (routeCounts[route] ?? 0) + 1
+      }
+      lastEngagementRun.value = {
+        runId: payload.run_id,
+        candidateCount: payload.candidate_count,
+        routeCounts,
+        verifierFailures: payload.groups.filter((group) => group.verifier_status !== 'passed').length,
+      }
+      await options.refreshDocumentSummary()
+      await options.loadSentenceWindow(documentId, options.currentSentenceIndex.value, true)
+      await options.refreshAuditSummary()
+      await options.refreshRunHistory()
+    } catch (error) {
+      options.readerError.value = error instanceof Error ? error.message : 'Could not generate Engagement candidates.'
+    } finally {
+      options.isSuggesting.value = false
+    }
+  }
+
+  function setEngagementCandidateCount(value: number) {
+    const rounded = Math.round(Number.isFinite(value) ? value : engagementCandidateCount.value)
+    engagementCandidateCount.value = Math.min(Math.max(rounded, 3), 7)
+  }
+
+  function setEngagementTemperature(value: number) {
+    const numericValue = Number.isFinite(value) ? value : engagementTemperature.value
+    engagementTemperature.value = Math.min(Math.max(numericValue, 0), 1.5)
   }
 
   function setSuggestionLimit(value: number) {
@@ -342,6 +386,7 @@ export function useReaderSuggestions(options: UseReaderSuggestionsOptions) {
     autoAnnotateDocument,
     autoRejectDocumentSuggestions,
     generateCurrentSentenceSuggestions,
+    generateEngagementCandidatesForCurrentSentence,
     generateDocumentSuggestions,
     rejectCurrentSentenceSuggestions,
     rejectSuggestedSpan,
@@ -355,5 +400,10 @@ export function useReaderSuggestions(options: UseReaderSuggestionsOptions) {
     suggestionLimit,
     suggestionMinConfidence,
     suggestionReviews,
+    engagementCandidateCount,
+    engagementTemperature,
+    lastEngagementRun,
+    setEngagementCandidateCount,
+    setEngagementTemperature,
   }
 }

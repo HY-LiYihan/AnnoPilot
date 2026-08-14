@@ -89,29 +89,35 @@ class RunQueryRepository:
                 SELECT r.id AS run_id, r.recipe, r.config_json, r.created_at,
                        s.id AS sentence_id, s.sentence_index, s.text AS sentence_text,
                        s.start_char AS sentence_start_char,
+                       cg.id AS candidate_group_id, cg.candidate_index, cg.verifier_status, cg.consistency_json,
+                       cg.verifier_issues_json, cg.explanation, cg.prompt_sha256,
                        spans.id AS span_id, spans.tag_id, spans.tag_name,
                        spans.start_token_index, spans.end_token_index,
                        spans.start_char, spans.end_char, spans.text AS span_text,
                        spans.confidence, spans.source, spans.evidence_text
                 FROM ranked_run_sentences r
                 JOIN sentences s ON s.id = r.sentence_id
+                LEFT JOIN annotation_candidate_groups cg
+                  ON cg.run_id = r.id AND cg.sentence_id = s.id
                 LEFT JOIN annotation_run_candidate_spans spans
                   ON spans.run_id = r.id AND spans.sentence_id = s.id
+                 AND (cg.id IS NULL OR spans.candidate_group_id = cg.id)
                 WHERE r.candidate_rank <= ?
-                ORDER BY s.sentence_index, r.created_at, r.id,
+                  AND (r.recipe = 'llm_engagement_consistency' OR cg.id IS NULL)
+                ORDER BY s.sentence_index, r.created_at, r.id, cg.candidate_index,
                          spans.start_token_index, spans.end_token_index, spans.id
                 """,
                 (project_id, document_id, safe_limit),
             ).fetchall()
 
         candidates: list[dict[str, Any]] = []
-        by_key: dict[tuple[str, str], dict[str, Any]] = {}
+        by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
         for row in rows:
-            key = (row["run_id"], row["sentence_id"])
+            key = (row["run_id"], row["sentence_id"], row["candidate_group_id"] or "")
             candidate = by_key.get(key)
             if candidate is None:
                 candidate = {
-                    "candidate_id": f"{row['run_id']}:{row['sentence_id']}",
+                    "candidate_id": f"{row['run_id']}:{row['sentence_id']}:{row['candidate_group_id'] or 'run'}",
                     "run_id": row["run_id"],
                     "recipe": row["recipe"],
                     "config": json.loads(row["config_json"]),
@@ -121,6 +127,13 @@ class RunQueryRepository:
                     "text": row["sentence_text"],
                     "sentence_start_char": row["sentence_start_char"],
                     "spans": [],
+                    "candidate_group_id": row["candidate_group_id"],
+                    "candidate_index": row["candidate_index"],
+                    "verifier_status": row["verifier_status"],
+                    "consistency": self._decode_json_object(row["consistency_json"]) or {},
+                    "verifier_issues": self._decode_json_array(row["verifier_issues_json"]),
+                    "explanation": row["explanation"] or "",
+                    "prompt_sha256": row["prompt_sha256"],
                 }
                 by_key[key] = candidate
                 candidates.append(candidate)
@@ -415,3 +428,13 @@ class RunQueryRepository:
         except json.JSONDecodeError:
             return None
         return payload if isinstance(payload, dict) else None
+
+    @staticmethod
+    def _decode_json_array(value: str | None) -> list[dict[str, Any]]:
+        if not value:
+            return []
+        try:
+            payload = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return payload if isinstance(payload, list) else []
