@@ -504,6 +504,7 @@ class ExportService:
                     "source": "annopilot",
                     "artifact": "human_review_queue.jsonl",
                     "total_queue_items": queue["total"],
+                    "rosetta_route_counts": queue.get("rosetta_route_counts", {}),
                 },
             }
             lines.append(json.dumps(line, ensure_ascii=False) + "\n")

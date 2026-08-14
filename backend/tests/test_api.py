@@ -3613,6 +3613,18 @@ def test_review_queue_hybrid_reserves_high_confidence_calibration_sample(tmp_pat
         assert by_hybrid["items"][-1]["review_route"] == "calibration"
         assert by_hybrid["items"][-1]["min_confidence"] == 0.98
 
+        review_queue_export = client.get(
+            f"/api/projects/default/documents/{document_id}/export.goldsmith.review-queue.jsonl?order=hybrid&limit=5"
+        )
+        assert review_queue_export.status_code == 200
+        review_queue_lines = [json.loads(line) for line in review_queue_export.text.splitlines()]
+        assert len(review_queue_lines) == 5
+        assert all(line["meta"]["total_queue_items"] == 6 for line in review_queue_lines)
+        assert all(
+            line["meta"]["rosetta_route_counts"] == {"medium": 5, "high": 1}
+            for line in review_queue_lines
+        )
+
 
 def test_auto_accept_document_suggestions_by_confidence(tmp_path: Path) -> None:
     with TestClient(
