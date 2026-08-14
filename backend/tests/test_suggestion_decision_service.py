@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.storage import AnnotationStorage
+from backend.app.storage import AnnotationStorage, ValidationError
 
 
 def make_storage(tmp_path: Path) -> AnnotationStorage:
@@ -75,3 +75,25 @@ def test_event_outbox_flush_skips_events_already_written_to_jsonl(tmp_path: Path
 
     assert [event["event_id"] for event in recovered_events] == [event_id]
     assert pending == 0
+
+
+def test_accept_suggestion_rejects_overlap_without_mutating_state(tmp_path: Path) -> None:
+    storage = make_storage(tmp_path)
+    tag = storage.create_tag("default", "Cue", examples=["小猫"])
+    imported = storage.import_txt("default", "overlap-decision.txt", "小猫看见小河。".encode("utf-8"))
+    sentence_id = storage.get_document("default", imported["document_id"])["sentences"][0]["id"]
+    suggestions = storage.generate_suggestions("default", imported["document_id"], limit_per_sentence=4, min_confidence=0.98)["suggestions"]
+    suggestion = next(item for item in suggestions if item["sentence_id"] == sentence_id and item["start_token_index"] <= 1 and item["end_token_index"] >= 0)
+    storage.create_annotation("default", sentence_id, tag["id"], 0, 1)
+
+    with pytest.raises(ValidationError, match="overlaps an existing annotation"):
+        storage.accept_suggestion("default", suggestion["id"])
+
+    with storage.connect() as conn:
+        status = conn.execute("SELECT status FROM annotation_suggestions WHERE id = ?", (suggestion["id"],)).fetchone()["status"]
+        annotation_count = conn.execute("SELECT COUNT(*) AS count FROM annotations WHERE sentence_id = ?", (sentence_id,)).fetchone()["count"]
+        accepted_events = conn.execute("SELECT COUNT(*) AS count FROM event_outbox WHERE event_json LIKE '%suggestion.accepted%'").fetchone()["count"]
+
+    assert status == "pending"
+    assert annotation_count == 1
+    assert accepted_events == 0

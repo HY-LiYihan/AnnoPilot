@@ -38,6 +38,8 @@ class SuggestionDecisionService:
             suggestion = self._get_project_suggestion(conn, project_id, suggestion_id, include_span=True)
             if suggestion["status"] != "pending":
                 raise self.validation_error("Only pending suggestions can be accepted.")
+            if self._is_blocked(suggestion, self._sentence_blocked_ranges(conn, suggestion["sentence_id"])):
+                raise self.validation_error("Suggestion overlaps an existing annotation.")
             self._accept_suggestion_row(conn, project_id, suggestion, now)
 
         self.flush_event_outbox(project_id)

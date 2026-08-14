@@ -257,7 +257,8 @@ def _strip_json_fence(value: str) -> str:
 
 
 def _int_value(value: Any) -> int | None:
-    if isinstance(value, bool):
+    is_integer_string = isinstance(value, str) and re.fullmatch(r"[+-]?\d+", value.strip())
+    if isinstance(value, bool) or (not isinstance(value, int) and not is_integer_string):
         return None
     try:
         return int(value)

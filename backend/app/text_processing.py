@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SENTENCE_ENDINGS = set("。！？?!")
+SENTENCE_ENDINGS = set("。！？?!…．")
 SENTENCE_TRAILING_CLOSERS = set("\"'”’)]}〉》」』】）")
 ENGLISH_SENTENCE_ABBREVIATIONS = {
     "co",
@@ -107,7 +107,7 @@ def split_sentences(text: str) -> list[SentenceSpan]:
             while i + 1 < len(normalized) and normalized[i + 1] == "\n":
                 i += 1
             next_start = i + 1
-        elif char in SENTENCE_ENDINGS:
+        elif char in SENTENCE_ENDINGS and not _fullwidth_period_is_decimal(normalized, i):
             boundary_end = _include_trailing_closers(normalized, _include_sentence_ending_run(normalized, i + 1))
             next_start = boundary_end
         elif char == "." and _period_ends_sentence(normalized, i):
@@ -176,7 +176,20 @@ def _period_ends_sentence(text: str, index: int) -> bool:
         return False
     if _period_is_english_abbreviation(text, index):
         return False
-    return next_char == "" or next_char.isspace() or next_char in SENTENCE_TRAILING_CLOSERS
+    return (
+        next_char == ""
+        or next_char.isspace()
+        or next_char in SENTENCE_TRAILING_CLOSERS
+        or _is_cjk(next_char)
+    )
+
+
+def _fullwidth_period_is_decimal(text: str, index: int) -> bool:
+    if text[index] != "．":
+        return False
+    previous_char = text[index - 1] if index > 0 else ""
+    next_char = text[index + 1] if index + 1 < len(text) else ""
+    return previous_char.isdigit() and next_char.isdigit()
 
 
 def _period_is_english_abbreviation(text: str, index: int) -> bool:
@@ -202,11 +215,11 @@ def _period_is_english_abbreviation(text: str, index: int) -> bool:
 
 def _english_abbreviation_at_period(text: str, index: int) -> tuple[str, int] | None:
     token_start = index
-    while token_start > 0 and (text[token_start - 1].isalpha() or text[token_start - 1] == "."):
+    while token_start > 0 and (text[token_start - 1].isascii() and (text[token_start - 1].isalpha() or text[token_start - 1] == ".")):
         token_start -= 1
 
     token_end = index + 1
-    while token_end < len(text) and (text[token_end].isalpha() or text[token_end] == "."):
+    while token_end < len(text) and (text[token_end].isascii() and (text[token_end].isalpha() or text[token_end] == ".")):
         token_end += 1
 
     token = text[token_start:token_end].strip(".")
@@ -227,7 +240,7 @@ def _next_word(text: str, index: int) -> str:
     while index < len(text) and text[index].isspace():
         index += 1
     start = index
-    while index < len(text) and text[index].isalpha():
+    while index < len(text) and text[index].isascii() and text[index].isalpha():
         index += 1
     return text[start:index]
 

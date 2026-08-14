@@ -119,3 +119,11 @@ def test_sentence_splitting_keeps_mixed_terminal_punctuation_together() -> None:
         "What?!",
         "They denied it.",
     ]
+
+
+def test_sentence_splitting_handles_mixed_language_without_spaces() -> None:
+    assert [sentence.text for sentence in split_sentences("It may change.然后我们再看。")] == ["It may change.", "然后我们再看。"]
+    assert [sentence.text for sentence in split_sentences("他说Dr. Chen认为可能会变。")] == ["他说Dr. Chen认为可能会变。"]
+    assert [sentence.text for sentence in split_sentences("可能会变．Then next.")] == ["可能会变．", "Then next."]
+    assert [sentence.text for sentence in split_sentences("可能会变……下一句。")] == ["可能会变……", "下一句。"]
+    assert [sentence.text for sentence in split_sentences("增长１２．５％。下一句。")] == ["增长１２．５％。", "下一句。"]

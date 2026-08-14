@@ -96,3 +96,22 @@ def test_prompt_is_bilingual_and_carries_taxonomy_contract() -> None:
     assert "Python code-point offsets" in prompt
     assert "engagement_entertain" in prompt
     assert "may" in prompt
+
+
+def test_non_integer_offsets_are_rejected_instead_of_truncated() -> None:
+    raw = json.dumps(
+        {
+            "text": "🙂可能 may.",
+            "spans": [{"start": 1.9, "end": 3.1, "text": "可能", "label": "engagement_entertain", "confidence": 0.9}],
+            "explanation": "The cue opens dialogic space.",
+        },
+        ensure_ascii=False,
+    )
+    _, issues = parse_engagement_candidate(
+        raw,
+        source_text="🙂可能 may.",
+        label_to_id={"engagement_entertain": "engagement_entertain"},
+        tokens=_tokens("🙂可能 may."),
+    )
+
+    assert "invalid_offset" in {issue["code"] for issue in issues}
