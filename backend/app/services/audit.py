@@ -136,6 +136,7 @@ class AuditService:
                 continue
             if not event.get("document_id") or not event.get("filename"):
                 continue
+            source_record_results = event.get("source_record_results") if isinstance(event.get("source_record_results"), list) else []
             imports.append(
                 {
                     "event_id": event.get("event_id"),
@@ -144,17 +145,39 @@ class AuditService:
                     "record_count": self._event_int(event.get("record_count")),
                     "matched_count": self._event_int(event.get("matched_count")),
                     "skipped_count": self._event_int(event.get("skipped_count")),
+                    "skip_reason_counts": self._annotation_import_skip_reason_counts(event, source_record_results),
                     "created_tag_count": self._event_int(event.get("created_tag_count")),
                     "created_annotation_count": self._event_int(event.get("created_annotation_count")),
                     "deleted_annotation_count": self._event_int(event.get("deleted_annotation_count")),
                     "completed_sentence_count": self._event_int(event.get("completed_sentence_count")),
                     "source_sha256": str(event.get("source_sha256", "")),
-                    "source_record_results": event.get("source_record_results") if isinstance(event.get("source_record_results"), list) else [],
+                    "source_record_results": source_record_results,
                     "actor_id": event.get("actor_id"),
                     "ts": event.get("ts"),
                 }
             )
         return {"imports": list(reversed(imports))[:safe_limit]}
+
+    @classmethod
+    def _annotation_import_skip_reason_counts(
+        cls,
+        event: dict[str, Any],
+        source_record_results: list[dict[str, Any]],
+    ) -> dict[str, int]:
+        raw_counts = event.get("skip_reason_counts")
+        if isinstance(raw_counts, dict):
+            return {
+                str(reason): cls._event_int(count)
+                for reason, count in sorted(raw_counts.items())
+                if cls._event_int(count) > 0
+            }
+        counts: dict[str, int] = {}
+        for result in source_record_results:
+            if not isinstance(result, dict) or result.get("status") != "skipped":
+                continue
+            reason = str(result.get("reason") or "unknown")
+            counts[reason] = counts.get(reason, 0) + 1
+        return dict(sorted(counts.items()))
 
     @staticmethod
     def _record_replay_issue(

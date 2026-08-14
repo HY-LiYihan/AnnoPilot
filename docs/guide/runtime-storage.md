@@ -224,9 +224,9 @@ POST /api/projects/{project_id}/documents/{document_id}/import-annotations-jsonl
 - Character span 必须与本地 token 起止边界精确对齐；例如不能只导入英文 token `clearly` 的 `clear` 子串。无 character offsets 时才回退到本地 token index。
 - 如果导入 label 不存在，会自动创建 tag，description 标记为 `Imported from Prodigy/AnnoPilot JSONL.`。
 - 匹配到的 sentence 会先清除旧 annotations，再按导入 spans 写入 `source=prodigy_import` annotations。
-- 导入结果返回 `record_count`、`matched_count`、`skipped_count`、created/deleted counts 和 `source_sha256`；event log 的 `annotations.imported.source_record_results` 会保存逐行匹配 manifest。
+- 导入结果返回 `record_count`、`matched_count`、`skipped_count`、稳定的 `skip_reason_counts`、created/deleted counts 和 `source_sha256`；event log 的 `annotations.imported.source_record_results` 会保存逐行匹配 manifest。历史 event 若尚无聚合字段，读取时会从逐行结果回算原因计数。
 
-Frontend 在右侧 metrics/export panel 暴露 `Import JSONL` 入口，可把外部 review 后的 Prodigy / AnnoPilot JSONL 导回当前 document，和 Prodigy export 形成 round-trip workflow。`GET /api/projects/{project_id}/annotation-imports` 会直接从 `events.jsonl` 派生最近导入历史，因此刷新页面后仍能恢复最近一次导入摘要，而不需要额外 runtime 表。
+Frontend 在右侧 metrics/export panel 暴露 `Import JSONL` 入口，可把外部 review 后的 Prodigy / AnnoPilot JSONL 导回当前 document，和 Prodigy export 形成 round-trip workflow。最近导入卡片会用中英双语显示 `no_sentence_match`、`invalid_spans`、`invalid_span` 等跳过原因，避免只看到 skipped 数量却无法定位问题。`GET /api/projects/{project_id}/annotation-imports` 会直接从 `events.jsonl` 派生最近导入历史，因此刷新页面后仍能恢复最近一次导入摘要，而不需要额外 runtime 表。
 
 ## Export JSONL
 

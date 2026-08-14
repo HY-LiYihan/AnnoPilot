@@ -7,6 +7,7 @@ import {
   type ReadinessAction,
   type ReadinessTargetFocus,
 } from '../../composables/readerReadinessActions'
+import { annotationImportSkipReasonSummary } from '../../composables/annotationImportDisplay'
 import { reviewQueuePriorityRouteText, reviewQueueRouteSummary, reviewQueueRouteSummaryFromCounts } from '../../composables/reviewQueueDisplay'
 import type { UiLabels } from '../../i18n'
 import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, LabelCount, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder, SentenceQueueItem } from '../../types/domain'
@@ -670,6 +671,12 @@ function shortHash(value: string) {
           <strong>{{ lastAnnotationImport.deleted_annotation_count }}</strong>
         </div>
       </div>
+      <small
+        v-if="annotationImportSkipReasonSummary(lastAnnotationImport.skip_reason_counts, labels)"
+        class="import-source-line import-skip-reasons"
+      >
+        {{ labels.importSkipReasons }} · {{ annotationImportSkipReasonSummary(lastAnnotationImport.skip_reason_counts, labels) }}
+      </small>
       <small class="import-source-line" :title="lastAnnotationImport.source_sha256">
         {{ labels.sourceHash }} · {{ shortHash(lastAnnotationImport.source_sha256) }}
       </small>

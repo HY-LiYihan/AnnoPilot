@@ -916,6 +916,7 @@ def test_import_prodigy_jsonl_updates_annotations_and_answers(tmp_path: Path) ->
         assert imported["record_count"] == 2
         assert imported["matched_count"] == 2
         assert imported["skipped_count"] == 0
+        assert imported["skip_reason_counts"] == {}
         assert imported["created_tag_count"] == 1
         assert imported["created_annotation_count"] == 1
         assert imported["deleted_annotation_count"] == 0
@@ -942,6 +943,7 @@ def test_import_prodigy_jsonl_updates_annotations_and_answers(tmp_path: Path) ->
         imported_event = next(event for event in events if event["type"] == "annotations.imported")
         assert imported_event["record_count"] == 2
         assert imported_event["created_annotation_count"] == 1
+        assert imported_event["skip_reason_counts"] == {}
         assert imported_event["source_sha256"] == imported["source_sha256"]
         assert len(imported_event["source_record_results"]) == 2
         first_record_result = imported_event["source_record_results"][0]
@@ -980,6 +982,7 @@ def test_import_prodigy_jsonl_updates_annotations_and_answers(tmp_path: Path) ->
         assert import_history[0]["filename"] == "review.prodigy.jsonl"
         assert import_history[0]["record_count"] == 2
         assert import_history[0]["matched_count"] == 2
+        assert import_history[0]["skip_reason_counts"] == {}
         assert import_history[0]["source_sha256"] == imported["source_sha256"]
         assert import_history[0]["source_record_results"][0]["source_metadata"]["_session_id"] == "review-session-1"
 
@@ -1150,6 +1153,7 @@ def test_import_prodigy_jsonl_does_not_overwrite_a_different_document(tmp_path: 
         assert mismatched_text_response.status_code == 200
         assert mismatched_text_response.json()["matched_count"] == 0
         assert mismatched_text_response.json()["skipped_count"] == 1
+        assert mismatched_text_response.json()["skip_reason_counts"] == {"no_sentence_match": 1}
 
         target_after = client.get(f"/api/projects/default/documents/{target_id}").json()["sentences"][0]
         assert target_after["answer"] == "accept"
@@ -1159,6 +1163,7 @@ def test_import_prodigy_jsonl_does_not_overwrite_a_different_document(tmp_path: 
             f"/api/projects/default/annotation-imports?document_id={target_id}"
         ).json()["imports"]
         assert import_history[0]["matched_count"] == 0
+        assert import_history[0]["skip_reason_counts"] == {"no_sentence_match": 1}
         assert import_history[0]["source_record_results"][0]["reason"] == "no_sentence_match"
 
 
@@ -1253,11 +1258,13 @@ def test_import_prodigy_jsonl_prefers_character_offsets_across_tokenizers(tmp_pa
         assert partial_response.status_code == 200
         assert partial_response.json()["matched_count"] == 0
         assert partial_response.json()["skipped_count"] == 1
+        assert partial_response.json()["skip_reason_counts"] == {"invalid_span": 1}
         after_partial = client.get(f"/api/projects/default/documents/{document_id}").json()["sentences"][1]
         assert [annotation["id"] for annotation in after_partial["annotations"]] == original_annotation_ids
         import_history = client.get(
             f"/api/projects/default/annotation-imports?document_id={document_id}"
         ).json()["imports"]
+        assert import_history[0]["skip_reason_counts"] == {"invalid_span": 1}
         assert import_history[0]["source_record_results"][0]["reason"] == "invalid_span"
         assert "align with local token boundaries" in import_history[0]["source_record_results"][0]["message"]
 

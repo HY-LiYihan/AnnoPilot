@@ -309,6 +309,7 @@ class AnnotationImportService:
                 )
                 source_record_results.append(record_result)
 
+            skip_reason_counts = self._skip_reason_counts(source_record_results)
             self.enqueue_event(
                 conn,
                 project_id,
@@ -319,6 +320,7 @@ class AnnotationImportService:
                     "record_count": len(records),
                     "matched_count": matched_count,
                     "skipped_count": skipped_count,
+                    "skip_reason_counts": skip_reason_counts,
                     "created_tag_count": created_tag_count,
                     "created_annotation_count": created_annotation_count,
                     "deleted_annotation_count": deleted_annotation_count,
@@ -335,6 +337,7 @@ class AnnotationImportService:
             "record_count": len(records),
             "matched_count": matched_count,
             "skipped_count": skipped_count,
+            "skip_reason_counts": skip_reason_counts,
             "created_tag_count": created_tag_count,
             "created_annotation_count": created_annotation_count,
             "deleted_annotation_count": deleted_annotation_count,
@@ -357,6 +360,16 @@ class AnnotationImportService:
                 raise self.validation_error(f"JSONL line {line_number} must be an object.")
             records.append((line_number, record))
         return records
+
+    @staticmethod
+    def _skip_reason_counts(source_record_results: list[dict[str, Any]]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for result in source_record_results:
+            if result.get("status") != "skipped":
+                continue
+            reason = str(result.get("reason") or "unknown")
+            counts[reason] = counts.get(reason, 0) + 1
+        return dict(sorted(counts.items()))
 
     @staticmethod
     def _match_import_sentence(

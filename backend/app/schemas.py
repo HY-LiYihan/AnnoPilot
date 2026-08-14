@@ -125,6 +125,7 @@ class ImportAnnotationsResponse(BaseModel):
     record_count: int
     matched_count: int
     skipped_count: int
+    skip_reason_counts: dict[str, int] = Field(default_factory=dict)
     created_tag_count: int
     created_annotation_count: int
     deleted_annotation_count: int
@@ -140,6 +141,7 @@ class AnnotationImportHistoryItemResponse(BaseModel):
     record_count: int
     matched_count: int
     skipped_count: int
+    skip_reason_counts: dict[str, int] = Field(default_factory=dict)
     created_tag_count: int
     created_annotation_count: int
     deleted_annotation_count: int

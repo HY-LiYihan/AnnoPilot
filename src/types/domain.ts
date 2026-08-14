@@ -409,6 +409,7 @@ export type ImportAnnotationsResponse = {
   record_count: number
   matched_count: number
   skipped_count: number
+  skip_reason_counts: Record<string, number>
   created_tag_count: number
   created_annotation_count: number
   deleted_annotation_count: number
