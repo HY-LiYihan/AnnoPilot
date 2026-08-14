@@ -249,6 +249,18 @@ Of course, one recall cannot settle every product dispute, yet advocates argue i
 """
 
 
+APPRAISAL_ENGAGEMENT_CRISIS_RESPONSE_TEXT = """Emergency officials said the shelter order may remain overnight, but they stressed it does not mean the chemical plume is expanding.
+According to the briefing, air monitors clearly show lower readings near the school and demonstrate why crews reopened two roads.
+Some residents reportedly claimed the company delayed the alert; however, the incident review does not confirm that timeline.
+Of course, one briefing cannot answer every public concern, yet the mayor argues it suggests which warnings need clearer translation.
+
+应急部门表示，避难指令可能持续到夜间，但他们强调这并不意味着化学烟羽正在扩大。
+通报指出，空气监测数据清楚显示学校附近读数降低，并证明为什么抢险人员重新开放了两条道路。
+一些居民据称声称企业延迟发布警报；然而，事故复核并不确认这一时间线。
+当然，一次通报不能回答所有公众关切，不过市长认为它提示哪些警示需要更清楚的翻译。
+"""
+
+
 APPRAISAL_ENGAGEMENT_CALIBRATION_TEXT = """The audit clearly shows where reviewers disagree, but it may also show only one pilot case.
 The memo allegedly claimed the model proves accuracy; however, the results only suggest improvement.
 The reviewer said the label is stable, yet the same evidence clearly shows uncertainty.
@@ -440,6 +452,15 @@ BUILTIN_SAMPLE_PRESETS = {
         description="面向召回、监管提醒、企业回应和消费者投诉的中英 engagement 线索，适合练习 defect claim、public warning、countering 和 safety review framing。",
         filename="appraisal-engagement-product-safety-cn-en.txt",
         text=APPRAISAL_ENGAGEMENT_PRODUCT_SAFETY_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-crisis-response-cn-en": SamplePreset(
+        id="appraisal-engagement-crisis-response-cn-en",
+        title="Engagement 危机回应/公共警示样例",
+        description="面向事故通报、应急管理、公众质疑和机构回应的中英 engagement 线索，适合练习 public warning、timeline claim、denial、countering 和 translation risk framing。",
+        filename="appraisal-engagement-crisis-response-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_CRISIS_RESPONSE_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
     ),
