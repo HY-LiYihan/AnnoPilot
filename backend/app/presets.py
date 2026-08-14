@@ -261,6 +261,18 @@ Of course, one briefing cannot answer every public concern, yet the mayor argues
 """
 
 
+APPRAISAL_ENGAGEMENT_ELECTION_FACTCHECK_TEXT = """Election officials said the counting update may arrive after midnight, but they stressed it does not indicate fraud.
+According to observer logs, the audit clearly shows ballot batches were reconciled and demonstrates why one precinct reported late.
+Some campaign accounts allegedly claimed the software changed totals; however, the state review does not support that allegation.
+Of course, one fact-check cannot resolve every partisan dispute, yet editors argue it suggests which claims need clearer context.
+
+选举官员表示，计票更新可能在午夜后公布，但他们强调这并不表示存在舞弊。
+观察员记录指出，审计清楚显示选票批次已经核对，并证明为什么一个投票站较晚报告。
+一些竞选账号据称声称软件更改了总票数；然而，州级复核并不支持这种指控。
+当然，一次事实核查不能解决所有党派争议，不过编辑认为它提示哪些说法需要更清楚的背景。
+"""
+
+
 APPRAISAL_ENGAGEMENT_CALIBRATION_TEXT = """The audit clearly shows where reviewers disagree, but it may also show only one pilot case.
 The memo allegedly claimed the model proves accuracy; however, the results only suggest improvement.
 The reviewer said the label is stable, yet the same evidence clearly shows uncertainty.
@@ -461,6 +473,15 @@ BUILTIN_SAMPLE_PRESETS = {
         description="面向事故通报、应急管理、公众质疑和机构回应的中英 engagement 线索，适合练习 public warning、timeline claim、denial、countering 和 translation risk framing。",
         filename="appraisal-engagement-crisis-response-cn-en.txt",
         text=APPRAISAL_ENGAGEMENT_CRISIS_RESPONSE_TEXT,
+        tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
+        language_pair="zh-en",
+    ),
+    "appraisal-engagement-election-factcheck-cn-en": SamplePreset(
+        id="appraisal-engagement-election-factcheck-cn-en",
+        title="Engagement 选举/事实核查样例",
+        description="面向选举通报、平台谣言、观察员记录和事实核查的中英 engagement 线索，适合练习 attribution、distance、denial、countering 和 context framing。",
+        filename="appraisal-engagement-election-factcheck-cn-en.txt",
+        text=APPRAISAL_ENGAGEMENT_ELECTION_FACTCHECK_TEXT,
         tag_schema=APPRAISAL_ENGAGEMENT_TAG_SCHEMA,
         language_pair="zh-en",
     ),
