@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { reviewQueuePriorityRouteText, reviewQueueRouteCounts, reviewQueueRouteSummary, rosettaRouteLabel } from '../../src/composables/reviewQueueDisplay.ts'
+import {
+  reviewQueuePriorityRouteText,
+  reviewQueueRouteCounts,
+  reviewQueueRouteSummary,
+  reviewQueueRouteSummaryFromCounts,
+  rosettaRouteLabel,
+} from '../../src/composables/reviewQueueDisplay.ts'
 
 const labels = {
   priority: 'Priority',
@@ -78,5 +84,12 @@ test('reviewQueueRouteSummary orders low, medium, and high risk navigation bucke
       makeReviewQueueItem({ rosetta_route: 'low' }),
     ], labels as any),
     'low consistency 2 · medium consistency 1 · high consistency 1',
+  )
+})
+
+test('reviewQueueRouteSummaryFromCounts renders backend queue-wide counts', () => {
+  assert.equal(
+    reviewQueueRouteSummaryFromCounts({ high: 4, low: 2, medium: 3 }, labels as any),
+    'low consistency 2 · medium consistency 3 · high consistency 4',
   )
 })

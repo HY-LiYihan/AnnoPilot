@@ -7,7 +7,7 @@ import {
   type ReadinessAction,
   type ReadinessTargetFocus,
 } from '../../composables/readerReadinessActions'
-import { reviewQueuePriorityRouteText, reviewQueueRouteSummary } from '../../composables/reviewQueueDisplay'
+import { reviewQueuePriorityRouteText, reviewQueueRouteSummary, reviewQueueRouteSummaryFromCounts } from '../../composables/reviewQueueDisplay'
 import type { UiLabels } from '../../i18n'
 import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, LabelCount, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder, SentenceQueueItem } from '../../types/domain'
 
@@ -22,6 +22,7 @@ defineProps<{
   reviewQueueDetails: ReviewQueueItem[]
   reviewQueueTotal: number
   reviewQueueOrder: ReviewQueueOrder
+  reviewQueueRouteCounts: Record<string, number>
   lastAnnotationImport: AnnotationImportSummary | null
   isVerifyingRebuild: boolean
   isSaving: boolean
@@ -270,7 +271,8 @@ function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics'], or
     : `${priority} · ${optionCount}${candidate} · ${score}`
 }
 
-function reviewRouteSummary(items: ReviewQueueItem[], labels: UiLabels['metrics']) {
+function reviewRouteSummary(items: ReviewQueueItem[], counts: Record<string, number>, labels: UiLabels['metrics']) {
+  if (Object.values(counts).some((count) => count > 0)) return reviewQueueRouteSummaryFromCounts(counts, labels)
   return reviewQueueRouteSummary(items, labels)
 }
 
@@ -561,8 +563,8 @@ function shortHash(value: string) {
         <span>{{ labels.reviewQueue }}</span>
         <strong>{{ reviewQueueTotal }} {{ labels.pending }}</strong>
       </div>
-      <small v-if="reviewRouteSummary(reviewQueueDetails, labels)" class="label-mix-heading">
-        {{ labels.routeMix }} {{ reviewRouteSummary(reviewQueueDetails, labels) }}
+      <small v-if="reviewRouteSummary(reviewQueueDetails, reviewQueueRouteCounts, labels)" class="label-mix-heading">
+        {{ labels.routeMix }} {{ reviewRouteSummary(reviewQueueDetails, reviewQueueRouteCounts, labels) }}
       </small>
       <div class="review-order-toggle" :aria-label="labels.reviewQueue">
         <button type="button" :class="{ active: reviewQueueOrder === 'position' }" @click="emit('review-order-change', 'position')">

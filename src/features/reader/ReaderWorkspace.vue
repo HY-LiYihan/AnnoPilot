@@ -121,6 +121,7 @@ const {
   reviewQueueDetails,
   reviewQueueTotal,
   reviewQueueOrder,
+  reviewQueueRouteCounts,
   suggestionReviews,
   reviewingSuggestionId,
   activeSuggestionTargetId,
@@ -493,6 +494,7 @@ async function confirmProjectReset() {
         :review-queue-details="reviewQueueDetails"
         :review-queue-total="reviewQueueTotal"
         :review-queue-order="reviewQueueOrder"
+        :review-queue-route-counts="reviewQueueRouteCounts"
         :last-annotation-import="lastAnnotationImport"
         :is-verifying-rebuild="isVerifyingRebuild"
         :is-saving="isSaving"

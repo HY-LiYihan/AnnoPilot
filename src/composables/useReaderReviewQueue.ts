@@ -19,6 +19,7 @@ type UseReaderReviewQueueOptions = {
 
 export function useReaderReviewQueue(options: UseReaderReviewQueueOptions) {
   const reviewQueueDetails = ref<ReviewQueueItem[]>([])
+  const reviewQueueRouteCounts = ref<Record<string, number>>({})
   const reviewQueueTotal = ref(0)
   const reviewQueueOrder = ref<ReviewQueueOrder>('hybrid')
 
@@ -51,6 +52,7 @@ export function useReaderReviewQueue(options: UseReaderReviewQueueOptions) {
     try {
       const payload = await fetchReviewQueue(PROJECT_ID, options.documentMeta.value.id, 20, reviewQueueOrder.value)
       reviewQueueDetails.value = payload.items
+      reviewQueueRouteCounts.value = payload.rosetta_route_counts ?? {}
       reviewQueueTotal.value = payload.total
     } catch {
       resetReviewQueueState()
@@ -81,6 +83,7 @@ export function useReaderReviewQueue(options: UseReaderReviewQueueOptions) {
 
   function resetReviewQueueState() {
     reviewQueueDetails.value = []
+    reviewQueueRouteCounts.value = {}
     reviewQueueTotal.value = 0
   }
 
@@ -93,6 +96,7 @@ export function useReaderReviewQueue(options: UseReaderReviewQueueOptions) {
     resetReviewQueueState,
     reviewQueueDetails,
     reviewQueueOrder,
+    reviewQueueRouteCounts,
     reviewQueueSummary,
     reviewQueueTotal,
     setReviewQueueOrder,

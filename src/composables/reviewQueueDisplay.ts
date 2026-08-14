@@ -23,7 +23,10 @@ export function reviewQueueRouteCounts(items: ReviewQueueItem[]) {
 }
 
 export function reviewQueueRouteSummary(items: ReviewQueueItem[], labels: MetricsLabels) {
-  const counts = reviewQueueRouteCounts(items)
+  return reviewQueueRouteSummaryFromCounts(reviewQueueRouteCounts(items), labels)
+}
+
+export function reviewQueueRouteSummaryFromCounts(counts: Record<string, number>, labels: MetricsLabels) {
   const orderedRoutes = ['low', 'medium', 'high']
   const parts = orderedRoutes
     .filter((route) => counts[route])

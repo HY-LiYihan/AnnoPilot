@@ -570,8 +570,7 @@ class DocumentQueryRepository:
                 """,
                 (document_id,),
             ).fetchone()["count"]
-            sentence_rows = conn.execute(
-                f"""
+            review_sentence_rows_sql = f"""
                 SELECT s.id, s.sentence_index, s.text,
                        COUNT(DISTINCT sg.id) AS suggestion_count,
                        MIN(sg.confidence) AS min_confidence,
@@ -598,6 +597,13 @@ class DocumentQueryRepository:
                       AND a.end_token_index >= sg.start_token_index
                   )
                 GROUP BY s.id, s.sentence_index, s.text
+                """
+            route_count_rows = conn.execute(review_sentence_rows_sql, (document_id,)).fetchall()
+            rosetta_route_counts = self._review_queue_rosetta_route_counts(route_count_rows)
+
+            sentence_rows = conn.execute(
+                f"""
+                {review_sentence_rows_sql}
                 ORDER BY {order_sql}
                 LIMIT ?
                 """,
@@ -712,7 +718,7 @@ class DocumentQueryRepository:
             item["review_guidance"] = self._review_queue_guidance(item, first_suggestion)
             items.append(item)
 
-        return {"items": items, "total": int(total or 0)}
+        return {"items": items, "total": int(total or 0), "rosetta_route_counts": rosetta_route_counts}
 
     def list_sentence_review_suggestion_ids(self, project_id: str, sentence_id: str, limit: int = 20) -> list[str]:
         safe_limit = max(1, min(int(limit), 100))
@@ -891,6 +897,29 @@ class DocumentQueryRepository:
         if risk_score >= 0.4 or min_confidence < MEDIUM_CONFIDENCE_THRESHOLD or suggestion_count >= 2 or review_route == "calibration":
             return "medium"
         return "high"
+
+    @classmethod
+    def _review_queue_rosetta_route_counts(cls, rows: list[sqlite3.Row]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for row in rows:
+            route = cls._review_queue_rosetta_route(
+                {
+                    "suggestion_count": row["suggestion_count"],
+                    "min_confidence": float(row["min_confidence"] or 0.0),
+                    "lexical_risk_score": float(row["lexical_risk_score"] or 0.0),
+                    "llm_review_risk_score": float(row["llm_review_risk_score"] or 0.0),
+                    "judge_review_risk_score": float(row["judge_review_risk_score"] or 0.0),
+                    "candidate_disagreement_score": float(row["candidate_disagreement_score"] or 0.0),
+                    "risk_score": float(row["risk_score"] or 0.0),
+                    "review_route": "risk",
+                }
+            )
+            counts[route] = counts.get(route, 0) + 1
+
+        ordered_counts = {route: counts[route] for route in ("low", "medium", "high") if counts.get(route)}
+        for route in sorted(route for route in counts if route not in ordered_counts):
+            ordered_counts[route] = counts[route]
+        return ordered_counts
 
     @staticmethod
     def _float_or_default(value: Any, default: float) -> float:

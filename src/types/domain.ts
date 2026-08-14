@@ -341,6 +341,7 @@ export type SentencesPagePayload = {
 export type ReviewQueuePayload = {
   items: ReviewQueueItem[]
   total: number
+  rosetta_route_counts?: Record<string, number>
 }
 
 export type SamplePreset = {

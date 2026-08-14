@@ -280,6 +280,7 @@ class ReviewQueueItemResponse(BaseModel):
 class ReviewQueueResponse(BaseModel):
     items: list[ReviewQueueItemResponse]
     total: int
+    rosetta_route_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class ReviewEfficiencyPointResponse(BaseModel):

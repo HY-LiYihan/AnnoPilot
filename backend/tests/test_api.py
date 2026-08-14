@@ -3590,6 +3590,7 @@ def test_review_queue_hybrid_reserves_high_confidence_calibration_sample(tmp_pat
             insert_suggestion(5, 0, 0.61)
 
         by_goldsmith = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=goldsmith&limit=5").json()
+        assert by_goldsmith["total"] == 6
         assert [item["id"] for item in by_goldsmith["items"]] == [
             sentences[1]["id"],
             sentences[0]["id"],
@@ -3597,8 +3598,10 @@ def test_review_queue_hybrid_reserves_high_confidence_calibration_sample(tmp_pat
             sentences[4]["id"],
             sentences[5]["id"],
         ]
+        assert by_goldsmith["rosetta_route_counts"] == {"medium": 5, "high": 1}
 
         by_hybrid = client.get(f"/api/projects/default/documents/{document_id}/review-queue?order=hybrid&limit=5").json()
+        assert by_hybrid["total"] == 6
         assert [item["id"] for item in by_hybrid["items"]] == [
             sentences[1]["id"],
             sentences[0]["id"],
@@ -3606,6 +3609,7 @@ def test_review_queue_hybrid_reserves_high_confidence_calibration_sample(tmp_pat
             sentences[4]["id"],
             sentences[3]["id"],
         ]
+        assert by_hybrid["rosetta_route_counts"] == {"medium": 5, "high": 1}
         assert by_hybrid["items"][-1]["review_route"] == "calibration"
         assert by_hybrid["items"][-1]["min_confidence"] == 0.98
 
