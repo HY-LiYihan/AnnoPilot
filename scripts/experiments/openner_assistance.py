@@ -225,6 +225,25 @@ def score_spans(predicted: Iterable[dict[str, Any]], gold: Iterable[dict[str, An
     return {"tp": true_positive, "predicted": len(predicted_keys), "gold": len(gold_keys), "precision": precision, "recall": recall, "f1": f1}
 
 
+def score_by_label(predicted: Iterable[dict[str, Any]], gold: Iterable[dict[str, Any]]) -> dict[str, dict[str, dict[str, float | int]]]:
+    predicted_items, gold_items = list(predicted), list(gold)
+    return {
+        label: {
+            "typed_exact": score_spans(
+                [span for span in predicted_items if str(span.get("tag_id") or span.get("label")) == label],
+                [span for span in gold_items if str(span.get("tag_id") or span.get("label")) == label],
+                typed=True,
+            ),
+            "boundary": score_spans(
+                [span for span in predicted_items if str(span.get("tag_id") or span.get("label")) == label],
+                [span for span in gold_items if str(span.get("tag_id") or span.get("label")) == label],
+                typed=False,
+            ),
+        }
+        for label in LABELS
+    }
+
+
 def scoring_spans(sentence_id: str, spans: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{**span, "sentence_id": sentence_id} for span in spans]
 
@@ -477,6 +496,7 @@ def run_experiment(
     draft_sentence_matches = 0
     skipped_draft_ids: set[str] = set()
     learning_curve: list[dict[str, Any]] = []
+    draft_learning_curve: list[dict[str, Any]] = []
 
     for sentence in sentences:
         sentence_id = str(sentence["id"])
@@ -505,6 +525,17 @@ def run_experiment(
             assistance_gold.extend(scoring_spans(sentence_id, gold))
             if span_keys(proposed) == span_keys(gold):
                 draft_sentence_matches += 1
+            cumulative_typed = score_spans(draft_predictions, assistance_gold, typed=True)
+            draft_learning_curve.append(
+                {
+                    "assisted_sentences": assisted_sentence_count,
+                    "trusted_completed_sentences_before_decision": counts["manual"] + counts["confirm"] + counts["correct"],
+                    "typed_precision": cumulative_typed["precision"],
+                    "typed_recall": cumulative_typed["recall"],
+                    "typed_f1": cumulative_typed["f1"],
+                    "sentence_exact": draft_sentence_matches / assisted_sentence_count,
+                }
+            )
             if skip_every and (counts["confirm"] + counts["correct"] + counts["skip"] + 1) % skip_every == 0 and draft_id not in skipped_draft_ids:
                 api.json("POST", f"/api/projects/{project_id}/sentences/{sentence_id}/assistance/decision", decision_payload("skip", draft_id, draft_version))
                 skipped_draft_ids.add(draft_id)
@@ -558,8 +589,10 @@ def run_experiment(
         "document_id": document_id,
         "typed_exact": typed,
         "boundary": boundary,
+        "machine_draft_by_label": score_by_label(draft_predictions, assistance_gold),
         "sentence_exact": draft_sentence_matches / assisted_sentence_count if assisted_sentence_count else 0.0,
         "final_typed_exact": final_typed,
+        "final_by_label": score_by_label(final_predictions, gold_all),
         "assisted_sentence_count": assisted_sentence_count,
         "decision_rates": {
             "confirm": counts["confirm"] / assisted_decisions if assisted_decisions else 0.0,
@@ -580,6 +613,7 @@ def run_experiment(
         "alignment_coverage": {"gold_spans": len(gold_all), "mapped_gold_spans": len(gold_all), "coverage": 1.0},
         "overwrite_violations": counts["overwrite_violations"],
         "learning_curve": learning_curve,
+        "draft_learning_curve": draft_learning_curve,
     }
     write_results(result, output_dir)
     return result
@@ -594,6 +628,11 @@ def write_results(result: dict[str, Any], output_dir: Path) -> tuple[Path, Path]
     final_typed = result.get("final_typed_exact", typed)
     rates = result.get("decision_rates", {})
     validation = result.get("validation", {})
+    by_label = result.get("machine_draft_by_label", {})
+    label_rows = "".join(
+        f"| Machine draft {label} | {metrics['typed_exact']['precision']:.4f} | {metrics['typed_exact']['recall']:.4f} | {metrics['typed_exact']['f1']:.4f} |\n"
+        for label, metrics in by_label.items()
+    )
     markdown_path.write_text(
         "# OpenNER Assistance Experiment\n\n"
         f"- Language: `{result['language']}`\n"
@@ -603,6 +642,7 @@ def write_results(result: dict[str, Any], output_dir: Path) -> tuple[Path, Path]
         "| Metric | Precision | Recall | F1 |\n| --- | ---: | ---: | ---: |\n"
         f"| Machine draft typed exact | {typed['precision']:.4f} | {typed['recall']:.4f} | {typed['f1']:.4f} |\n"
         f"| Machine draft boundary | {boundary['precision']:.4f} | {boundary['recall']:.4f} | {boundary['f1']:.4f} |\n"
+        f"{label_rows}"
         f"| Final submitted typed exact | {final_typed['precision']:.4f} | {final_typed['recall']:.4f} | {final_typed['f1']:.4f} |\n\n"
         f"Machine draft sentence exact: `{result['sentence_exact']:.4f}`  \n"
         f"Decisions: confirm `{decisions['confirm']}`, correct `{decisions['correct']}`, skip `{decisions['skip']}`, manual `{decisions['manual']}`  \n"

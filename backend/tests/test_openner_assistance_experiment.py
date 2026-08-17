@@ -107,6 +107,18 @@ def test_metrics_keep_identical_offsets_from_different_sentences_distinct() -> N
     assert experiment.score_spans(spans, spans, typed=True)["gold"] == 2
 
 
+def test_metrics_are_reported_for_each_openner_label() -> None:
+    gold = [{"sentence_id": "s-1", "tag_id": "PER", "start_token_index": 0, "end_token_index": 0}]
+    predicted = [{"sentence_id": "s-1", "tag_id": "ORG", "start_token_index": 0, "end_token_index": 0}]
+
+    metrics = experiment.score_by_label(predicted, gold)
+
+    assert list(metrics) == ["PER", "ORG", "LOC"]
+    assert metrics["PER"]["typed_exact"]["recall"] == 0.0
+    assert metrics["ORG"]["typed_exact"]["precision"] == 0.0
+    assert metrics["LOC"]["typed_exact"]["f1"] == 1.0
+
+
 def test_seed_selection_and_decision_payload_are_deterministic(tmp_path: Path) -> None:
     root = tmp_path / "openner"
     standardized = root / "standardized"
