@@ -25,8 +25,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 OPENNER_ROOT = REPO_ROOT / "tmp" / "openner"
 LABELS = ("PER", "ORG", "LOC")
 PAGE_SIZE = 200
-DEFAULT_DRAFT_WAIT_SECONDS = 90.0
-DEFAULT_DRAFT_POLL_INTERVAL = 0.25
+DEFAULT_DRAFT_WAIT_SECONDS = 300.0
+DEFAULT_DRAFT_POLL_INTERVAL = 0.5
 
 
 class ExperimentError(RuntimeError):
@@ -209,7 +209,8 @@ def map_gold_to_api_sentences(examples: list[SourceExample], api_sentences: list
 
 def span_keys(spans: Iterable[dict[str, Any]], typed: bool = True) -> set[tuple[Any, ...]]:
     return {
-        ((str(span.get("tag_id") or span.get("label")),) if typed else ())
+        (str(span.get("sentence_id") or ""),)
+        + ((str(span.get("tag_id") or span.get("label")),) if typed else ())
         + (int(span["start_token_index"]), int(span["end_token_index"]))
         for span in spans
     }
@@ -222,6 +223,14 @@ def score_spans(predicted: Iterable[dict[str, Any]], gold: Iterable[dict[str, An
     recall = true_positive / len(gold_keys) if gold_keys else 1.0
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     return {"tp": true_positive, "predicted": len(predicted_keys), "gold": len(gold_keys), "precision": precision, "recall": recall, "f1": f1}
+
+
+def scoring_spans(sentence_id: str, spans: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{**span, "sentence_id": sentence_id} for span in spans]
+
+
+def span_edit_count(original: Iterable[dict[str, Any]], final: Iterable[dict[str, Any]]) -> int:
+    return len(span_keys(original) ^ span_keys(final))
 
 
 def decision_payload(action: str, draft_id: str, draft_version: int, final_spans: list[dict[str, Any]] | None = None, error_reasons: list[str] | None = None) -> dict[str, Any]:
@@ -382,6 +391,53 @@ def draft_spans(draft: dict[str, Any]) -> list[dict[str, Any]]:
     return [span for span in spans if isinstance(span, dict)]
 
 
+def complete_skipped_drafts(
+    api: HttpApi,
+    project_id: str,
+    document_id: str,
+    skipped_draft_ids: set[str],
+    gold_by_sentence: dict[str, list[dict[str, Any]]],
+    counts: dict[str, int],
+    predicted: list[dict[str, Any]],
+    learning_curve: list[dict[str, Any]] | None = None,
+) -> None:
+    pending = set(skipped_draft_ids)
+    while pending:
+        state = api.json("GET", f"/api/projects/{project_id}/documents/{document_id}/assistance")
+        ready = [draft for draft in ready_drafts(state) if str(draft.get("id")) in pending]
+        if not ready:
+            raise ExperimentError("A skipped draft did not reappear in the assistance queue.")
+        for draft in ready:
+            draft_id = str(draft["id"])
+            sentence_id = str(draft["sentence_id"])
+            gold = gold_by_sentence.get(sentence_id, [])
+            proposed = draft_spans(draft)
+            action = "confirm" if span_keys(proposed) == span_keys(gold) else "correct"
+            api.json(
+                "POST",
+                f"/api/projects/{project_id}/sentences/{sentence_id}/assistance/decision",
+                decision_payload(
+                    action,
+                    draft_id,
+                    int(draft.get("draft_version", draft.get("version", 1))),
+                    gold if action == "correct" else None,
+                ),
+            )
+            counts[action] += 1
+            counts["human_span_edits"] += span_edit_count(proposed, gold) if action == "correct" else 0
+            predicted.extend(scoring_spans(sentence_id, proposed if action == "confirm" else gold))
+            if learning_curve is not None:
+                learning_curve.append(
+                    {
+                        "completed_sentences": counts["manual"] + counts["confirm"] + counts["correct"],
+                        "confirmed": counts["confirm"],
+                        "corrected": counts["correct"],
+                        "manual": counts["manual"],
+                    }
+                )
+            pending.discard(draft_id)
+
+
 def run_experiment(
     api_base: str,
     language: str,
@@ -409,9 +465,16 @@ def run_experiment(
     gold_by_sentence = map_gold_to_api_sentences(examples, sentences)
 
     counts = {"confirm": 0, "correct": 0, "skip": 0, "manual": 0, "human_span_edits": 0, "overwrite_violations": 0}
-    predicted: list[dict[str, Any]] = []
-    gold_all = [span for spans in gold_by_sentence.values() for span in spans]
-    sentence_matches = 0
+    final_predictions: list[dict[str, Any]] = []
+    gold_all = [
+        scored
+        for sentence_id, spans in gold_by_sentence.items()
+        for scored in scoring_spans(sentence_id, spans)
+    ]
+    draft_predictions: list[dict[str, Any]] = []
+    assistance_gold: list[dict[str, Any]] = []
+    assisted_sentence_count = 0
+    draft_sentence_matches = 0
     skipped_draft_ids: set[str] = set()
     learning_curve: list[dict[str, Any]] = []
 
@@ -432,11 +495,16 @@ def run_experiment(
                 counts["human_span_edits"] += 1
             api.json("POST", f"/api/projects/{project_id}/sentences/{sentence_id}/complete", {"completed": True, "answer": "accept"})
             counts["manual"] += 1
-            predicted.extend(gold)
+            final_predictions.extend(scoring_spans(sentence_id, gold))
         else:
             draft_id = str(draft["id"])
             draft_version = int(draft.get("draft_version", draft.get("version", 1)))
             proposed = draft_spans(draft)
+            assisted_sentence_count += 1
+            draft_predictions.extend(scoring_spans(sentence_id, proposed))
+            assistance_gold.extend(scoring_spans(sentence_id, gold))
+            if span_keys(proposed) == span_keys(gold):
+                draft_sentence_matches += 1
             if skip_every and (counts["confirm"] + counts["correct"] + counts["skip"] + 1) % skip_every == 0 and draft_id not in skipped_draft_ids:
                 api.json("POST", f"/api/projects/{project_id}/sentences/{sentence_id}/assistance/decision", decision_payload("skip", draft_id, draft_version))
                 skipped_draft_ids.add(draft_id)
@@ -445,51 +513,70 @@ def run_experiment(
             if span_keys(proposed) == span_keys(gold):
                 api.json("POST", f"/api/projects/{project_id}/sentences/{sentence_id}/assistance/decision", decision_payload("confirm", draft_id, draft_version))
                 counts["confirm"] += 1
-                predicted.extend(proposed)
+                final_predictions.extend(scoring_spans(sentence_id, proposed))
             else:
                 api.json("POST", f"/api/projects/{project_id}/sentences/{sentence_id}/assistance/decision", decision_payload("correct", draft_id, draft_version, gold))
                 counts["correct"] += 1
-                counts["human_span_edits"] += len(gold)
-                predicted.extend(gold)
-        if span_keys(predicted[-len(gold) :] if gold else []) == span_keys(gold):
-            sentence_matches += 1
+                counts["human_span_edits"] += span_edit_count(proposed, gold)
+                final_predictions.extend(scoring_spans(sentence_id, gold))
         learning_curve.append({"completed_sentences": counts["manual"] + counts["confirm"] + counts["correct"], "confirmed": counts["confirm"], "corrected": counts["correct"], "manual": counts["manual"]})
 
     # A skipped draft must remain available and be completed on a later pass.
-    for _ in range(len(skipped_draft_ids)):
-        state = api.json("GET", f"/api/projects/{project_id}/documents/{document_id}/assistance")
-        ready = [draft for draft in ready_drafts(state) if str(draft.get("id")) in skipped_draft_ids]
-        if not ready:
-            raise ExperimentError("A skipped draft did not reappear in the assistance queue.")
-        for draft in ready:
-            sentence_id = str(draft["sentence_id"])
-            gold = gold_by_sentence.get(sentence_id, [])
-            proposed = draft_spans(draft)
-            action = "confirm" if span_keys(proposed) == span_keys(gold) else "correct"
-            api.json("POST", f"/api/projects/{project_id}/sentences/{sentence_id}/assistance/decision", decision_payload(action, str(draft["id"]), int(draft.get("draft_version", draft.get("version", 1))), gold if action == "correct" else None))
-            counts[action] += 1
-            counts["human_span_edits"] += len(gold) if action == "correct" else 0
-            predicted.extend(proposed if action == "confirm" else gold)
+    complete_skipped_drafts(
+        api,
+        project_id,
+        document_id,
+        skipped_draft_ids,
+        gold_by_sentence,
+        counts,
+        final_predictions,
+        learning_curve,
+    )
 
-    typed = score_spans(predicted, gold_all, typed=True)
-    boundary = score_spans(predicted, gold_all, typed=False)
+    typed = score_spans(draft_predictions, assistance_gold, typed=True)
+    boundary = score_spans(draft_predictions, assistance_gold, typed=False)
+    final_typed = score_spans(final_predictions, gold_all, typed=True)
+    assisted_decisions = counts["confirm"] + counts["correct"]
     final_assistance = unwrap_assistance(
         api.json("GET", f"/api/projects/{project_id}/documents/{document_id}/assistance")
     )
+    queue = final_assistance.get("queue", {}) if isinstance(final_assistance.get("queue"), dict) else {}
+    queue_counts = queue.get("counts", queue) if isinstance(queue, dict) else {}
+    failed_jobs = int(queue_counts.get("failed") or 0) if isinstance(queue_counts, dict) else 0
+    successful_drafts = assisted_decisions
+    validation_total = successful_drafts + failed_jobs
+    token_usage = final_assistance.get("usage", final_assistance.get("token_usage", {}))
+    token_usage = token_usage if isinstance(token_usage, dict) else {}
     result = {
         "schema_version": "annopilot.openner_assistance_experiment.v1",
         "language": language,
         "limit": limit,
+        "source_example_count": len(examples),
+        "reader_sentence_count": len(sentences),
         "seed": seed,
         "project_id": project_id,
         "document_id": document_id,
         "typed_exact": typed,
         "boundary": boundary,
-        "sentence_exact": sentence_matches / len(sentences) if sentences else 0.0,
+        "sentence_exact": draft_sentence_matches / assisted_sentence_count if assisted_sentence_count else 0.0,
+        "final_typed_exact": final_typed,
+        "assisted_sentence_count": assisted_sentence_count,
+        "decision_rates": {
+            "confirm": counts["confirm"] / assisted_decisions if assisted_decisions else 0.0,
+            "correct": counts["correct"] / assisted_decisions if assisted_decisions else 0.0,
+        },
+        "human_span_edits_per_sentence": counts["human_span_edits"] / len(sentences) if sentences else 0.0,
         "decisions": counts,
         "api_calls": api.calls,
         "latency_seconds": api.latency_seconds,
-        "token_usage": final_assistance.get("usage", final_assistance.get("token_usage", {})),
+        "token_usage": token_usage,
+        "validation": {
+            "successful_drafts": successful_drafts,
+            "failed_jobs": failed_jobs,
+            "success_rate": successful_drafts / validation_total if validation_total else 1.0,
+            "provider_attempts": int(token_usage.get("validation_attempts") or token_usage.get("api_calls") or 0),
+            "retry_count": int(token_usage.get("validation_retries") or 0),
+        },
         "alignment_coverage": {"gold_spans": len(gold_all), "mapped_gold_spans": len(gold_all), "coverage": 1.0},
         "overwrite_violations": counts["overwrite_violations"],
         "learning_curve": learning_curve,
@@ -504,15 +591,25 @@ def write_results(result: dict[str, Any], output_dir: Path) -> tuple[Path, Path]
     json_path, markdown_path = output_dir / f"{stem}.json", output_dir / f"{stem}.md"
     json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     typed, boundary, decisions = result["typed_exact"], result["boundary"], result["decisions"]
+    final_typed = result.get("final_typed_exact", typed)
+    rates = result.get("decision_rates", {})
+    validation = result.get("validation", {})
     markdown_path.write_text(
         "# OpenNER Assistance Experiment\n\n"
-        f"- Language: `{result['language']}`\n- Limit: `{result['limit']}`\n- Seed: `{result['seed']}`\n\n"
+        f"- Language: `{result['language']}`\n"
+        f"- Source examples: `{result.get('source_example_count', result['limit'])}`\n"
+        f"- Reader sentences: `{result.get('reader_sentence_count', result['limit'])}`\n"
+        f"- Seed: `{result['seed']}`\n\n"
         "| Metric | Precision | Recall | F1 |\n| --- | ---: | ---: | ---: |\n"
-        f"| Typed exact | {typed['precision']:.4f} | {typed['recall']:.4f} | {typed['f1']:.4f} |\n"
-        f"| Boundary | {boundary['precision']:.4f} | {boundary['recall']:.4f} | {boundary['f1']:.4f} |\n\n"
-        f"Sentence exact: `{result['sentence_exact']:.4f}`  \n"
+        f"| Machine draft typed exact | {typed['precision']:.4f} | {typed['recall']:.4f} | {typed['f1']:.4f} |\n"
+        f"| Machine draft boundary | {boundary['precision']:.4f} | {boundary['recall']:.4f} | {boundary['f1']:.4f} |\n"
+        f"| Final submitted typed exact | {final_typed['precision']:.4f} | {final_typed['recall']:.4f} | {final_typed['f1']:.4f} |\n\n"
+        f"Machine draft sentence exact: `{result['sentence_exact']:.4f}`  \n"
         f"Decisions: confirm `{decisions['confirm']}`, correct `{decisions['correct']}`, skip `{decisions['skip']}`, manual `{decisions['manual']}`  \n"
+        f"Decision rates: confirm `{float(rates.get('confirm', 0.0)):.2%}`, correct `{float(rates.get('correct', 0.0)):.2%}`  \n"
         f"Human span edits: `{decisions['human_span_edits']}`  \n"
+        f"Human span edits / sentence: `{float(result.get('human_span_edits_per_sentence', 0.0)):.4f}`  \n"
+        f"Verifier success: `{float(validation.get('success_rate', 1.0)):.2%}`, retries `{int(validation.get('retry_count', 0))}`  \n"
         f"API calls: `{result['api_calls']}`, latency: `{result['latency_seconds']:.3f}s`  \n"
         f"Alignment coverage: `{result['alignment_coverage']['coverage']:.2%}`, overwrite violations: `{result['overwrite_violations']}`\n",
         encoding="utf-8",

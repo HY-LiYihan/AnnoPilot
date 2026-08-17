@@ -92,6 +92,15 @@ def test_metrics_are_typed_and_boundary_aware() -> None:
     assert boundary["f1"] == pytest.approx(1.0)
 
 
+def test_metrics_keep_identical_offsets_from_different_sentences_distinct() -> None:
+    spans = [
+        {"sentence_id": "s-1", "tag_id": "PER", "start_token_index": 0, "end_token_index": 0},
+        {"sentence_id": "s-2", "tag_id": "PER", "start_token_index": 0, "end_token_index": 0},
+    ]
+
+    assert experiment.score_spans(spans, spans, typed=True)["gold"] == 2
+
+
 def test_seed_selection_and_decision_payload_are_deterministic(tmp_path: Path) -> None:
     root = tmp_path / "openner"
     standardized = root / "standardized"
@@ -160,6 +169,50 @@ def test_wait_for_draft_fails_immediately_with_worker_error() -> None:
             timeout_seconds=90,
             sleep=lambda _seconds: pytest.fail("failed jobs must not be polled again"),
         )
+
+
+def test_complete_skipped_drafts_consumes_multiple_ready_items_once() -> None:
+    class SkippedApi:
+        def __init__(self) -> None:
+            self.reads = 0
+            self.decisions: list[dict] = []
+
+        def json(self, method: str, path: str, payload: dict | None = None) -> dict:
+            if method == "GET":
+                self.reads += 1
+                if self.reads > 1:
+                    raise AssertionError("all ready skipped drafts should be consumed in one pass")
+                return {
+                    "queue": {
+                        "items": [
+                            {"id": "draft-1", "sentence_id": "s-1", "status": "ready", "draft_version": 1, "spans": []},
+                            {"id": "draft-2", "sentence_id": "s-2", "status": "ready", "draft_version": 1, "spans": []},
+                        ]
+                    }
+                }
+            assert method == "POST" and path.endswith("/assistance/decision")
+            self.decisions.append(payload or {})
+            return {"completed": True}
+
+    api = SkippedApi()
+    counts = {"confirm": 0, "correct": 0, "manual": 1, "human_span_edits": 0}
+    predicted: list[dict] = []
+    learning_curve: list[dict] = []
+    experiment.complete_skipped_drafts(
+        api,
+        "default",
+        "doc-1",
+        {"draft-1", "draft-2"},
+        {"s-1": [], "s-2": []},
+        counts,
+        predicted,
+        learning_curve,
+    )
+
+    assert api.reads == 1
+    assert counts == {"confirm": 2, "correct": 0, "manual": 1, "human_span_edits": 0}
+    assert [item["draft_id"] for item in api.decisions] == ["draft-1", "draft-2"]
+    assert [point["completed_sentences"] for point in learning_curve] == [2, 3]
 
 
 def test_run_experiment_waits_for_ready_draft_and_uses_usage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -275,4 +328,4 @@ def test_write_results_uses_markdown_line_breaks_not_literal_escape_suffix(tmp_p
     markdown = markdown_path.read_text(encoding="utf-8")
 
     assert r"\n+" not in markdown
-    assert "Sentence exact: `1.0000`  \nDecisions:" in markdown
+    assert "Machine draft sentence exact: `1.0000`  \nDecisions:" in markdown

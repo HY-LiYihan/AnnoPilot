@@ -11,7 +11,7 @@ from ..hashing import payload_sha256
 
 ASSISTANCE_SEED_PER_TAG = 5
 ASSISTANCE_CONCURRENCY = 5
-ASSISTANCE_LEASE_SECONDS = 90
+ASSISTANCE_LEASE_SECONDS = 300
 ASSISTANCE_ERROR_REASONS = {
     "missed_span",
     "extra_span",
@@ -383,6 +383,9 @@ class AssistanceService:
                 raise self.not_found_error("Assistance job not found.")
             if job["status"] != "running" or not bool(job["enabled"]):
                 raise self.conflict_error("Assistance job is no longer runnable.")
+            expected_attempt_count = result.get("attempt_count")
+            if expected_attempt_count is not None and int(job["attempt_count"]) != int(expected_attempt_count):
+                raise self.conflict_error("Assistance job attempt is stale.")
             if bool(job["completed"]) or self._sentence_has_annotations(conn, job["sentence_id"]):
                 self._cancel_job(conn, job_id, "human_annotation_started")
                 conn.commit()
@@ -524,11 +527,13 @@ class AssistanceService:
             project_id = job["project_id"]
         self.flush_event_outbox(project_id)
 
-    def fail_job(self, job_id: str, message: str) -> None:
+    def fail_job(self, job_id: str, message: str, *, expected_attempt_count: int | None = None) -> None:
         now = self.now()
         with self.connect() as conn:
             job = conn.execute("SELECT project_id, attempt_count, status FROM assistance_jobs WHERE id = ?", (job_id,)).fetchone()
             if job is None or job["status"] != "running":
+                return
+            if expected_attempt_count is not None and int(job["attempt_count"]) != int(expected_attempt_count):
                 return
             next_status = "queued" if int(job["attempt_count"]) < 2 else "failed"
             conn.execute(
@@ -779,6 +784,13 @@ class AssistanceService:
                 "final_spans": self._json_list(row["final_spans_json"]),
                 "allowed_reasons": sorted(ASSISTANCE_ERROR_REASONS),
             }
+
+    def recover_feedback_classifications(self) -> int:
+        with self.connect() as conn:
+            updated = conn.execute(
+                "UPDATE assistance_feedback SET reason_source = 'pending' WHERE reason_source = 'classifying'"
+            )
+            return int(updated.rowcount)
 
     def store_feedback_classification(self, feedback_id: str, reasons: list[str], note: str = "") -> None:
         try:
@@ -1107,15 +1119,22 @@ class AssistanceService:
 
     @staticmethod
     def _usage_totals(conn: sqlite3.Connection, project_id: str, document_id: str) -> dict[str, int]:
-        totals = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "api_calls": 0}
+        totals = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "api_calls": 0,
+            "validation_attempts": 0,
+            "validation_retries": 0,
+        }
         rows = conn.execute(
             "SELECT usage_json FROM assistance_jobs WHERE project_id = ? AND document_id = ? AND usage_json != '{}'",
             (project_id, document_id),
         ).fetchall()
         for row in rows:
             payload = AssistanceService._json_object(row["usage_json"])
-            totals["api_calls"] += 1
-            for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            totals["api_calls"] += int(payload.get("api_calls") or 1)
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens", "validation_attempts", "validation_retries"):
                 totals[key] += int(payload.get(key) or 0)
         return totals
 

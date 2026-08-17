@@ -35,6 +35,7 @@ def _context(job_id: str) -> dict[str, Any]:
         "examples_by_tag": {"PER": []},
         "corrections_by_tag": {"PER": []},
         "negative_examples": [],
+        "attempt_count": 1,
     }
 
 
@@ -45,6 +46,8 @@ class _WorkerService:
         self.claim_limits: list[int] = []
         self.stored: list[tuple[str, dict[str, Any]]] = []
         self.failed: list[tuple[str, str]] = []
+        self.recover_feedback_calls = 0
+        self.feedback: dict[str, Any] | None = None
 
     def ensure_all_queues(self) -> int:
         self.ensure_calls += 1
@@ -60,10 +63,22 @@ class _WorkerService:
     def store_generation_result(self, job_id: str, result: dict[str, Any]) -> None:
         self.stored.append((job_id, result))
 
-    def fail_job(self, job_id: str, message: str) -> None:
+    def fail_job(self, job_id: str, message: str, *, expected_attempt_count: int | None = None) -> None:
+        assert expected_attempt_count in {None, 1}
         self.failed.append((job_id, message))
 
-    def claim_feedback_for_classification(self) -> None:
+    def claim_feedback_for_classification(self) -> dict[str, Any] | None:
+        feedback, self.feedback = self.feedback, None
+        return feedback
+
+    def recover_feedback_classifications(self) -> int:
+        self.recover_feedback_calls += 1
+        return 0
+
+    def store_feedback_classification(self, _feedback_id: str, _reasons: list[str], _note: str = "") -> None:
+        return None
+
+    def release_feedback_classification(self, _feedback_id: str) -> None:
         return None
 
 
@@ -106,13 +121,46 @@ class _EchoGenerator:
         return {"text": source_text, "spans": []}
 
 
+class _BlockingFeedbackGenerator(_EchoGenerator):
+    def __init__(self, started: threading.Event, release: threading.Event) -> None:
+        self.started = started
+        self.release = release
+
+    def classify_error(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        self.started.set()
+        self.release.wait(timeout=2)
+        return {"reasons": ["wrong_label"], "note": "classified"}
+
+
+class _OneSlowGenerator(_EchoGenerator):
+    def __init__(self, started: threading.Event, release: threading.Event) -> None:
+        self.started = started
+        self.release = release
+
+    def generate(self, source_text: str, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        if "job-slow" in threading.current_thread().name:
+            self.started.set()
+            self.release.wait(timeout=2)
+        return {"text": source_text, "spans": []}
+
+
+class _QueueWorkerService(_WorkerService):
+    def claim_jobs(self, limit: int) -> list[str]:
+        self.claim_limits.append(limit)
+        claimed = self.job_ids[:limit]
+        del self.job_ids[:limit]
+        return claimed
+
+
 def test_worker_processes_at_most_five_jobs_concurrently() -> None:
     service = _WorkerService([f"job-{index}" for index in range(9)])
     state: dict[str, Any] = {"lock": threading.Lock(), "active": 0, "peak": 0}
 
     async def run() -> int:
         worker = AssistanceWorker(service, lambda: _ConcurrentGenerator(state))  # type: ignore[arg-type]
-        return await worker.run_once()
+        processed = await worker.run_once()
+        await worker.wait_for_idle()
+        return processed
 
     processed = asyncio.run(run())
 
@@ -130,7 +178,9 @@ def test_worker_retries_verifier_failure_once_then_stores_valid_draft() -> None:
 
     async def run() -> int:
         worker = AssistanceWorker(service, lambda: generator)  # type: ignore[arg-type]
-        return await worker.run_once()
+        processed = await worker.run_once()
+        await worker.wait_for_idle()
+        return processed
 
     processed = asyncio.run(run())
 
@@ -151,7 +201,9 @@ def test_worker_recovers_expired_lease_after_restart(tmp_path: Path) -> None:
     # A newly constructed worker represents the process that starts after a restart.
     async def run() -> int:
         worker = AssistanceWorker(storage.assistance_service, _EchoGenerator)
-        return await worker.run_once()
+        processed = await worker.run_once()
+        await worker.wait_for_idle()
+        return processed
 
     processed = asyncio.run(run())
 
@@ -180,6 +232,71 @@ def test_worker_leaves_jobs_queued_when_llm_is_not_configured() -> None:
     assert service.claim_limits == []
     assert service.stored == []
     assert service.failed == []
+
+
+def test_feedback_classification_does_not_block_draft_jobs() -> None:
+    service = _WorkerService([])
+    service.feedback = {
+        "feedback_id": "feedback-1",
+        "original_spans": [],
+        "final_spans": [],
+        "allowed_reasons": ["wrong_label"],
+    }
+    started = threading.Event()
+    release = threading.Event()
+    generator = _BlockingFeedbackGenerator(started, release)
+
+    async def run() -> int:
+        worker = AssistanceWorker(service, lambda: generator)  # type: ignore[arg-type]
+        first = await worker.run_once()
+        await asyncio.to_thread(started.wait, 1)
+        service.job_ids = ["job-1"]
+        second = await asyncio.wait_for(worker.run_once(), timeout=1)
+        await worker.wait_for_idle()
+        release.set()
+        await asyncio.sleep(0.05)
+        await worker.stop()
+        assert first == 0
+        return second
+
+    assert asyncio.run(run()) == 1
+    assert [job_id for job_id, _result in service.stored] == ["job-1"]
+
+
+def test_slow_job_does_not_freeze_rolling_slot_refill() -> None:
+    service = _QueueWorkerService(["job-slow", "job-1", "job-2", "job-3", "job-4", "job-5", "job-6"])
+    started = threading.Event()
+    release = threading.Event()
+    generator = _OneSlowGenerator(started, release)
+
+    async def wait_until(predicate, timeout: float = 1.0) -> None:
+        deadline = asyncio.get_running_loop().time() + timeout
+        while not predicate():
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError("Timed out waiting for rolling worker progress.")
+            await asyncio.sleep(0.01)
+
+    async def run() -> None:
+        worker = AssistanceWorker(service, lambda: generator)  # type: ignore[arg-type]
+        assert await worker.run_once() == 5
+        await asyncio.to_thread(started.wait, 1)
+        await wait_until(lambda: len(service.stored) == 4)
+        assert await worker.run_once() == 2
+        await wait_until(lambda: len(service.stored) == 6)
+        assert "job-slow" not in {job_id for job_id, _result in service.stored}
+        release.set()
+        await worker.wait_for_idle()
+
+    asyncio.run(run())
+    assert {job_id for job_id, _result in service.stored} == {
+        "job-slow",
+        "job-1",
+        "job-2",
+        "job-3",
+        "job-4",
+        "job-5",
+        "job-6",
+    }
 
 
 def _storage_with_running_assistance_job(tmp_path: Path) -> tuple[AnnotationStorage, str]:

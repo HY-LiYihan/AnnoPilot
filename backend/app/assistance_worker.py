@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -30,20 +31,22 @@ class AssistanceWorker:
         self.poll_seconds = max(0.1, float(poll_seconds))
         self._stop = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
+        self._feedback_thread: threading.Thread | None = None
+        self._job_threads: set[threading.Thread] = set()
         self._semaphore: asyncio.Semaphore | None = None
 
     def start(self) -> None:
         if self._task is None or self._task.done():
+            self.service.recover_feedback_classifications()
             self._stop.clear()
             self._task = asyncio.create_task(self._run(), name="annopilot-assistance-worker")
 
     async def stop(self) -> None:
         self._stop.set()
-        if self._task is None:
-            return
-        self._task.cancel()
-        await asyncio.gather(self._task, return_exceptions=True)
-        self._task = None
+        if self._task is not None:
+            self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
+            self._task = None
         self._semaphore = None
 
     async def run_once(self) -> int:
@@ -52,20 +55,63 @@ class AssistanceWorker:
             self.generator_factory()
         except LlmError:
             return 0
-        job_ids = self.service.claim_jobs(ASSISTANCE_CONCURRENCY)
-        if job_ids:
-            if self._semaphore is None:
-                self._semaphore = asyncio.Semaphore(ASSISTANCE_CONCURRENCY)
-            await asyncio.gather(*(self._process_job_limited(job_id) for job_id in job_ids))
-        feedback = self.service.claim_feedback_for_classification()
-        if feedback is not None:
-            await asyncio.to_thread(self._classify_feedback, feedback)
+        self._job_threads = {thread for thread in self._job_threads if thread.is_alive()}
+        available_slots = max(0, ASSISTANCE_CONCURRENCY - len(self._job_threads))
+        job_ids = self.service.claim_jobs(available_slots) if available_slots else []
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(ASSISTANCE_CONCURRENCY)
+        loop = asyncio.get_running_loop()
+        for job_id in job_ids:
+            await self._semaphore.acquire()
+            thread = threading.Thread(
+                target=self._process_job_in_thread,
+                args=(job_id, loop),
+                name=f"annopilot-assistance-job-{job_id}",
+                daemon=True,
+            )
+            self._job_threads.add(thread)
+            try:
+                thread.start()
+            except Exception:
+                self._job_threads.discard(thread)
+                self._semaphore.release()
+                raise
+        self._schedule_feedback_classification()
         return len(job_ids)
 
-    async def _process_job_limited(self, job_id: str) -> None:
-        assert self._semaphore is not None
-        async with self._semaphore:
-            await asyncio.to_thread(self._process_job, job_id)
+    def _schedule_feedback_classification(self) -> None:
+        if self._feedback_thread is not None and self._feedback_thread.is_alive():
+            return
+        self._feedback_thread = None
+        feedback = self.service.claim_feedback_for_classification()
+        if feedback is not None:
+            self._feedback_thread = threading.Thread(
+                target=self._classify_feedback,
+                args=(feedback,),
+                name="annopilot-assistance-feedback",
+                daemon=True,
+            )
+            self._feedback_thread.start()
+
+    def _process_job_in_thread(self, job_id: str, loop: asyncio.AbstractEventLoop) -> None:
+        try:
+            self._process_job(job_id)
+        finally:
+            try:
+                loop.call_soon_threadsafe(self._release_job_slot)
+            except RuntimeError:
+                pass
+
+    def _release_job_slot(self) -> None:
+        if self._semaphore is not None:
+            self._semaphore.release()
+
+    async def wait_for_idle(self, timeout: float = 5.0) -> None:
+        deadline = asyncio.get_running_loop().time() + timeout
+        while any(thread.is_alive() for thread in self._job_threads):
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError("Assistance worker did not become idle.")
+            await asyncio.sleep(0.01)
 
     async def _run(self) -> None:
         try:
@@ -79,8 +125,10 @@ class AssistanceWorker:
             return
 
     def _process_job(self, job_id: str) -> None:
+        attempt_count: int | None = None
         try:
             context = self.service.get_generation_context(job_id)
+            attempt_count = int(context["attempt_count"])
             selected_examples = select_assistance_examples(
                 context["source_text"],
                 context["examples_by_tag"],
@@ -91,6 +139,8 @@ class AssistanceWorker:
             validation_issues: list[dict[str, Any]] = []
             candidate: dict[str, Any] = {}
             raw_response = ""
+            provider_attempts = 0
+            usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             for _attempt in range(2):
                 provider_candidate = generator.generate(
                     context["source_text"],
@@ -99,6 +149,9 @@ class AssistanceWorker:
                     context["negative_examples"],
                     validation_issues=validation_issues or None,
                 )
+                provider_attempts += 1
+                for key in usage:
+                    usage[key] += int(dict(getattr(generator, "last_usage", {}) or {}).get(key) or 0)
                 raw_response = json.dumps(provider_candidate, ensure_ascii=False)
                 candidate, validation_issues = parse_and_verify_assistance_candidate(
                     raw_response,
@@ -125,11 +178,17 @@ class AssistanceWorker:
                     "model": str(getattr(getattr(generator, "settings", None), "model", getattr(generator, "model", "unknown"))),
                     "prompt_sha256": payload_sha256({"prompt": prompt}),
                     "retrieved_examples": selected_examples,
-                    "usage": dict(getattr(generator, "last_usage", {}) or {}),
+                    "usage": {
+                        **usage,
+                        "api_calls": provider_attempts,
+                        "validation_attempts": provider_attempts,
+                        "validation_retries": max(0, provider_attempts - 1),
+                    },
+                    "attempt_count": attempt_count,
                 },
             )
         except Exception as exc:
-            self.service.fail_job(job_id, self._safe_error(exc))
+            self.service.fail_job(job_id, self._safe_error(exc), expected_attempt_count=attempt_count)
 
     def _classify_feedback(self, feedback: dict[str, Any]) -> None:
         try:

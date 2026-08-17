@@ -610,9 +610,9 @@ def test_llm_settings_runtime_model_selection_updates_health(tmp_path: Path, mon
         update_response = client.post("/api/settings/llm", json={"model_option_id": "gpt5.6-high"})
         assert update_response.status_code == 200
         updated_payload = update_response.json()
-        assert updated_payload["model"] == "gpt5.6-high"
+        assert updated_payload["model"] == "gpt-5.6-terra"
         assert updated_payload["selected_model_option_id"] == "gpt5.6-high"
-        assert client.get("/api/health").json()["llm_model"] == "gpt5.6-high"
+        assert client.get("/api/health").json()["llm_model"] == "gpt-5.6-terra"
         with storage.connect() as conn:
             stored = conn.execute("SELECT value FROM runtime_settings WHERE key = 'llm_model_option_id'").fetchone()
         assert stored["value"] == "gpt5.6-high"

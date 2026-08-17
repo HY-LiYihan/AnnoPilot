@@ -30,17 +30,21 @@ class LlmModelOption:
 
 
 LLM_MODEL_OPTIONS = (
-    LlmModelOption(id="gpt5.5-low", family="gpt5.5", tier="low", model="gpt5.5-low"),
-    LlmModelOption(id="gpt5.5-medium", family="gpt5.5", tier="medium", model="gpt5.5"),
-    LlmModelOption(id="gpt5.5-high", family="gpt5.5", tier="high", model="gpt5.5-high"),
-    LlmModelOption(id="gpt5.6-low", family="gpt5.6", tier="low", model="gpt5.6-low"),
-    LlmModelOption(id="gpt5.6-medium", family="gpt5.6", tier="medium", model="gpt5.6"),
-    LlmModelOption(id="gpt5.6-high", family="gpt5.6", tier="high", model="gpt5.6-high"),
+    LlmModelOption(id="gpt5.5-low", family="gpt5.5", tier="low", model="gpt-5.5"),
+    LlmModelOption(id="gpt5.5-medium", family="gpt5.5", tier="medium", model="gpt-5.5"),
+    LlmModelOption(id="gpt5.5-high", family="gpt5.5", tier="high", model="gpt-5.5"),
+    LlmModelOption(id="gpt5.6-low", family="gpt5.6", tier="low", model="gpt-5.6-luna"),
+    LlmModelOption(id="gpt5.6-medium", family="gpt5.6", tier="medium", model="gpt-5.6-sol"),
+    LlmModelOption(id="gpt5.6-high", family="gpt5.6", tier="high", model="gpt-5.6-terra"),
 )
 
 LLM_MODEL_OPTION_ALIASES = {
     "gpt5.5": "gpt5.5-medium",
+    "gpt-5.5": "gpt5.5-medium",
     "gpt5.6": "gpt5.6-medium",
+    "gpt-5.6-luna": "gpt5.6-low",
+    "gpt-5.6-sol": "gpt5.6-medium",
+    "gpt-5.6-terra": "gpt5.6-high",
 }
 
 LLM_MODEL_OPTION_BY_ID = {option.id: option for option in LLM_MODEL_OPTIONS}
@@ -68,10 +72,13 @@ def get_llm_model_option(option_id: str) -> LlmModelOption | None:
 
 
 def selected_llm_model_option_id(model: str) -> str | None:
+    alias = LLM_MODEL_OPTION_ALIASES.get(model)
+    if alias is not None:
+        return alias
     for option in LLM_MODEL_OPTIONS:
         if option.model == model:
             return option.id
-    return LLM_MODEL_OPTION_ALIASES.get(model)
+    return None
 
 
 def get_llm_settings(model_override: str | None = None) -> LlmSettings:
@@ -79,6 +86,6 @@ def get_llm_settings(model_override: str | None = None) -> LlmSettings:
     return LlmSettings(
         base_url=os.getenv("LLM_BASE_URL", "").rstrip("/"),
         api_key=os.getenv("LLM_API_KEY", ""),
-        model=model_override or os.getenv("LLM_MODEL", "gpt5.5"),
+        model=model_override or os.getenv("LLM_MODEL", "gpt-5.5"),
         timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "20")),
     )

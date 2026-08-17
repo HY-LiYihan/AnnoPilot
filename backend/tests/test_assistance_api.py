@@ -193,6 +193,37 @@ def test_running_job_cannot_publish_over_human_annotation(tmp_path: Path, monkey
         client.__exit__(None, None, None)
 
 
+def test_late_generation_result_cannot_overwrite_newer_lease_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, storage, _document_id, _sentences = _seed_assistance(tmp_path, monkeypatch)
+    try:
+        job_id = storage.assistance_service.claim_jobs(1)[0]
+        first_context = storage.assistance_service.get_generation_context(job_id)
+        with storage.connect() as conn:
+            conn.execute(
+                "UPDATE assistance_jobs SET lease_until = ? WHERE id = ?",
+                ("2000-01-01T00:00:00+00:00", job_id),
+            )
+        assert storage.assistance_service.claim_jobs(1) == [job_id]
+
+        with pytest.raises(ConflictError, match="attempt is stale"):
+            storage.assistance_service.store_generation_result(
+                job_id,
+                {
+                    "candidate": {"text": first_context["source_text"], "spans": []},
+                    "attempt_count": first_context["attempt_count"],
+                },
+            )
+        with storage.connect() as conn:
+            row = conn.execute(
+                "SELECT status, attempt_count FROM assistance_jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+        assert tuple(row) == ("running", 2)
+    finally:
+        client.__exit__(None, None, None)
+
+
 def test_confirm_rolls_back_every_mutation_when_event_enqueue_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client, storage, _document_id, _sentences = _seed_assistance(tmp_path, monkeypatch)
     try:
