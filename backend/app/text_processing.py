@@ -11,6 +11,7 @@ ENGLISH_SENTENCE_ABBREVIATIONS = {
     "dept",
     "dr",
     "e.g",
+    "ft",
     "gov",
     "i.e",
     "inc",
@@ -33,6 +34,7 @@ ENGLISH_SENTENCE_ABBREVIATIONS = {
 ENGLISH_NON_TERMINAL_ABBREVIATIONS = {
     "dr",
     "e.g",
+    "ft",
     "gov",
     "i.e",
     "jr",
@@ -277,7 +279,7 @@ def _is_cjk(char: str) -> bool:
 
 
 def _is_word_char(char: str) -> bool:
-    return char.isascii() and (char.isalnum() or char in {"_", "'", "-"})
+    return char.isascii() and (char.isalnum() or char in {"_", "-"})
 
 
 def _starts_numeric_token(text: str, index: int) -> bool:

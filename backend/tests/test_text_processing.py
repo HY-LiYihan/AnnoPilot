@@ -59,6 +59,20 @@ def test_tokenization_keeps_signed_and_fullwidth_numeric_tokens_together() -> No
     ]
 
 
+def test_tokenization_keeps_possessive_suffix_outside_entity_word() -> None:
+    text = "Ken's hotel is near Limerick's campus."
+    sentence = SentenceSpan(index=0, text=text, start=10, end=10 + len(text))
+
+    tokens = tokenize_sentence(sentence)
+
+    assert [(token.text, token.start, token.end) for token in tokens[:4]] == [
+        ("Ken", 10, 13),
+        ("'", 13, 14),
+        ("s", 14, 15),
+        ("hotel", 16, 21),
+    ]
+
+
 def test_empty_text_has_no_sentences() -> None:
     assert split_sentences("\n\n   ") == []
 
@@ -97,6 +111,15 @@ def test_sentence_splitting_keeps_common_english_abbreviations_inside_sentence()
     assert [sentence.text for sentence in sentences] == [
         "U.S. officials said counting may continue.",
         "Dr. Chen said the audit was clear.",
+    ]
+
+
+def test_sentence_splitting_keeps_fort_abbreviation_inside_sentence() -> None:
+    sentences = split_sentences("The Dallas/Ft. Worth metro is nearby. It is busy.")
+
+    assert [sentence.text for sentence in sentences] == [
+        "The Dallas/Ft. Worth metro is nearby.",
+        "It is busy.",
     ]
 
 
