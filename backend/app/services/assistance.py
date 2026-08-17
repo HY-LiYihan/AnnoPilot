@@ -142,6 +142,7 @@ class AssistanceService:
         inserted = 0
         emitted = False
         with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             self._require_document(conn, project_id, document_id)
             settings = self._ensure_settings(conn, project_id, document_id)
             revision = self._sync_knowledge_revision(conn, project_id, document_id, settings)

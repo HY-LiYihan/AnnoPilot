@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -124,6 +125,48 @@ def test_per_tag_seed_activates_five_job_window_and_confirm_is_atomic(tmp_path: 
         audit = client.get("/api/projects/default/audit").json()
         assert audit["non_replayable_event_count"] == 0
         assert audit["replay_issue_counts"] == {}
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_concurrent_queue_refill_creates_one_job_per_sentence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, storage, document_id, _sentences = _seed_assistance(tmp_path, monkeypatch)
+    try:
+        with storage.connect() as conn:
+            conn.execute("DELETE FROM assistance_jobs WHERE document_id = ?", (document_id,))
+            conn.execute("DELETE FROM annotation_runs WHERE document_id = ? AND recipe = 'rag_llm_assistance'", (document_id,))
+
+        barrier = threading.Barrier(8)
+        errors: list[Exception] = []
+
+        def refill() -> None:
+            try:
+                barrier.wait()
+                storage.assistance_service.ensure_queue("default", document_id)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=refill) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+
+        assert errors == []
+        assert all(not thread.is_alive() for thread in threads)
+        with storage.connect() as conn:
+            jobs = conn.execute(
+                "SELECT sentence_id FROM assistance_jobs WHERE document_id = ?", (document_id,)
+            ).fetchall()
+            runs = conn.execute(
+                "SELECT id FROM annotation_runs WHERE document_id = ? AND recipe = 'rag_llm_assistance'",
+                (document_id,),
+            ).fetchall()
+        assert len(jobs) == 5
+        assert len({row["sentence_id"] for row in jobs}) == 5
+        assert len(runs) == 5
     finally:
         client.__exit__(None, None, None)
 
