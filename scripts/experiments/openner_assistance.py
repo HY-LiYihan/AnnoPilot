@@ -25,7 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 OPENNER_ROOT = REPO_ROOT / "tmp" / "openner"
 LABELS = ("PER", "ORG", "LOC")
 PAGE_SIZE = 200
-DEFAULT_DRAFT_WAIT_SECONDS = 300.0
+DEFAULT_DRAFT_WAIT_SECONDS = 900.0
 DEFAULT_DRAFT_POLL_INTERVAL = 0.5
 
 
@@ -626,11 +626,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project-id", default="openner-experiment")
     parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "tmp" / "openner" / "experiments")
     parser.add_argument("--skip-every", type=int, default=0)
+    parser.add_argument("--draft-wait-seconds", type=float, default=DEFAULT_DRAFT_WAIT_SECONDS)
     args = parser.parse_args(argv)
     if args.skip_every < 0:
         parser.error("--skip-every must be zero or positive")
+    if args.draft_wait_seconds <= 0:
+        parser.error("--draft-wait-seconds must be positive")
     try:
-        result = run_experiment(args.api_base, args.language, args.limit, args.seed, args.project_id, args.output_dir, args.skip_every)
+        result = run_experiment(
+            args.api_base,
+            args.language,
+            args.limit,
+            args.seed,
+            args.project_id,
+            args.output_dir,
+            args.skip_every,
+            draft_wait_seconds=args.draft_wait_seconds,
+        )
     except ExperimentError as exc:
         print(f"OpenNER experiment failed: {exc}", file=sys.stderr)
         return 2

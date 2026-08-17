@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from backend.app.services.assistance import ASSISTANCE_LEASE_SECONDS
+
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "experiments" / "openner_assistance.py"
 SPEC = importlib.util.spec_from_file_location("openner_assistance", SCRIPT)
@@ -13,6 +15,10 @@ assert SPEC is not None and SPEC.loader is not None
 experiment = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = experiment
 SPEC.loader.exec_module(experiment)
+
+
+def test_experiment_wait_window_exceeds_worker_lease() -> None:
+    assert experiment.DEFAULT_DRAFT_WAIT_SECONDS > ASSISTANCE_LEASE_SECONDS
 
 
 def test_parse_bio_skips_docstart_and_builds_sentences(tmp_path: Path) -> None:
