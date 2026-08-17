@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import queue
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -16,6 +17,9 @@ from .llm import LlmError
 from .services.assistance import ASSISTANCE_CONCURRENCY, AssistanceService
 
 
+ASSISTANCE_PROVIDER_DEADLINE_SECONDS = 300.0
+
+
 class AssistanceWorker:
     """Single-process durable worker; SQLite remains the source of queue truth."""
 
@@ -25,10 +29,12 @@ class AssistanceWorker:
         generator_factory: Callable[[], Any],
         *,
         poll_seconds: float = 0.5,
+        provider_deadline_seconds: float = ASSISTANCE_PROVIDER_DEADLINE_SECONDS,
     ) -> None:
         self.service = service
         self.generator_factory = generator_factory
         self.poll_seconds = max(0.1, float(poll_seconds))
+        self.provider_deadline_seconds = max(0.01, float(provider_deadline_seconds))
         self._stop = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._feedback_thread: threading.Thread | None = None
@@ -142,12 +148,14 @@ class AssistanceWorker:
             provider_attempts = 0
             usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             for _attempt in range(2):
-                provider_candidate = generator.generate(
-                    context["source_text"],
-                    context["tags"],
-                    selected_examples,
-                    context["negative_examples"],
-                    validation_issues=validation_issues or None,
+                provider_candidate = self._run_provider_with_deadline(
+                    lambda: generator.generate(
+                        context["source_text"],
+                        context["tags"],
+                        selected_examples,
+                        context["negative_examples"],
+                        validation_issues=validation_issues or None,
+                    )
                 )
                 provider_attempts += 1
                 for key in usage:
@@ -189,6 +197,31 @@ class AssistanceWorker:
             )
         except Exception as exc:
             self.service.fail_job(job_id, self._safe_error(exc), expected_attempt_count=attempt_count)
+
+    def _run_provider_with_deadline(self, operation: Callable[[], Any]) -> Any:
+        result: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+
+        def invoke() -> None:
+            try:
+                result.put((True, operation()))
+            except Exception as exc:
+                result.put((False, exc))
+
+        thread = threading.Thread(
+            target=invoke,
+            name=f"{threading.current_thread().name}-provider",
+            daemon=True,
+        )
+        thread.start()
+        try:
+            succeeded, payload = result.get(timeout=self.provider_deadline_seconds)
+        except queue.Empty as exc:
+            raise TimeoutError(
+                f"Assistance provider exceeded the {self.provider_deadline_seconds:.1f}s deadline."
+            ) from exc
+        if not succeeded:
+            raise payload
+        return payload
 
     def _classify_feedback(self, feedback: dict[str, Any]) -> None:
         try:

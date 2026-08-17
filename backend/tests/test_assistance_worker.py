@@ -144,6 +144,17 @@ class _OneSlowGenerator(_EchoGenerator):
         return {"text": source_text, "spans": []}
 
 
+class _BlockingGenerator(_EchoGenerator):
+    def __init__(self, started: threading.Event, release: threading.Event) -> None:
+        self.started = started
+        self.release = release
+
+    def generate(self, source_text: str, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        self.started.set()
+        self.release.wait(timeout=2)
+        return {"text": source_text, "spans": []}
+
+
 class _QueueWorkerService(_WorkerService):
     def claim_jobs(self, limit: int) -> list[str]:
         self.claim_limits.append(limit)
@@ -297,6 +308,28 @@ def test_slow_job_does_not_freeze_rolling_slot_refill() -> None:
         "job-5",
         "job-6",
     }
+
+
+def test_provider_deadline_releases_worker_slot_and_requeues_job() -> None:
+    service = _WorkerService(["job-1"])
+    started = threading.Event()
+    release = threading.Event()
+    generator = _BlockingGenerator(started, release)
+
+    async def run() -> None:
+        worker = AssistanceWorker(
+            service,
+            lambda: generator,
+            provider_deadline_seconds=0.05,
+        )  # type: ignore[arg-type]
+        assert await worker.run_once() == 1
+        await asyncio.to_thread(started.wait, 1)
+        await worker.wait_for_idle(timeout=1)
+
+    asyncio.run(run())
+    release.set()
+    assert service.stored == []
+    assert service.failed and "exceeded the 0.1s deadline" in service.failed[0][1]
 
 
 def _storage_with_running_assistance_job(tmp_path: Path) -> tuple[AnnotationStorage, str]:
