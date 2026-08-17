@@ -33,6 +33,10 @@ class ExperimentError(RuntimeError):
     """A data or API contract mismatch that invalidates an experiment."""
 
 
+class AssistanceDraftFailed(ExperimentError):
+    """A terminal assistance job failure that permits a manual fallback."""
+
+
 @dataclass(frozen=True)
 class BioSentence:
     tokens: tuple[str, ...]
@@ -392,7 +396,7 @@ def wait_for_assistance_draft(
         failed = failed_assistance_job_for_sentence(state, sentence_id)
         if failed is not None:
             message = str(failed.get("error_message") or "unknown worker failure")
-            raise ExperimentError(f"Assistance job failed for sentence {sentence_id}: {message}")
+            raise AssistanceDraftFailed(f"Assistance job failed for sentence {sentence_id}: {message}")
         assistance = unwrap_assistance(state)
         if not assistance.get("enabled", True) or not assistance.get("active_tags", []):
             return None
@@ -483,7 +487,15 @@ def run_experiment(
     sentences = fetch_all_sentences(api, project_id, document_id)
     gold_by_sentence = map_gold_to_api_sentences(examples, sentences)
 
-    counts = {"confirm": 0, "correct": 0, "skip": 0, "manual": 0, "human_span_edits": 0, "overwrite_violations": 0}
+    counts = {
+        "confirm": 0,
+        "correct": 0,
+        "skip": 0,
+        "manual": 0,
+        "assistance_failed": 0,
+        "human_span_edits": 0,
+        "overwrite_violations": 0,
+    }
     final_predictions: list[dict[str, Any]] = []
     gold_all = [
         scored
@@ -501,14 +513,18 @@ def run_experiment(
     for sentence in sentences:
         sentence_id = str(sentence["id"])
         gold = gold_by_sentence.get(sentence_id, [])
-        draft = wait_for_assistance_draft(
-            api,
-            project_id,
-            document_id,
-            sentence_id,
-            timeout_seconds=draft_wait_seconds,
-            poll_interval_seconds=draft_poll_interval,
-        )
+        try:
+            draft = wait_for_assistance_draft(
+                api,
+                project_id,
+                document_id,
+                sentence_id,
+                timeout_seconds=draft_wait_seconds,
+                poll_interval_seconds=draft_poll_interval,
+            )
+        except AssistanceDraftFailed:
+            counts["assistance_failed"] += 1
+            draft = None
         if draft is None:
             for span in gold:
                 api.json("POST", f"/api/projects/{project_id}/sentences/{sentence_id}/annotations", span)
@@ -574,8 +590,13 @@ def run_experiment(
     queue = final_assistance.get("queue", {}) if isinstance(final_assistance.get("queue"), dict) else {}
     queue_counts = queue.get("counts", queue) if isinstance(queue, dict) else {}
     failed_jobs = int(queue_counts.get("failed") or 0) if isinstance(queue_counts, dict) else 0
+    queue_items = queue.get("items", []) if isinstance(queue, dict) else []
+    failed_items = [item for item in queue_items if isinstance(item, dict) and item.get("status") == "failed"]
+    verifier_failures = sum("failed verification" in str(item.get("error_message") or "").lower() for item in failed_items)
+    provider_failures = max(0, failed_jobs - verifier_failures)
     successful_drafts = assisted_decisions
-    validation_total = successful_drafts + failed_jobs
+    validation_total = successful_drafts + verifier_failures
+    job_total = successful_drafts + failed_jobs
     token_usage = final_assistance.get("usage", final_assistance.get("token_usage", {}))
     token_usage = token_usage if isinstance(token_usage, dict) else {}
     result = {
@@ -606,6 +627,9 @@ def run_experiment(
         "validation": {
             "successful_drafts": successful_drafts,
             "failed_jobs": failed_jobs,
+            "provider_failures": provider_failures,
+            "verifier_failures": verifier_failures,
+            "job_success_rate": successful_drafts / job_total if job_total else 1.0,
             "success_rate": successful_drafts / validation_total if validation_total else 1.0,
             "provider_attempts": int(token_usage.get("validation_attempts") or token_usage.get("api_calls") or 0),
             "retry_count": int(token_usage.get("validation_retries") or 0),
@@ -649,7 +673,8 @@ def write_results(result: dict[str, Any], output_dir: Path) -> tuple[Path, Path]
         f"Decision rates: confirm `{float(rates.get('confirm', 0.0)):.2%}`, correct `{float(rates.get('correct', 0.0)):.2%}`  \n"
         f"Human span edits: `{decisions['human_span_edits']}`  \n"
         f"Human span edits / sentence: `{float(result.get('human_span_edits_per_sentence', 0.0)):.4f}`  \n"
-        f"Verifier success: `{float(validation.get('success_rate', 1.0)):.2%}`, retries `{int(validation.get('retry_count', 0))}`  \n"
+        f"Job success: `{float(validation.get('job_success_rate', 1.0)):.2%}`, provider failures `{int(validation.get('provider_failures', 0))}`  \n"
+        f"Verifier success: `{float(validation.get('success_rate', 1.0)):.2%}`, failures `{int(validation.get('verifier_failures', 0))}`, retries `{int(validation.get('retry_count', 0))}`  \n"
         f"API calls: `{result['api_calls']}`, latency: `{result['latency_seconds']:.3f}s`  \n"
         f"Alignment coverage: `{result['alignment_coverage']['coverage']:.2%}`, overwrite violations: `{result['overwrite_violations']}`\n",
         encoding="utf-8",

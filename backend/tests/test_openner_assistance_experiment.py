@@ -178,7 +178,7 @@ def test_wait_for_draft_fails_immediately_with_worker_error() -> None:
                 },
             }
 
-    with pytest.raises(experiment.ExperimentError, match="model_not_supported"):
+    with pytest.raises(experiment.AssistanceDraftFailed, match="model_not_supported"):
         experiment.wait_for_assistance_draft(
             FailedJobApi(),
             "default",
@@ -320,11 +320,77 @@ def test_run_experiment_waits_for_ready_draft_and_uses_usage(tmp_path: Path, mon
         "correct": 0,
         "skip": 0,
         "manual": 0,
+        "assistance_failed": 0,
         "human_span_edits": 0,
         "overwrite_violations": 0,
     }
     assert result["token_usage"]["total_tokens"] == 14
     assert not any("/annotations" in path or path.endswith("/complete") for _method, path, _payload in api.paths)
+
+
+def test_run_experiment_falls_back_to_manual_after_terminal_job_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "openner"
+    english = root / "standardized" / "UNER_English_EWT" / "eng"
+    english.mkdir(parents=True)
+    (root / "raw").mkdir()
+    (english / "train.txt").write_text("Alice B-PER\n", encoding="utf-8")
+    (root / "raw" / "openner_english_1000.txt").write_text("Alice\n", encoding="utf-8")
+
+    class FailedDraftApi:
+        instance: "FailedDraftApi"
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.calls = 0
+            self.latency_seconds = 0.0
+            self.paths: list[str] = []
+            FailedDraftApi.instance = self
+
+        def json(self, method: str, path: str, payload: dict | None = None) -> dict:
+            self.calls += 1
+            self.paths.append(path)
+            if path.endswith("/tags/schema/import") or path.endswith("/annotations") or path.endswith("/complete"):
+                return {}
+            if "/documents/doc-1/sentences?" in path:
+                return {
+                    "sentences": [{
+                        "id": "s-1",
+                        "start_char": 0,
+                        "end_char": 5,
+                        "tokens": [{"token_index": 0, "start_char": 0, "end_char": 5, "text": "Alice"}],
+                    }],
+                    "has_more": False,
+                }
+            if path.endswith("/assistance"):
+                return {
+                    "queue": {
+                        "counts": {"failed": 1},
+                        "items": [{"status": "failed", "error_message": "The read operation timed out"}],
+                    },
+                    "usage": {},
+                }
+            raise AssertionError(f"Unexpected API call: {method} {path} {payload}")
+
+        def multipart_txt(self, *_args, **_kwargs) -> dict:
+            self.calls += 1
+            return {"document_id": "doc-1"}
+
+    monkeypatch.setattr(experiment, "HttpApi", FailedDraftApi)
+    monkeypatch.setattr(
+        experiment,
+        "wait_for_assistance_draft",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(experiment.AssistanceDraftFailed("provider timeout")),
+    )
+
+    result = experiment.run_experiment("http://example.test", "en", 1, 9, "experiment", tmp_path / "results", root=root)
+
+    assert result["decisions"]["manual"] == 1
+    assert result["decisions"]["assistance_failed"] == 1
+    assert result["validation"]["provider_failures"] == 1
+    assert result["validation"]["verifier_failures"] == 0
+    assert any(path.endswith("/annotations") for path in FailedDraftApi.instance.paths)
+    assert any(path.endswith("/complete") for path in FailedDraftApi.instance.paths)
 
 
 def test_write_results_uses_markdown_line_breaks_not_literal_escape_suffix(tmp_path: Path) -> None:
