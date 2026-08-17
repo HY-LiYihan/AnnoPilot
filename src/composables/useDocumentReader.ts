@@ -1,6 +1,8 @@
 import { computed, ref } from 'vue'
 import {
+  PROJECT_ID,
   type AnnotationDef,
+  type AssistanceErrorReason,
   type DocumentMeta,
   type DocumentListItem,
   type DocumentSummaryPayload,
@@ -21,7 +23,9 @@ import { useReaderAnnotationActions } from './useReaderAnnotationActions'
 import { useReaderSentenceWindow } from './useReaderSentenceWindow'
 import { useReaderReviewQueue } from './useReaderReviewQueue'
 import { useReaderSentenceCompletion } from './useReaderSentenceCompletion'
+import { useReaderAssistance, type LocalAssistanceDraftSpan } from './useReaderAssistance'
 import { emptyMetrics, useReaderDocumentLifecycle } from './useReaderDocumentLifecycle'
+import { sliceByCodePoint } from '../utils/unicode'
 import {
   annotationForToken as findAnnotationForToken,
   suggestionForToken as findSuggestionForToken,
@@ -29,6 +33,8 @@ import {
   tokenPrefix as getTokenPrefix,
   tokenStyleForToken,
 } from './readerTokenDisplay'
+
+type SentenceAnswer = 'accept' | 'reject' | 'ignore'
 
 export function useDocumentReader() {
   const samplePresets = ref<SamplePreset[]>([])
@@ -159,7 +165,7 @@ export function useDocumentReader() {
   })
 
   const {
-    completeCurrentSentence,
+    completeCurrentSentence: completeManualSentence,
     reopenCurrentSentence,
   } = useReaderSentenceCompletion({
     applyDocumentSummary,
@@ -179,14 +185,74 @@ export function useDocumentReader() {
     setCurrentSentence,
   })
 
+  const assistanceDocumentId = computed(() => documentMeta.value?.id ?? null)
+  const assistanceSentenceId = computed(() => currentSentence.value?.id ?? null)
   const {
-    applyTagToSelection,
+    status: assistanceStatus,
+    error: assistanceError,
+    isDeciding: isAssistanceDeciding,
+    currentDraft: currentAssistanceDraft,
+    localDraftSpans: assistanceDraftSpans,
+    errorReasons: assistanceErrorReasons,
+    isDraftModified: isAssistanceDraftModified,
+    tagProgress: assistanceTagProgress,
+    setLocalDraftTokenRange,
+    removeLocalDraftSpan,
+    refresh: refreshAssistance,
+    confirmDraft: confirmAssistanceDraft,
+    correctDraft: correctAssistanceDraft,
+    skipDraft: skipAssistanceDraft,
+  } = useReaderAssistance({
+    projectId: PROJECT_ID,
+    documentId: assistanceDocumentId,
+    currentSentenceId: assistanceSentenceId,
+    onDecision: handleAssistanceDecision,
+  })
+  const assistanceDraftActive = computed(() => Boolean(currentAssistanceDraft.value))
+
+  async function completeCurrentSentence(answer: SentenceAnswer = 'accept') {
+    if (!currentAssistanceDraft.value) return completeManualSentence(answer)
+    if (answer !== 'accept') return skipCurrentAssistanceDraft()
+    readerError.value = ''
+    try {
+      if (isAssistanceDraftModified.value) {
+        await correctAssistanceDraft()
+      } else {
+        await confirmAssistanceDraft()
+      }
+    } catch (error) {
+      readerError.value = error instanceof Error ? error.message : 'Could not confirm assistance draft.'
+    }
+  }
+
+  async function skipCurrentAssistanceDraft() {
+    if (!currentAssistanceDraft.value || isAssistanceDeciding.value) return
+    readerError.value = ''
+    try {
+      await skipAssistanceDraft()
+    } catch (error) {
+      readerError.value = error instanceof Error ? error.message : 'Could not skip assistance draft.'
+    }
+  }
+
+  async function handleAssistanceDecision(target: { sentenceIndex: number | null } | null) {
+    const documentId = documentMeta.value?.id
+    const fallbackIndex = Math.min(currentSentenceIndex.value + 1, Math.max(metrics.value.sentence_count - 1, 0))
+    const nextIndex = target?.sentenceIndex ?? fallbackIndex
+    await refreshDocumentSummary()
+    if (documentId) await loadSentenceWindow(documentId, nextIndex, true)
+    setCurrentSentence(nextIndex, 'auto')
+    await refreshAuditSummary()
+  }
+
+  const {
+    applyTagToSelection: applyManualTagToSelection,
     autoMarkEmptySentencesMonogloss,
     canUndoSpanAction,
-    handleTagClick,
+    handleTagClick: handleManualTagClick,
     markCurrentSentenceMonogloss,
-    removeAnnotation,
-    removeAnnotations,
+    removeAnnotation: removeManualAnnotation,
+    removeAnnotations: removeManualAnnotations,
     resetAnnotationActionState,
     selectCurrentSentenceSpan,
     undoLabel,
@@ -208,6 +274,84 @@ export function useDocumentReader() {
     sentences,
     tags,
   })
+
+  const activeAssistanceAnnotations = computed<AnnotationDef[]>(() => {
+    const sentence = currentSentence.value
+    const draft = currentAssistanceDraft.value
+    if (!sentence || !draft) return []
+    return assistanceDraftSpans.value.flatMap((span, index) => {
+      const startToken = sentence.tokens.find((token) => token.token_index === span.start_token_index)
+      const endToken = sentence.tokens.find((token) => token.token_index === span.end_token_index)
+      const tag = tags.value.find((item) => item.id === span.tag_id)
+      if (!startToken || !endToken || !tag) return []
+      return [{
+        id: assistanceAnnotationId(draft.draft_id, span, index),
+        tag_id: tag.id,
+        tag_name: tag.name,
+        tag_color: tag.color,
+        start_token_index: span.start_token_index,
+        end_token_index: span.end_token_index,
+        start_char: startToken.start_char,
+        end_char: endToken.end_char,
+        text: sliceByCodePoint(
+          sentence.text,
+          startToken.start_char - sentence.start_char,
+          endToken.end_char - sentence.start_char,
+        ),
+        source: 'assistance_draft',
+        source_suggestion_id: span.suggestion_id ?? null,
+        created_at: '',
+      }]
+    })
+  })
+
+  async function applyTagToSelection(tagId: string) {
+    const pending = selection.pendingSelection.value
+    if (currentAssistanceDraft.value && pending && pending.sentenceId === currentSentence.value?.id) {
+      selectedTagId.value = tagId
+      setLocalDraftTokenRange(tagId, pending.start, pending.end)
+      selection.pendingSelection.value = null
+      return
+    }
+    await applyManualTagToSelection(tagId)
+  }
+
+  function handleTagClick(tagId: string) {
+    if (currentAssistanceDraft.value) {
+      void applyTagToSelection(tagId)
+      return
+    }
+    handleManualTagClick(tagId)
+  }
+
+  async function removeAnnotation(annotationId: string) {
+    const draftIndex = activeAssistanceAnnotations.value.findIndex((annotation) => annotation.id === annotationId)
+    if (currentAssistanceDraft.value && draftIndex >= 0) {
+      removeLocalDraftSpan(draftIndex)
+      return
+    }
+    await removeManualAnnotation(annotationId)
+  }
+
+  async function removeAnnotations(annotationIds: string[]) {
+    if (currentAssistanceDraft.value) {
+      const draftIndexes = annotationIds
+        .map((annotationId) => activeAssistanceAnnotations.value.findIndex((annotation) => annotation.id === annotationId))
+        .filter((index) => index >= 0)
+        .sort((left, right) => right - left)
+      if (draftIndexes.length) {
+        draftIndexes.forEach((index) => removeLocalDraftSpan(index))
+        return
+      }
+    }
+    await removeManualAnnotations(annotationIds)
+  }
+
+  function toggleAssistanceErrorReason(reason: AssistanceErrorReason) {
+    assistanceErrorReasons.value = assistanceErrorReasons.value.includes(reason)
+      ? assistanceErrorReasons.value.filter((item) => item !== reason)
+      : [...assistanceErrorReasons.value, reason]
+  }
 
   const {
     acceptCurrentSentenceSuggestions,
@@ -327,6 +471,7 @@ export function useDocumentReader() {
   } = readerExports
 
   useReaderKeyboardShortcuts({
+    assistanceDraftActive,
     acceptCurrentSentenceSuggestions,
     acceptSuggestedSpan,
     activeSuggestion,
@@ -403,6 +548,11 @@ export function useDocumentReader() {
   }
 
   function annotationForToken(sentence: SentenceDef, tokenIndex: number) {
+    if (sentence.id === currentSentence.value?.id && currentAssistanceDraft.value) {
+      return activeAssistanceAnnotations.value.find(
+        (annotation) => annotation.start_token_index <= tokenIndex && annotation.end_token_index >= tokenIndex,
+      )
+    }
     return findAnnotationForToken(sentence, tokenIndex)
   }
 
@@ -411,6 +561,10 @@ export function useDocumentReader() {
   }
 
   function tokenStyle(sentence: SentenceDef, tokenIndex: number): Record<string, string> {
+    const assistanceAnnotation = annotationForToken(sentence, tokenIndex)
+    if (currentAssistanceDraft.value && assistanceAnnotation) {
+      return { '--token-color': assistanceAnnotation.tag_color }
+    }
     return tokenStyleForToken(sentence, tokenIndex, {
       activeSuggestion: activeSuggestion.value,
       selectedTag: selectedTag.value,
@@ -420,6 +574,7 @@ export function useDocumentReader() {
   }
 
   function suggestionForToken(sentence: SentenceDef, tokenIndex: number) {
+    if (sentence.id === currentSentence.value?.id && currentAssistanceDraft.value) return undefined
     return findSuggestionForToken(sentence, tokenIndex)
   }
 
@@ -461,7 +616,15 @@ export function useDocumentReader() {
     reviewedSummary,
     reviewSummary,
     activeAnnotations,
+    activeAssistanceAnnotations,
     activeSuggestions,
+    assistanceStatus,
+    assistanceError,
+    assistanceTagProgress,
+    currentAssistanceDraft,
+    isAssistanceDeciding,
+    isAssistanceDraftModified,
+    assistanceErrorReasons,
     reviewQueueSummary,
     canUndoSpanAction,
     undoLabel,
@@ -478,6 +641,9 @@ export function useDocumentReader() {
     markCurrentSentenceMonogloss,
     autoMarkEmptySentencesMonogloss,
     completeCurrentSentence,
+    skipCurrentAssistanceDraft,
+    toggleAssistanceErrorReason,
+    refreshAssistance,
     reopenCurrentSentence,
     generateDocumentSuggestions,
     generateCurrentSentenceSuggestions,
@@ -547,4 +713,8 @@ export function useDocumentReader() {
     refreshAuditSummary,
     refreshRunHistory,
   }
+}
+
+function assistanceAnnotationId(draftId: string, span: LocalAssistanceDraftSpan, index: number) {
+  return `assistance:${draftId}:${span.tag_id}:${span.start_token_index}:${span.end_token_index}:${index}`
 }

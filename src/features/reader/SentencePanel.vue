@@ -10,6 +10,8 @@ import {
 import type { UiLabels } from '../../i18n'
 import type {
   AnnotationDef,
+  AssistanceErrorReason,
+  AssistanceQueueItem,
   DocumentListItem,
   DocumentMeta,
   DragSelection,
@@ -37,7 +39,12 @@ const props = defineProps<{
   currentSentenceIndex: number
   sentences: SentenceDef[]
   activeAnnotations: AnnotationDef[]
+  activeAssistanceAnnotations: AnnotationDef[]
   activeSuggestions: SuggestionDef[]
+  assistanceDraft: AssistanceQueueItem | null
+  assistanceDraftModified: boolean
+  assistanceErrorReasons: AssistanceErrorReason[]
+  isAssistanceDeciding: boolean
   canUndoSpanAction: boolean
   undoLabel: string
   pendingSelection: DragSelection | null
@@ -117,6 +124,8 @@ const emit = defineEmits<{
   'engagement-temperature-change': [temperature: number]
   'next-review': []
   complete: []
+  'assistance-skip': []
+  'assistance-error-toggle': [reason: AssistanceErrorReason]
   ignore: []
   reject: []
   reopen: []
@@ -273,10 +282,20 @@ function sentenceStatusLabel(sentence: SentenceDef, currentSentenceIndex: number
   if (sentence.answer === 'reject') return labels.statusRejected
   if (sentence.answer === 'ignore') return labels.statusIgnored
   if (sentence.completed) return labels.statusCompleted
+  if (props.assistanceDraft?.sentence_id === sentence.id) return labels.assistanceDraft
   if (sentence.suggestions.length) return labels.statusReview
   if (sentence.index === currentSentenceIndex) return labels.statusActive
   return labels.statusWaiting
 }
+
+const assistanceReasonKeys: AssistanceErrorReason[] = [
+  'missed_span',
+  'extra_span',
+  'wrong_label',
+  'boundary_too_wide',
+  'boundary_too_narrow',
+  'other',
+]
 
 function tokenSpanClasses(sentence: SentenceDef, tokenIndex: number) {
   const focusedConflictAnnotation = focusedConflictAnnotationForToken(sentence, tokenIndex)
@@ -439,7 +458,7 @@ function predicatePositionClasses(
           completed: sentence.completed,
           rejected: sentence.answer === 'reject',
           ignored: sentence.answer === 'ignore',
-          'needs-review': !sentence.completed && sentence.suggestions.length > 0,
+          'needs-review': !sentence.completed && (sentence.suggestions.length > 0 || assistanceDraft?.sentence_id === sentence.id),
         }"
         @click="emit('sentence-click', sentence.index)"
       >
@@ -476,13 +495,21 @@ function predicatePositionClasses(
       <div class="candidate-heading">
         <div>
           <h2 id="candidate-title">{{ labels.spansTitle }}</h2>
-          <span>{{ labels.selectedSuggested(activeAnnotations.length, activeSuggestions.length) }}</span>
+          <span>{{ labels.selectedSuggested(activeAnnotations.length + activeAssistanceAnnotations.length, activeSuggestions.length) }}</span>
+          <em v-if="assistanceDraft" class="assistance-draft-state" :class="{ modified: assistanceDraftModified }">
+            {{ assistanceDraftModified ? labels.assistanceModified : labels.assistanceUnchanged }}
+          </em>
         </div>
         <div v-if="annotationConflictPairs.length" class="annotation-conflict-inline" :title="labels.annotationConflictHint">
           <strong>{{ labels.annotationConflictTitle }}</strong>
           <span>{{ labels.annotationConflictCount(annotationConflictPairs.length) }}</span>
         </div>
-        <div class="candidate-actions">
+        <details v-if="!assistanceDraft" class="advanced-suggestion-tools">
+          <summary>
+            <Sparkles :size="15" aria-hidden="true" />
+            {{ labels.advancedDiagnostics }}
+          </summary>
+          <div class="candidate-actions">
           <label class="suggest-limit-control" :title="labels.limitTitle">
             <span>{{ labels.limit }}</span>
             <input
@@ -585,7 +612,15 @@ function predicatePositionClasses(
           <button class="review-button compact" :disabled="!hasReviewQueue" @click="emit('next-review')">
             {{ reviewQueueSummary }} · R
           </button>
-        </div>
+          </div>
+        </details>
+      </div>
+      <div v-if="assistanceDraft" class="assistance-draft-banner">
+        <span>
+          <strong>{{ labels.assistanceDraft }}</strong>
+          <small>{{ labels.assistanceDraftHint }}</small>
+        </span>
+        <em>{{ assistanceDraft.model || 'LLM' }}</em>
       </div>
       <div v-if="pendingSelection && pendingSelectionText" class="pending-card">
         <span>
@@ -594,7 +629,7 @@ function predicatePositionClasses(
         </span>
         <em>{{ labels.pending }}</em>
       </div>
-      <div v-if="reviewQueueInsight" class="review-insight-card">
+      <div v-if="reviewQueueInsight && !assistanceDraft" class="review-insight-card">
         <span>
           <strong>{{ reviewQueueInsight.headline }}</strong>
           <small>{{ reviewQueueInsight.detail }}</small>
@@ -665,6 +700,35 @@ function predicatePositionClasses(
           <em>{{ labels.remove }}</em>
         </button>
       </div>
+      <div v-if="activeAssistanceAnnotations.length" class="candidate-list assistance-draft-list">
+        <button
+          v-for="annotation in activeAssistanceAnnotations"
+          :key="annotation.id"
+          class="candidate-row assistance-draft-row"
+          :style="{ '--token-color': annotation.tag_color }"
+          @click="emit('delete-annotation', annotation.id)"
+        >
+          <span>
+            <strong>{{ annotation.text }}</strong>
+            <small>{{ annotation.tag_name }} · {{ labels.assistanceDraft }}</small>
+          </span>
+          <em>{{ labels.remove }}</em>
+        </button>
+      </div>
+      <div v-if="assistanceDraft && assistanceDraftModified" class="assistance-error-reasons">
+        <span>{{ labels.assistanceErrors }}</span>
+        <div>
+          <button
+            v-for="reason in assistanceReasonKeys"
+            :key="reason"
+            type="button"
+            :class="{ active: assistanceErrorReasons.includes(reason) }"
+            @click="emit('assistance-error-toggle', reason)"
+          >
+            {{ labels.assistanceErrorReasons[reason] }}
+          </button>
+        </div>
+      </div>
       <div v-if="activeSuggestions.length" class="suggestion-list" :aria-label="labels.suggestionsAria">
         <SuggestionRow
           v-for="suggestion in activeSuggestions"
@@ -689,7 +753,7 @@ function predicatePositionClasses(
         <em v-if="lastEngagementRun.verifierFailures">{{ labels.engagementVerifierFailures(lastEngagementRun.verifierFailures) }}</em>
         <em v-else>{{ labels.engagementReviewRequired }}</em>
       </div>
-      <p v-if="!activeAnnotations.length && !activeSuggestions.length" class="candidate-empty">
+      <p v-if="!activeAnnotations.length && !activeAssistanceAnnotations.length && !activeSuggestions.length" class="candidate-empty">
         {{ labels.emptyCandidate }}
       </p>
     </section>
@@ -700,18 +764,28 @@ function predicatePositionClasses(
         <h2>{{ labels.verificationTitle }}</h2>
       </div>
       <div class="verification-actions">
-        <button class="accept-button" :disabled="!currentSentence || isSaving" @click="emit('complete')">
-          {{ labels.complete }}
-        </button>
-        <button class="edit-button" :disabled="!currentSentence" @click="emit('previous')">{{ labels.previous }}</button>
-        <button class="skip-button" :disabled="!currentSentence || isSaving" @click="emit('ignore')">{{ labels.ignore }}</button>
-        <button class="reject-sentence-button" :disabled="!currentSentence || isSaving" @click="emit('reject')">{{ labels.rejectSentence }}</button>
-        <button class="edit-button" :disabled="!currentSentence || isSaving" @click="emit('reopen')">{{ labels.reopen }}</button>
-        <button class="undo-button" :disabled="!canUndoSpanAction || isSaving" :title="undoLabel" @click="emit('undo')">
-          <Undo2 :size="16" aria-hidden="true" />
-          {{ labels.undo }}
-        </button>
-        <button class="review-button" :disabled="!hasReviewQueue" @click="emit('next-review')">{{ reviewQueueSummary }}</button>
+        <template v-if="assistanceDraft">
+          <button class="skip-button" :disabled="isSaving || isAssistanceDeciding" @click="emit('assistance-skip')">
+            {{ labels.assistanceSkip }}
+          </button>
+          <button class="accept-button" :disabled="isSaving || isAssistanceDeciding" @click="emit('complete')">
+            {{ assistanceDraftModified ? labels.assistanceConfirmModified : labels.assistanceConfirm }}
+          </button>
+        </template>
+        <template v-else>
+          <button class="accept-button" :disabled="!currentSentence || isSaving" @click="emit('complete')">
+            {{ labels.complete }}
+          </button>
+          <button class="edit-button" :disabled="!currentSentence" @click="emit('previous')">{{ labels.previous }}</button>
+          <button class="skip-button" :disabled="!currentSentence || isSaving" @click="emit('ignore')">{{ labels.ignore }}</button>
+          <button class="reject-sentence-button" :disabled="!currentSentence || isSaving" @click="emit('reject')">{{ labels.rejectSentence }}</button>
+          <button class="edit-button" :disabled="!currentSentence || isSaving" @click="emit('reopen')">{{ labels.reopen }}</button>
+          <button class="undo-button" :disabled="!canUndoSpanAction || isSaving" :title="undoLabel" @click="emit('undo')">
+            <Undo2 :size="16" aria-hidden="true" />
+            {{ labels.undo }}
+          </button>
+          <button class="review-button" :disabled="!hasReviewQueue" @click="emit('next-review')">{{ reviewQueueSummary }}</button>
+        </template>
       </div>
     </section>
   </section>

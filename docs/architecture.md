@@ -19,15 +19,15 @@ Mobile/Desktop Browser
         |
 Vue 3 + Vite Static SPA
         |
-FastAPI REST API
-        |
-AnnotationStorage service
+FastAPI REST API ---- lifecycle-managed AssistanceWorker
+        |                         |
+AnnotationStorage facade         | OpenAI-compatible LLM
+        |                         |
+Services + Repositories <--------+
         |
 SQLite runtime store + event_outbox
         |
 JSONL event log / exports / provenance
-        |
-Optional OpenAI-compatible LLM provider
 ```
 
 当前 production image 由 FastAPI 同时 serve `/api/*` 和 Vue static assets。frontend build output 会复制到 `/app/static`，backend 检测到 `STATIC_DIR` 后提供 `/assets/*` 与 SPA history fallback。
@@ -43,6 +43,7 @@ src/
   styles.css
   api/
     annotations.ts
+    assistance.ts
     audit.ts
     documents.ts
     health.ts
@@ -52,6 +53,11 @@ src/
     tags.ts
   composables/
     useDocumentReader.ts
+    useReaderAssistance.ts
+    useReaderDocumentLifecycle.ts
+    useReaderSentenceWindow.ts
+    useReaderSuggestions.ts
+    useReaderTags.ts
     useTokenSelection.ts
   features/reader/
     ReaderWorkspace.vue
@@ -67,6 +73,8 @@ Frontend 职责：
 - 加载 active document，使用 `localStorage` 保存最近打开的 `document_id`。
 - 通过 `summary` + paged `sentences` API 读取数据，避免在 browser 中保存完整长文档。
 - 处理 token drag selection、keyboard shortcuts、mobile swipe、tag CRUD、suggestion review 和 export actions。
+- `useDocumentReader.ts` 作为 workspace composition root，document lifecycle、sentence window、tags、suggestions、exports 与 assistance 分别由小型 composable 管理。
+- `useReaderAssistance.ts` 每 2.5 秒读取持久化队列，将 ready draft 映射为本地可编辑 span；未确认 draft 只存在于 UI state，不直接成为 annotation。
 - 所有 mutations 都走 backend API，并以 API response 刷新本地状态，避免 browser 直接写 SQLite 或 JSONL。
 
 当前没有引入 `vue-router` 或 `pinia`。这符合现阶段单 workspace 的复杂度。等 project setup、runs、exports 和 settings 变成独立 screen 后，再引入 route-level views 和小型 app store。
@@ -81,12 +89,15 @@ backend/app/
   schemas.py
   settings.py
   llm.py
+  assistance_generation.py
+  assistance_worker.py
   rag.py
   rebuild.py
   storage.py
   text_processing.py
   api/
     annotations.py
+    assistance.py
     audit.py
     dependencies.py
     documents.py
@@ -108,6 +119,7 @@ backend/app/
     tags.py
   services/
     annotations.py
+    assistance.py
     audit.py
     documents.py
     exports.py
@@ -125,6 +137,8 @@ Backend 当前边界：
 - `engagement.py` 保存内置 Appraisal Engagement taxonomy；`tags.taxonomy_json` 将理论层级作为可选机器可读元数据持久化，普通手工标签流程无需编辑该字段。
 - `rag.py` 实现低算力 Character RAG：lexical exact、contains、char-ngram、Unicode NFKC、quote/dash/slash folding、casefold + whitespace normalization。
 - `llm.py` 使用 OpenAI-compatible `/chat/completions`，用于 suggestion LLM review，并在错误信息中 redact API key。
+- `assistance_generation.py` 构造严格 JSON prompt、选择 few-shot examples，并验证模型输出的原文、label、offset、token boundary、置信度和 span overlap。
+- `assistance_worker.py` 是随 FastAPI lifespan 启停的单进程 durable worker；SQLite queue 是唯一任务事实来源，worker 只负责 claim、生成、校验和落库。
 - `rebuild.py` 支持从 `events.jsonl` 重建 SQLite 的 CLI / service 能力，并复用 `events/replay.py` 的可重放事件校验与 apply 逻辑；API 先提供 non-destructive preview。
 
 API 目录见 [API Surface](/guide/api)。
@@ -147,6 +161,9 @@ annotation_run_sentences
 annotation_run_candidate_spans
 annotation_suggestion_reviews
 annotation_sessions
+assistance_settings
+assistance_jobs
+assistance_feedback
 event_outbox
 ```
 
@@ -155,6 +172,7 @@ event_outbox
 - mutation 先在 SQLite transaction 中写 domain rows 和 `event_outbox`。
 - transaction 成功后，pending outbox rows flush 到 `<DATA_ROOT>/<project_id>/events.jsonl`。
 - `annotation_sessions` 保存 runtime-only 标注会话状态，例如当前句游标；普通导航不进入 JSONL audit log。
+- `assistance_jobs` 保存 rolling assistance 的 queue、lease、冻结的 tag schema/knowledge revision、模型原始响应、校验结果和 token usage；`assistance_feedback` 保存人工确认或纠正前后的 span 差异。
 - audit API 统计 event type、actor、schema version、pending outbox 和 replay issues。
 - rebuild preview 使用临时 SQLite database 重放 `events.jsonl`，不会破坏当前 runtime database。
 
@@ -203,6 +221,17 @@ annopilot.run_provenance.v1
 3. OpenAI-compatible provider 返回 `accept`、`reject` 或 `uncertain` recommendation。
 4. Backend 保存 review row 和 `suggestion.llm_reviewed` event，并记录 `context_sha256`。
 
+### Rolling Assistance
+
+1. 每个 tag 累积至少 5 个 `source=human` 的已验证 annotation 后变为 active；系统只对无 annotation、未完成且尚无 assistance job 的句子补充队列。
+2. `AssistanceWorker` 最多 claim 5 个 job，使用 90 秒 lease；进程中断后过期的 running job 可以重新 claim。
+3. Worker 从人工 annotations、历史 corrections 和 negative examples 选择 few-shot context，请求 OpenAI-compatible LLM 生成完整句子 draft。
+4. Draft 必须通过严格 verifier；失败可重试一次，仍失败则进入 failed。通过后以 pending suggestions + frozen job snapshot 保存，但不会写入正式 annotations。
+5. UI 对 ready draft 可执行 confirm、correct 或 skip。Confirm/correct 在一个 SQLite transaction 中写 annotation、sentence answer、feedback、job state 和 outbox events，并将 `knowledge_revision` 加一。
+6. `draft_id + draft_version`、tag schema hash 和句子现状共同构成 optimistic concurrency boundary；草稿生成期间若已有人工 annotation 或 tag schema 改变，结果不会覆盖人工数据。
+
+详细状态机、数据模型和失败恢复规则见 [Rolling Assistance](/guide/rolling-assistance)。
+
 ### Import / Export
 
 - `import-annotations-jsonl` 可导入 Prodigy / AnnoPilot style JSONL annotation records，并尽量按 `sentence_id`、`sentence_index` 或 sentence text 匹配；`annotations.imported` event 会保留逐行 source manifest，记录 record hash、匹配结果、目标 sentence 和 Prodigy-style source metadata。
@@ -235,6 +264,7 @@ STATIC_DIR=/app/static
 LLM_BASE_URL=https://api.aixhan.com/v1
 LLM_API_KEY=<optional>
 LLM_MODEL=gpt5.5
+ASSISTANCE_WORKER_ENABLED=true
 ```
 
 `docker-compose.yml` 默认：
@@ -251,6 +281,7 @@ healthcheck: GET /api/health
 当前实现用以下方式控制 footprint：
 
 - 单个 Uvicorn worker。
+- Assistance worker 使用同一进程内 asyncio coordinator，最多 5 个并发外部 LLM 请求；任务正文和状态保存在 SQLite，不在内存中维护整份队列。
 - SQLite WAL + paged query，不把完整文档和建议队列塞进 frontend。
 - Sentence window 默认小窗口加载，frontend 只持有当前附近 sentences。
 - Character RAG 是 lexical / char-ngram，不加载本地 embedding 或 LLM model。
@@ -269,7 +300,7 @@ healthcheck: GET /api/health
 中期演进：
 
 - 引入 `vue-router`，把 reader、runs、exports、settings 拆成 route-level views。
-- 当 suggestion run 或 batch annotation 变慢时，再添加 SSE progress endpoint 或 background worker。
+- 当 assistance 需要多 API replica、跨主机扩缩或更高吞吐时，将 `AssistanceWorker` 拆为独立进程，并用数据库原子 claim 或专用 queue 协调；当前版本应保持单 Uvicorn worker。
 - 当项目数量和并发用户真正增长时，再考虑 project management、auth、Postgres 或 object storage。
 
 ## 决策摘要

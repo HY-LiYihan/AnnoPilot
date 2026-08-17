@@ -109,6 +109,8 @@ class EventOutbox:
             return {"actor_type": "llm", "actor_id": str(payload.get("model") or "unknown")}
         if (
             event_type == "suggestions.generated"
+            or str(event_type or "").startswith("assistance.draft.generated")
+            or str(event_type or "").startswith("assistance.error.classified")
             or (event_type == "annotation.created" and payload.get("source") == "accepted_suggestion")
             or (event_type == "annotation.created" and payload.get("source") == "auto_monogloss")
             or (

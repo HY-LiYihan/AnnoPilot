@@ -125,6 +125,25 @@ test('suggestion shortcuts cycle, accept, and reject suggestions', () => {
   assert.deepEqual(dispatch('r').calls, [['jump-review']])
 })
 
+test('assistance draft mode keeps only labels, confirm, skip, and navigation shortcuts', () => {
+  const draftActive = { assistanceDraftActive: { value: true } }
+
+  assert.deepEqual(dispatch('1', {}, draftActive).calls, [['apply-tag', 'tag-noun']])
+  assert.deepEqual(dispatch('Enter', {}, draftActive).calls, [['complete', undefined]])
+  assert.deepEqual(dispatch(' ', {}, draftActive).calls, [['complete', 'ignore']])
+  assert.deepEqual(dispatch('ArrowDown', {}, draftActive).calls, [['set-sentence', 5]])
+
+  for (const key of ['Tab', 'a', 'x', 'y', 'n', 'r', 'm', 's', 'e']) {
+    const result = dispatch(key, {}, draftActive)
+    assert.equal(result.handled, false)
+    assert.deepEqual(result.calls, [])
+  }
+
+  const undo = dispatch('z', { ctrlKey: true }, draftActive)
+  assert.equal(undo.handled, false)
+  assert.deepEqual(undo.calls, [])
+})
+
 test('shortcuts are ignored while typing or using ordinary modifier chords', () => {
   const inputResult = dispatch('1', { target: makeTarget('input') })
   assert.equal(inputResult.handled, false)
@@ -150,4 +169,14 @@ test('ctrl/cmd z remains available for undo and space does not override buttons'
   assert.equal(buttonSpace.handled, false)
   assert.equal(buttonSpace.prevented, false)
   assert.deepEqual(buttonSpace.calls, [])
+
+  const buttonEnter = dispatch('Enter', { target: makeTarget('button') })
+  assert.equal(buttonEnter.handled, false)
+  assert.equal(buttonEnter.prevented, false)
+  assert.deepEqual(buttonEnter.calls, [])
+
+  const buttonShortcut = dispatch('1', { target: makeTarget('button') })
+  assert.equal(buttonShortcut.handled, false)
+  assert.equal(buttonShortcut.prevented, false)
+  assert.deepEqual(buttonShortcut.calls, [])
 })

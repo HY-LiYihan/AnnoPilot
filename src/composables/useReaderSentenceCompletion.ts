@@ -1,5 +1,5 @@
 import type { ComputedRef, Ref } from 'vue'
-import { completeSentence, fetchDocumentSummary } from '../api/documents'
+import { completeSentence, fetchDocumentSummary } from '../api/documents.ts'
 import {
   PROJECT_ID,
   type DocumentListItem,

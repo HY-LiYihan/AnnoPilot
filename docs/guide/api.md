@@ -71,6 +71,22 @@ DELETE /api/projects/{project_id}/annotations/{annotation_id}
 
 Annotation create 使用 token range：`tag_id`、`start_token_index`、`end_token_index`。Backend 根据 sentence tokens 计算 document-level `start_char` / `end_char`，并把 mutation 写入 SQLite 和 JSONL event log。
 
+## Rolling Assistance
+
+```text
+GET  /api/projects/{project_id}/documents/{document_id}/assistance
+PUT  /api/projects/{project_id}/documents/{document_id}/assistance/settings
+POST /api/projects/{project_id}/sentences/{sentence_id}/assistance/decision
+```
+
+- Status endpoint 会确保 rolling queue 已补齐，并返回每个 tag 的人工 seed progress、active tags、`knowledge_revision`、queued/running/ready/skipped/failed counts、draft items 与累计 token usage。
+- Settings endpoint 使用 `{ "enabled": true|false }` 暂停或恢复 document queue；暂停不会删除已生成 draft。
+- Decision endpoint 支持 `confirm|correct|skip`。Confirm 使用冻结 draft spans；correct 接收 `final_spans` 与可选 error reasons；skip 将 draft 移到队尾且不完成句子。
+- `draft_id + draft_version` 用于 optimistic concurrency。过期 draft、已有人工 annotation 或非 ready 状态返回 `409`；非法 tag、overlap 或 token range 返回 `400`。
+- Assistance draft 只是 pending suggestion。Confirm/correct 才在一个 transaction 内创建 annotations、完成句子、保存 feedback 并写 outbox events。
+
+完整 activation、worker、verifier 和状态机见 [Rolling Assistance](/guide/rolling-assistance)。
+
 ## Suggestions
 
 ```text

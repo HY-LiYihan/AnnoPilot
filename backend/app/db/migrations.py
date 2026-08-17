@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from .schema import (
+    create_assistance_workflow_schema,
     create_base_schema,
     create_engagement_candidate_schema,
     create_run_candidate_snapshot_schema,
@@ -15,7 +16,7 @@ from .schema import (
 )
 
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ MIGRATIONS = (
     Migration(version=4, name="run_candidate_snapshots", apply=create_run_candidate_snapshot_schema),
     Migration(version=5, name="tag_taxonomy_metadata", apply=create_tag_taxonomy_schema),
     Migration(version=6, name="engagement_candidate_groups", apply=create_engagement_candidate_schema),
+    Migration(version=7, name="rolling_assistance_workflow", apply=create_assistance_workflow_schema),
 )
 
 

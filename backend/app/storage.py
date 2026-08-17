@@ -14,6 +14,7 @@ from .repositories import DocumentQueryRepository, RunQueryRepository, TagQueryR
 from .services import (
     AnnotationImportService,
     AnnotationService,
+    AssistanceService,
     AuditService,
     DocumentService,
     EngagementCandidateService,
@@ -102,6 +103,10 @@ class ValidationError(StorageError):
     pass
 
 
+class ConflictError(StorageError):
+    pass
+
+
 class AnnotationStorage:
     def __init__(self, database_path: Path, data_root: Path):
         self.database_path = database_path
@@ -184,6 +189,17 @@ class AnnotationStorage:
             flush_event_outbox=self.flush_event_outbox,
             not_found_error=NotFoundError,
             validation_error=ValidationError,
+        )
+        self.assistance_service = AssistanceService(
+            self.connect,
+            new_id=self._new_id,
+            now=self._now,
+            enqueue_event=self._enqueue_event,
+            flush_event_outbox=self.flush_event_outbox,
+            get_tags=self._get_tags,
+            not_found_error=NotFoundError,
+            validation_error=ValidationError,
+            conflict_error=ConflictError,
         )
         self.annotation_import_service = AnnotationImportService(
             self.connect,
@@ -341,7 +357,43 @@ class AnnotationStorage:
         self.annotation_service.delete_annotation(project_id, annotation_id)
 
     def set_sentence_completed(self, project_id: str, sentence_id: str, completed: bool, answer: str | None = None) -> dict[str, Any]:
-        return self.annotation_service.set_sentence_completed(project_id, sentence_id, completed, answer)
+        result = self.annotation_service.set_sentence_completed(project_id, sentence_id, completed, answer)
+        if result["completed"] and result["answer"] == "accept":
+            with self.connect() as conn:
+                row = conn.execute("SELECT document_id FROM sentences WHERE id = ?", (sentence_id,)).fetchone()
+            if row is not None:
+                self.assistance_service.ensure_queue(project_id, row["document_id"])
+        return result
+
+    def get_assistance_status(self, project_id: str, document_id: str) -> dict[str, Any]:
+        self.assistance_service.ensure_queue(project_id, document_id)
+        return self.assistance_service.get_status(project_id, document_id)
+
+    def set_assistance_enabled(self, project_id: str, document_id: str, enabled: bool) -> dict[str, Any]:
+        return self.assistance_service.set_enabled(project_id, document_id, enabled)
+
+    def decide_assistance(
+        self,
+        project_id: str,
+        sentence_id: str,
+        *,
+        action: str,
+        draft_id: str,
+        draft_version: int,
+        final_spans: list[dict[str, Any]] | None = None,
+        error_reasons: list[str] | None = None,
+        error_note: str | None = None,
+    ) -> dict[str, Any]:
+        return self.assistance_service.decide(
+            project_id,
+            sentence_id,
+            action=action,
+            draft_id=draft_id,
+            draft_version=draft_version,
+            final_spans=final_spans,
+            error_reasons=error_reasons,
+            error_note=error_note,
+        )
 
     def auto_mark_document_monogloss(self, project_id: str, document_id: str) -> dict[str, Any]:
         return self.annotation_service.auto_mark_document_monogloss(project_id, document_id)

@@ -38,6 +38,8 @@ AnnoPilot 现在同时维护两个 surface：
 - 支持独立 review queue API 和右侧 review queue 列表，可按原文位置、稳定随机 baseline、低 confidence、Goldsmith risk 或 hybrid calibration 排序；Goldsmith / hybrid 会把 latest LLM review 的 `reject` / `uncertain` 和同句 candidate label/boundary conflict 作为额外风险信号，并在 UI 与 Goldsmith JSONL 中显示 Rosetta `priority`、`rosetta_route`、全队列 `rosetta_route_counts`、action hint / review guidance 和同句 candidate options；summary metrics 会直接展示 Engagement label coverage、Prodigy 导出就绪度、建议状态、LLM 评审推荐分布、待审建议来源、置信度分布和 human-calibrated error discovery 曲线；处理完当前句建议后会自动跳到下一句待确认，保留 `R` 快捷键手动跳转，右侧 readiness 入口会优先定位已加载队列中 `priority` 最高的待审项。
 - 支持导出 task JSONL、Prodigy `ner_manual` / `spans_manual` JSONL、Prodigy bundle ZIP、Goldsmith/Rosetta-style review queue、human choices、hard examples、boundary feedback、consistency scores、candidate runs、label statistics、contrastive examples、reflection plans、prompt package、verification report JSONL、bootstrap report Markdown、manifest JSON、events JSONL 和 Character RAG run provenance JSON。
 - Character RAG run 会保存 sentence-level immutable candidate snapshot；Goldsmith candidate runs 对新数据按一次 run 的完整 span 集合输出，consistency scores 使用最近 5 次完整 run 计算真实 span-set self-consistency。历史数据和 calibration preset 保留原 suggestion-level proxy fallback。
+- 新增 Rolling Assistance：每个标签积累 5 条人工验证 annotation 后自动激活，后台 worker 持续维持最多 5 条 draft queue；draft 可原样确认、修改后确认或 skip，模型结果在 verifier 与人工 decision 之前不会成为正式 annotation。
+- Assistance draft 支持 token-level 本地编辑、错误原因反馈、queue 状态与 token usage 展示；`draft_id + draft_version`、tag schema hash 和句子现状共同防止过期模型结果覆盖人工修改。
 
 当前 backend 和 frontend 已支持 Prodigy / AnnoPilot style annotations JSONL 导入，入口位于右侧 metrics/export panel；导入结果会保留并本地化展示 skip reason counts，方便定位句子未匹配、spans 字段错误和 token 边界错误。
 
@@ -73,6 +75,9 @@ POST   /api/projects/{project_id}/sentences/{sentence_id}/annotations
 DELETE /api/projects/{project_id}/annotations/{annotation_id}
 POST   /api/projects/{project_id}/documents/{document_id}/monogloss/auto-mark
 POST   /api/projects/{project_id}/sentences/{sentence_id}/complete
+GET    /api/projects/{project_id}/documents/{document_id}/assistance
+PUT    /api/projects/{project_id}/documents/{document_id}/assistance/settings
+POST   /api/projects/{project_id}/sentences/{sentence_id}/assistance/decision
 GET    /api/projects/{project_id}/tags
 POST   /api/projects/{project_id}/tags
 POST   /api/projects/{project_id}/tags/schema/import
@@ -133,8 +138,8 @@ GET    /api/projects/{project_id}/tags/prodigy-labels.json
 
 ### Runtime Storage
 
-当前 backend 使用 `backend/app/storage.py` 作为 API 兼容 facade，底层通过 SQLite 保存 runtime store，通过 JSONL event log 保存 durable audit trail；document import/merge/session、runtime settings、annotation mutation、tag schema、suggestion generation/review、suggestion decisions、audit/export 和 event replay/outbox 已逐步迁入 `services/` / `events/`。
-SQLite schema version 5 为 `tags` 增加可选 `taxonomy_json`；旧 tag schema、旧 hash 和旧 event log 保持兼容，已存在的内置 Engagement tags 会按稳定 id 回填理论元数据。
+当前 backend 使用 `backend/app/storage.py` 作为 API 兼容 facade，底层通过 SQLite 保存 runtime store，通过 JSONL event log 保存 durable audit trail；document import/merge/session、runtime settings、annotation mutation、tag schema、suggestion generation/review、suggestion decisions、rolling assistance、audit/export 和 event replay/outbox 已逐步迁入 `services/` / `events/`。
+SQLite 当前 schema version 为 7：version 5 增加 tag taxonomy，version 6 增加 Engagement candidate groups，version 7 增加 rolling assistance settings/jobs/feedback。旧 tag schema、旧 hash 和旧 event log 保持兼容，已存在的内置 Engagement tags 会按稳定 id 回填理论元数据。
 右侧 Accuracy 指标当前定义为 LLM review recommendation 与已执行 accept/reject 动作的一致率；没有已 review 且已决策的样本时显示等待数据，不伪造 gold accuracy。
 Character RAG 会使用已确认 annotations 作为正例，并把项目内 human rejected suggestions 以及 latest LLM review 为 `reject` 的 pending suggestions 的 `tag_id + text` 作为负例，后续生成建议时跳过同样的词面/标签组合；匹配判断会对空白和大小写做归一化，因此英文大小写变体不会重复打扰 review 队列。重新运行 suggestions 时只清理未 review 的 pending suggestions，已带 LLM review 的 pending suggestions 会保留，避免丢失复核信号。
 候选 span 文本会根据 token offsets 还原英文词间空格，因此 `carbon emissions` 这类英文短语种子可以 exact match；中文连续字符仍按无空格词面匹配。导出的 suggestion text、evidence text 和 char offsets 保留原始文本，方便回放和审计。
@@ -151,6 +156,9 @@ SQLite 当前保存：
 - `annotation_runs`
 - `annotation_suggestion_reviews`
 - `annotation_sessions`
+- `assistance_settings`
+- `assistance_jobs`
+- `assistance_feedback`
 - `event_outbox`
 
 JSONL 当前保存：
@@ -176,9 +184,18 @@ suggestions.generated
 suggestion.accepted
 suggestion.rejected
 suggestion.llm_reviewed
+assistance.activated
+assistance.settings.updated
+assistance.draft.generated
+assistance.sentence.skipped
+assistance.draft.confirmed
+assistance.draft.corrected
+assistance.error.classified
 ```
 
 `annotations.imported` 是导入批次 summary event；实际可重放状态仍由导入过程中产生的 `tag.created`、`annotation.deleted`、`annotation.created` 和 `sentence.completed` events 表达。该 summary event 还保存逐行 `source_record_results` manifest，用于追踪外部 Prodigy / AnnoPilot JSONL 每条记录的匹配结果、record hash 和源 session metadata。LLM review event 会包含 `context_sha256`，用于 hash 当次模型调用的完整结构化 review context；即使后续 tags、sentence annotations 或上下文变化，也能审计当时的 Aixhan / OpenAI-compatible review decision。
+
+Assistance events 是 audit-only workflow records；confirm/correct 同时写入 canonical `annotation.created` 与 `sentence.completed` events，rebuild 只使用 canonical events 恢复最终业务状态。详细说明见 [Rolling Assistance](/guide/rolling-assistance)。
 
 ### Docker Deployment
 
@@ -275,6 +292,9 @@ Backend 已有 pytest 覆盖：
 - Mixed-language sentence splitting。
 - Document-level token offsets。
 - Empty / punctuation / multiline text processing。
+- Assistance activation、queue/lease、generation verifier、confirm/correct/skip、feedback classification 与 stale draft conflict。
+- Frontend assistance draft 初始化、span replacement、修改判断和 API interaction。
+- OpenNER 中英文 assistance experiment 的数据对齐和 public HTTP workflow。
 
 ## 仍待演进
 
@@ -283,6 +303,6 @@ Backend 已有 pytest 覆盖：
 - 增加 project management，而不是只使用 `default` project。
 - 将 tag schema 从当前 CRUD 演进为更完整的 project-level guideline / label setup。
 - 持续补强 annotations JSONL 导入/导出的 round-trip 回归测试，重点覆盖混合中英 offset、外部 Prodigy 审阅导回和重复导入去漂移。
-- 增加 calibration runs 和 batch annotation runs。
+- 将当前 in-process AssistanceWorker 的 queue/lease metrics 纳入 health/diagnostics；需要多 API replica 时再拆成独立 worker deployment。
 - 增加 API OpenAPI type generation，减少 frontend 手写 payload types。
 - 将当前 sentence window 进一步演进为虚拟滚动和更细的预取策略。

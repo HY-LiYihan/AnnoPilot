@@ -301,6 +301,78 @@ def create_engagement_candidate_schema(conn: sqlite3.Connection) -> None:
     )
 
 
+def create_assistance_workflow_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS assistance_settings (
+          project_id TEXT NOT NULL,
+          document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          knowledge_revision INTEGER NOT NULL DEFAULT 0,
+          queue_sequence INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (project_id, document_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS assistance_jobs (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+          sentence_id TEXT NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
+          run_id TEXT REFERENCES annotation_runs(id) ON DELETE SET NULL,
+          status TEXT NOT NULL,
+          queue_order INTEGER NOT NULL,
+          knowledge_revision INTEGER NOT NULL,
+          draft_version INTEGER NOT NULL DEFAULT 1,
+          active_tag_ids_json TEXT NOT NULL,
+          tag_schema_sha256 TEXT NOT NULL,
+          retrieved_examples_json TEXT NOT NULL DEFAULT '{}',
+          prompt_sha256 TEXT,
+          model TEXT,
+          raw_response TEXT,
+          result_json TEXT,
+          verifier_status TEXT,
+          verifier_issues_json TEXT NOT NULL DEFAULT '[]',
+          attempt_count INTEGER NOT NULL DEFAULT 0,
+          usage_json TEXT NOT NULL DEFAULT '{}',
+          lease_until TEXT,
+          error_message TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE (project_id, document_id, sentence_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS assistance_feedback (
+          id TEXT PRIMARY KEY,
+          job_id TEXT NOT NULL UNIQUE REFERENCES assistance_jobs(id) ON DELETE CASCADE,
+          project_id TEXT NOT NULL,
+          document_id TEXT NOT NULL,
+          sentence_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          original_spans_json TEXT NOT NULL DEFAULT '[]',
+          final_spans_json TEXT NOT NULL DEFAULT '[]',
+          error_reasons_json TEXT NOT NULL DEFAULT '[]',
+          reason_source TEXT,
+          error_note TEXT,
+          created_at TEXT NOT NULL,
+          classified_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_assistance_jobs_queue
+          ON assistance_jobs(project_id, document_id, status, queue_order);
+        CREATE INDEX IF NOT EXISTS idx_assistance_jobs_lease
+          ON assistance_jobs(status, lease_until, queue_order);
+        CREATE INDEX IF NOT EXISTS idx_assistance_feedback_document
+          ON assistance_feedback(project_id, document_id, created_at);
+        """
+    )
+    if _table_exists(conn, "annotation_suggestions"):
+        ensure_column(conn, "annotation_suggestions", "assistance_job_id", "TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_suggestions_assistance_job ON annotation_suggestions(assistance_job_id, status)"
+        )
+
+
 def ensure_legacy_columns(conn: sqlite3.Connection) -> None:
     for table_name, column_name, column_type in LEGACY_COLUMN_MIGRATIONS:
         ensure_column(conn, table_name, column_name, column_type)

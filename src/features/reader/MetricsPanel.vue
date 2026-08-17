@@ -10,11 +10,12 @@ import {
 import { annotationImportSkipReasonSummary } from '../../composables/annotationImportDisplay'
 import { reviewQueuePriorityRouteText, reviewQueueRouteSummary, reviewQueueRouteSummaryFromCounts } from '../../composables/reviewQueueDisplay'
 import type { UiLabels } from '../../i18n'
-import type { AnnotationImportSummary, AnnotationRun, AuditSummary, DocumentMeta, LabelCount, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder, SentenceQueueItem } from '../../types/domain'
+import type { AnnotationImportSummary, AnnotationRun, AssistanceStatus, AuditSummary, DocumentMeta, LabelCount, Metrics, RebuildPreview, ReviewQueueItem, ReviewQueueOrder, SentenceQueueItem } from '../../types/domain'
 
 defineProps<{
   labels: UiLabels['metrics']
   documentMeta: DocumentMeta | null
+  assistanceStatus: AssistanceStatus | null
   metrics: Metrics
   auditSummary: AuditSummary | null
   rebuildPreview: RebuildPreview | null
@@ -325,6 +326,18 @@ function shortHash(value: string) {
         <Trash2 :size="17" aria-hidden="true" />
       </button>
     </div>
+
+    <article v-if="documentMeta && assistanceStatus" class="metric-card assistance-status-card">
+      <Sparkles :size="22" aria-hidden="true" />
+      <span>{{ labels.assistanceTitle }}</span>
+      <strong>{{ assistanceStatus.enabled ? labels.assistanceEnabled : labels.assistanceDisabled }}</strong>
+      <div class="assistance-count-grid">
+        <span><small>{{ labels.assistanceRunning }}</small><strong>{{ assistanceStatus.queue.running }}</strong></span>
+        <span><small>{{ labels.assistanceReady }}</small><strong>{{ assistanceStatus.queue.ready }}</strong></span>
+        <span><small>{{ labels.assistanceQueued }}</small><strong>{{ assistanceStatus.queue.queued }}</strong></span>
+        <span><small>{{ labels.assistanceFailed }}</small><strong>{{ assistanceStatus.queue.failed }}</strong></span>
+      </div>
+    </article>
 
     <article class="metric-card export-readiness-card" :class="{ warning: documentMeta && !isProdigyExportReady(documentMeta, metrics) }">
       <Download :size="22" aria-hidden="true" />

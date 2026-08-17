@@ -783,6 +783,105 @@ class ReviewSentenceSuggestionsResponse(BaseModel):
     reviews: list[ReviewSuggestionResponse]
 
 
+class AssistanceSpanResponse(BaseModel):
+    suggestion_id: Optional[str] = None
+    tag_id: str
+    start_token_index: int
+    end_token_index: int
+    start_char: int
+    end_char: int
+    text: str
+    confidence: Optional[float] = None
+
+
+class AssistanceTagProgressResponse(BaseModel):
+    tag_id: str
+    tag_name: str
+    tag_color: str
+    human_verified_count: int
+    trusted_count: int
+    threshold: int
+    active: bool
+
+
+class AssistanceQueueItemResponse(BaseModel):
+    id: str
+    draft_id: str
+    draft_version: int
+    document_id: str
+    sentence_id: str
+    sentence_index: int
+    sentence_text: str
+    status: str
+    queue_order: int
+    knowledge_revision: int
+    active_tag_ids: list[str]
+    model: Optional[str] = None
+    verifier_status: Optional[str] = None
+    verifier_issues: list[dict[str, Any]] = Field(default_factory=list)
+    attempt_count: int = 0
+    error_message: Optional[str] = None
+    usage: dict[str, Any] = Field(default_factory=dict)
+    spans: list[AssistanceSpanResponse] = Field(default_factory=list)
+
+
+class AssistanceQueueResponse(BaseModel):
+    counts: dict[str, int] = Field(default_factory=dict)
+    items: list[AssistanceQueueItemResponse] = Field(default_factory=list)
+    ready: int = 0
+    running: int = 0
+    queued: int = 0
+    skipped: int = 0
+    failed: int = 0
+
+
+class AssistanceStatusResponse(BaseModel):
+    enabled: bool
+    seed_per_tag: int
+    concurrency: int
+    knowledge_revision: int
+    active_tags: list[AssistanceTagProgressResponse]
+    tag_progress: list[AssistanceTagProgressResponse]
+    queue: AssistanceQueueResponse
+    usage: dict[str, int] = Field(default_factory=dict)
+
+
+class UpdateAssistanceSettingsRequest(BaseModel):
+    enabled: bool
+
+
+class AssistanceFinalSpanRequest(BaseModel):
+    tag_id: str = Field(min_length=1)
+    start_token_index: int = Field(ge=0)
+    end_token_index: int = Field(ge=0)
+
+
+class AssistanceDecisionRequest(BaseModel):
+    action: Literal["confirm", "skip", "correct"]
+    draft_id: str = Field(min_length=1)
+    draft_version: int = Field(ge=1)
+    final_spans: list[AssistanceFinalSpanRequest] = Field(default_factory=list)
+    error_reasons: list[
+        Literal[
+            "missed_span",
+            "extra_span",
+            "wrong_label",
+            "boundary_too_wide",
+            "boundary_too_narrow",
+            "other",
+        ]
+    ] = Field(default_factory=list)
+    error_note: Optional[str] = Field(default=None, max_length=800)
+
+
+class AssistanceDecisionResponse(BaseModel):
+    action: Literal["confirm", "skip", "correct"]
+    sentence_id: str
+    completed: bool
+    next_sentence_id: Optional[str] = None
+    queue: AssistanceQueueResponse
+
+
 class RebuildIssueResponse(BaseModel):
     line_number: int
     event_id: Optional[str]

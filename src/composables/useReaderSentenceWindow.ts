@@ -34,11 +34,13 @@ type UseReaderSentenceWindowOptions = {
 }
 
 export function useReaderSentenceWindow(options: UseReaderSentenceWindowOptions) {
+  let sentenceWindowRequestSerial = 0
   const currentSentence = computed(() =>
     options.sentences.value.find((sentence) => sentence.index === options.currentSentenceIndex.value) ?? null,
   )
 
   async function loadSentenceWindow(documentId: string, targetIndex: number, force = false) {
+    const requestSerial = ++sentenceWindowRequestSerial
     const targetLoaded = options.sentences.value.some((sentence) => sentence.index === targetIndex)
     if (!force && targetLoaded && isTargetComfortablyLoaded(targetIndex)) return
 
@@ -53,6 +55,7 @@ export function useReaderSentenceWindow(options: UseReaderSentenceWindowOptions)
     const offset = Math.min(Math.max(targetIndex - SENTENCE_WINDOW_PADDING, 0), maxOffset)
     const limit = Math.min(SENTENCE_WINDOW_SIZE, total)
     const page = await fetchDocumentSentences(PROJECT_ID, documentId, offset, limit)
+    if (requestSerial !== sentenceWindowRequestSerial || options.documentMeta.value?.id !== documentId) return
     options.sentences.value = page.sentences
     options.loadedWindow.value = { offset: page.offset, limit: page.limit, total: page.total }
     options.onSentencesLoaded(page.sentences)
@@ -61,14 +64,17 @@ export function useReaderSentenceWindow(options: UseReaderSentenceWindowOptions)
 
   function setCurrentSentence(index: number, scrollBehavior: ScrollBehavior = 'smooth', targetSuggestionId = '') {
     if (!options.metrics.value.sentence_count) return
-    options.currentSentenceIndex.value = clampIndex(index)
+    const targetIndex = clampIndex(index)
+    options.currentSentenceIndex.value = targetIndex
     options.selection.clearSelection()
     options.activeSuggestionId.value = targetSuggestionId
     void (async () => {
-      if (options.documentMeta.value) await loadSentenceWindow(options.documentMeta.value.id, options.currentSentenceIndex.value)
+      const documentId = options.documentMeta.value?.id
+      if (documentId) await loadSentenceWindow(documentId, targetIndex)
+      if (options.currentSentenceIndex.value !== targetIndex || options.documentMeta.value?.id !== documentId) return
       if (targetSuggestionId) options.normalizeActiveSuggestionTarget()
       await centerCurrentSentence(scrollBehavior)
-      void persistSessionCursor(options.currentSentenceIndex.value)
+      void persistSessionCursor(targetIndex)
     })()
   }
 

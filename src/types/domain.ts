@@ -447,3 +447,95 @@ export type DragSelection = {
 }
 
 export const fallbackTags: TagDef[] = []
+
+export type AssistanceErrorReason =
+  | 'missed_span'
+  | 'extra_span'
+  | 'wrong_label'
+  | 'boundary_too_wide'
+  | 'boundary_too_narrow'
+  | 'other'
+
+export type AssistanceSpan = {
+  suggestion_id?: string | null
+  tag_id: string
+  start_token_index: number
+  end_token_index: number
+  start_char: number
+  end_char: number
+  text: string
+  confidence?: number | null
+}
+
+export type AssistanceTagProgress = {
+  tag_id: string
+  tag_name: string
+  tag_color: string
+  human_verified_count: number
+  trusted_count: number
+  threshold: number
+  active: boolean
+}
+
+export type AssistanceQueueItem = {
+  id: string
+  draft_id: string
+  draft_version: number
+  document_id: string
+  sentence_id: string
+  sentence_index: number
+  sentence_text: string
+  status: string
+  queue_order: number
+  knowledge_revision: number
+  active_tag_ids: string[]
+  model?: string | null
+  verifier_status?: string | null
+  verifier_issues: Record<string, unknown>[]
+  attempt_count: number
+  error_message?: string | null
+  usage: Record<string, unknown>
+  spans: AssistanceSpan[]
+}
+
+export type AssistanceQueue = {
+  counts: Record<string, number>
+  items: AssistanceQueueItem[]
+  ready: number
+  running: number
+  queued: number
+  skipped: number
+  failed: number
+}
+
+export type AssistanceStatus = {
+  enabled: boolean
+  seed_per_tag: number
+  concurrency: number
+  knowledge_revision: number
+  active_tags: AssistanceTagProgress[]
+  tag_progress: AssistanceTagProgress[]
+  queue: AssistanceQueue
+  usage: Record<string, number>
+}
+
+export type AssistanceDecisionAction = 'confirm' | 'skip' | 'correct'
+
+export type AssistanceFinalSpan = Pick<AssistanceSpan, 'tag_id' | 'start_token_index' | 'end_token_index'>
+
+export type AssistanceDecisionPayload = {
+  action: AssistanceDecisionAction
+  draft_id: string
+  draft_version: number
+  final_spans?: AssistanceFinalSpan[]
+  error_reasons?: AssistanceErrorReason[]
+  error_note?: string | null
+}
+
+export type AssistanceDecisionResponse = {
+  action: AssistanceDecisionAction
+  sentence_id: string
+  completed: boolean
+  next_sentence_id?: string | null
+  queue: AssistanceQueue
+}

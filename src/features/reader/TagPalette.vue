@@ -2,13 +2,14 @@
 import { computed, nextTick, ref } from 'vue'
 import { AlertTriangle, Check, Download, Pencil, Plus, Tag, Trash2, Upload, X } from '@lucide/vue'
 import type { UiLabels } from '../../i18n'
-import type { SentenceQueueItem, TagDef } from '../../types/domain'
+import type { AssistanceTagProgress, SentenceQueueItem, TagDef } from '../../types/domain'
 
 const SENTENCE_DOT_WINDOW_SIZE = 50
 
 const props = defineProps<{
   labels: UiLabels['tags']
   tags: TagDef[]
+  assistanceTagProgress: AssistanceTagProgress[]
   selectedTagId: string
   hasPendingSelection: boolean
   queueItems: SentenceQueueItem[]
@@ -88,6 +89,10 @@ function tagUsage(tag: TagDef) {
 
 function tagSuggestionUsage(tag: TagDef) {
   return tag.suggestion_count ?? 0
+}
+
+function assistanceProgress(tagId: string) {
+  return props.assistanceTagProgress.find((item) => item.tag_id === tagId) ?? null
 }
 
 function hasDeleteImpact(tag: TagDef) {
@@ -250,6 +255,18 @@ function handleTagSchemaInput(event: Event) {
             <span class="tag-copy">
               <strong>{{ tagItem.name }}</strong>
               <em v-if="tagItem.description">{{ tagItem.description }}</em>
+              <em
+                v-if="assistanceProgress(tagItem.id)"
+                class="tag-assistance-progress"
+                :class="{ active: assistanceProgress(tagItem.id)?.active }"
+              >
+                {{ assistanceProgress(tagItem.id)?.active
+                  ? labels.assistanceActive
+                  : labels.assistanceSeed(
+                    assistanceProgress(tagItem.id)?.human_verified_count ?? 0,
+                    assistanceProgress(tagItem.id)?.threshold ?? 5,
+                  ) }}
+              </em>
             </span>
           </button>
           <div class="tag-card-actions">

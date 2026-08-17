@@ -9,7 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import annotations, audit, documents, engagement, exports, health, presets, runs, settings, suggestions, tags
+from .assistance_generation import OpenAICompatibleAssistanceGenerator
+from .assistance_worker import AssistanceWorker
+from .api import annotations, assistance, audit, documents, engagement, exports, health, presets, runs, settings, suggestions, tags
+from .settings import get_llm_model_option, get_llm_settings
 from .storage import AnnotationStorage
 
 
@@ -25,7 +28,12 @@ def _cors_origins() -> list[str]:
     return [origin.strip() for origin in raw_value.split(",") if origin.strip()]
 
 
-def create_app(storage: AnnotationStorage | None = None, suggestion_reviewer=None, engagement_candidate_generator=None) -> FastAPI:
+def create_app(
+    storage: AnnotationStorage | None = None,
+    suggestion_reviewer=None,
+    engagement_candidate_generator=None,
+    assistance_generator=None,
+) -> FastAPI:
     storage = storage or AnnotationStorage(
         database_path=Path(os.getenv("DATABASE_PATH", "/data/runtime/annopilot.sqlite")),
         data_root=Path(os.getenv("DATA_ROOT", "/data/projects")),
@@ -34,12 +42,29 @@ def create_app(storage: AnnotationStorage | None = None, suggestion_reviewer=Non
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         storage.initialize()
-        yield
+        worker: AssistanceWorker | None = None
+        if _env_bool("ASSISTANCE_WORKER_ENABLED", True):
+            def generator_factory():
+                if assistance_generator is not None:
+                    return assistance_generator() if callable(assistance_generator) and not hasattr(assistance_generator, "generate") else assistance_generator
+                selected_option_id = storage.get_runtime_setting("llm_model_option_id")
+                option = get_llm_model_option(selected_option_id) if selected_option_id else None
+                return OpenAICompatibleAssistanceGenerator(get_llm_settings(model_override=option.model if option else None))
+
+            worker = AssistanceWorker(storage.assistance_service, generator_factory)
+            worker.start()
+        app.state.assistance_worker = worker
+        try:
+            yield
+        finally:
+            if worker is not None:
+                await worker.stop()
 
     app = FastAPI(title="AnnoPilot API", lifespan=lifespan)
     app.state.storage = storage
     app.state.suggestion_reviewer = suggestion_reviewer
     app.state.engagement_candidate_generator = engagement_candidate_generator
+    app.state.assistance_generator = assistance_generator
     cors_origins = _cors_origins()
     app.add_middleware(
         CORSMiddleware,
@@ -55,6 +80,7 @@ def create_app(storage: AnnotationStorage | None = None, suggestion_reviewer=Non
     app.include_router(documents.router)
     app.include_router(runs.router)
     app.include_router(annotations.router)
+    app.include_router(assistance.router)
     app.include_router(tags.router)
     app.include_router(suggestions.router)
     app.include_router(engagement.router)

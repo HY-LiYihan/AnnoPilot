@@ -136,7 +136,15 @@ const {
   reviewSummary,
   reviewQueueSummary,
   activeAnnotations,
+  activeAssistanceAnnotations,
   activeSuggestions,
+  assistanceStatus,
+  assistanceError,
+  assistanceTagProgress,
+  currentAssistanceDraft,
+  isAssistanceDeciding,
+  isAssistanceDraftModified,
+  assistanceErrorReasons,
   canUndoSpanAction,
   undoLabel,
   hasReviewQueue,
@@ -151,6 +159,8 @@ const {
   setReviewQueueOrder,
   markCurrentSentenceMonogloss,
   completeCurrentSentence,
+  skipCurrentAssistanceDraft,
+  toggleAssistanceErrorReason,
   reopenCurrentSentence,
   generateDocumentSuggestions,
   generateCurrentSentenceSuggestions,
@@ -218,6 +228,8 @@ const {
   verifyRebuildPreview,
   resetProjectData,
 } = useDocumentReader()
+
+const workspaceReaderError = computed(() => readerError.value || assistanceError.value)
 
 const localizedReviewSummary = computed(() => labels.value.tags.suggestionsWaiting(metrics.value.suggestion_count))
 const annotationConflictItems = computed(() => queueItems.value.filter((sentence) => (sentence.annotation_overlap_count ?? 0) > 0))
@@ -397,6 +409,7 @@ async function confirmProjectReset() {
       <TagPalette
         :labels="labels.tags"
         :tags="tags"
+        :assistance-tag-progress="assistanceTagProgress"
         :selected-tag-id="selectedTagId"
         :has-pending-selection="Boolean(pendingSelection)"
         :queue-items="queueItems"
@@ -424,7 +437,12 @@ async function confirmProjectReset() {
         :current-sentence-index="currentSentenceIndex"
         :sentences="sentences"
         :active-annotations="activeAnnotations"
-        :active-suggestions="activeSuggestions"
+        :active-assistance-annotations="activeAssistanceAnnotations"
+        :active-suggestions="currentAssistanceDraft ? [] : activeSuggestions"
+        :assistance-draft="currentAssistanceDraft"
+        :assistance-draft-modified="isAssistanceDraftModified"
+        :assistance-error-reasons="assistanceErrorReasons"
+        :is-assistance-deciding="isAssistanceDeciding"
         :can-undo-span-action="canUndoSpanAction"
         :undo-label="localizedUndoLabel"
         :pending-selection="pendingSelection"
@@ -433,7 +451,7 @@ async function confirmProjectReset() {
         :review-queue-summary="localizedReviewQueueSummary"
         :review-queue-insight="currentReviewQueueInsight"
         :reviewed-suggestion-count="metrics.reviewed_suggestion_count"
-        :reader-error="readerError"
+        :reader-error="workspaceReaderError"
         :is-uploading="isUploading"
         :is-saving="isSaving"
         :is-suggesting="isSuggesting"
@@ -487,6 +505,8 @@ async function confirmProjectReset() {
         @engagement-temperature-change="setEngagementTemperature"
         @next-review="jumpToNextReviewSentence"
         @complete="completeCurrentSentence"
+        @assistance-skip="skipCurrentAssistanceDraft"
+        @assistance-error-toggle="toggleAssistanceErrorReason"
         @ignore="completeCurrentSentence('ignore')"
         @reject="completeCurrentSentence('reject')"
         @reopen="reopenCurrentSentence"
@@ -497,6 +517,7 @@ async function confirmProjectReset() {
       <MetricsPanel
         :labels="labels.metrics"
         :document-meta="documentMeta"
+        :assistance-status="assistanceStatus"
         :metrics="metrics"
         :audit-summary="auditSummary"
         :rebuild-preview="rebuildPreview"

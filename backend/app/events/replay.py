@@ -30,6 +30,16 @@ REPLAYABLE_EVENT_FIELDS = {
     "suggestion.rejected": {"suggestion_id"},
 }
 
+AUDIT_ONLY_EVENT_FIELDS = {
+    "assistance.activated": {"document_id", "active_tag_ids"},
+    "assistance.settings.updated": {"document_id", "enabled"},
+    "assistance.draft.generated": {"document_id", "sentence_id", "job_id", "spans"},
+    "assistance.sentence.skipped": {"document_id", "sentence_id", "job_id"},
+    "assistance.draft.confirmed": {"document_id", "sentence_id", "job_id", "final_spans"},
+    "assistance.draft.corrected": {"document_id", "sentence_id", "job_id", "final_spans"},
+    "assistance.error.classified": {"feedback_id", "error_reasons"},
+}
+
 
 def event_replay_issue(event: dict[str, Any]) -> str | None:
     if event.get("record_type") != "event" or not event.get("event_id"):
@@ -70,6 +80,10 @@ def event_replay_issue(event: dict[str, Any]) -> str | None:
             return "llm_review_missing_snapshot"
     elif event_type in REPLAYABLE_EVENT_FIELDS:
         missing = REPLAYABLE_EVENT_FIELDS[event_type] - set(event)
+        if missing:
+            return f"{event_type}_missing_fields:{','.join(sorted(missing))}"
+    elif event_type in AUDIT_ONLY_EVENT_FIELDS:
+        missing = AUDIT_ONLY_EVENT_FIELDS[event_type] - set(event)
         if missing:
             return f"{event_type}_missing_fields:{','.join(sorted(missing))}"
     else:
@@ -216,6 +230,9 @@ def apply_replay_event(conn: sqlite3.Connection, project_id: str, event: dict[st
                 event.get("created_at") or event.get("ts"),
             ),
         )
+    elif event_type in AUDIT_ONLY_EVENT_FIELDS:
+        # Assistance decisions emit canonical annotation/sentence events separately.
+        return
 
 
 def clear_project_runtime_rows(conn: sqlite3.Connection, project_id: str) -> None:

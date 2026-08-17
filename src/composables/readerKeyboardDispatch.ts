@@ -39,6 +39,7 @@ export type KeyboardShortcutActions = {
 }
 
 export type ReaderKeyboardShortcutOptions = KeyboardShortcutActions & {
+  assistanceDraftActive?: ReadableValue<boolean>
   activeSuggestion: ReadableValue<SuggestionDef | null>
   activeSuggestions: ReadableValue<SuggestionDef[]>
   currentSentenceIndex: ReadableValue<number>
@@ -54,12 +55,17 @@ export function handleReaderKeyboardShortcut(
   options: ReaderKeyboardShortcutOptions,
 ) {
   const target = event.target
-  if (matchesTarget(target, 'input, textarea, select') || target?.isContentEditable) return false
+  if (
+    matchesTarget(target, 'input, textarea, select')
+    || matchesTarget(target, 'button, a')
+    || target?.isContentEditable
+  ) return false
 
   const key = event.key
   const lowerKey = key.toLowerCase()
 
   if ((event.metaKey || event.ctrlKey) && lowerKey === 'z') {
+    if (options.assistanceDraftActive?.value) return false
     event.preventDefault()
     void options.undoLastSpanAction()
     return true
@@ -67,7 +73,7 @@ export function handleReaderKeyboardShortcut(
 
   if (event.metaKey || event.ctrlKey || event.altKey) return false
 
-  if (key === 'Tab' && options.activeSuggestions.value.length > 0) {
+  if (key === 'Tab' && !options.assistanceDraftActive?.value && options.activeSuggestions.value.length > 0) {
     event.preventDefault()
     options.cycleActiveSuggestionTarget(event.shiftKey ? -1 : 1)
     return true
@@ -84,6 +90,25 @@ export function handleReaderKeyboardShortcut(
     event.preventDefault()
     void options.completeCurrentSentence()
     return true
+  }
+
+  if (options.assistanceDraftActive?.value) {
+    if (lowerKey === 'i' || lowerKey === 'j' || event.code === 'Space' || key === ' ') {
+      event.preventDefault()
+      void options.completeCurrentSentence('ignore')
+      return true
+    }
+    if (key === 'ArrowDown') {
+      event.preventDefault()
+      options.setCurrentSentence(options.currentSentenceIndex.value + 1)
+      return true
+    }
+    if (key === 'ArrowUp') {
+      event.preventDefault()
+      options.setCurrentSentence(options.currentSentenceIndex.value - 1)
+      return true
+    }
+    return false
   }
 
   if (lowerKey === 'i') {
@@ -116,7 +141,7 @@ export function handleReaderKeyboardShortcut(
     return true
   }
 
-  if ((event.code === 'Space' || key === ' ') && !matchesTarget(target, 'button, a')) {
+  if (event.code === 'Space' || key === ' ') {
     event.preventDefault()
     void options.completeCurrentSentence('ignore')
     return true

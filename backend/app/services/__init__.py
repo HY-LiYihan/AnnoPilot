@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .annotation_imports import AnnotationImportService
 from .annotations import AnnotationService
+from .assistance import AssistanceService
 from .audit import AuditService
 from .documents import DocumentService
 from .exports import ExportService
@@ -16,6 +17,7 @@ from .tags import TagService
 __all__ = [
     "AnnotationImportService",
     "AnnotationService",
+    "AssistanceService",
     "AuditService",
     "DocumentService",
     "ExportService",
