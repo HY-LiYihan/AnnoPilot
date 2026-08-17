@@ -40,6 +40,7 @@ AnnoPilot 现在同时维护两个 surface：
 - Character RAG run 会保存 sentence-level immutable candidate snapshot；Goldsmith candidate runs 对新数据按一次 run 的完整 span 集合输出，consistency scores 使用最近 5 次完整 run 计算真实 span-set self-consistency。历史数据和 calibration preset 保留原 suggestion-level proxy fallback。
 - 新增 Rolling Assistance：每个标签积累 5 条人工验证 annotation 后自动激活，后台 worker 持续维持最多 5 条 draft queue；draft 可原样确认、修改后确认或 skip，模型结果在 verifier 与人工 decision 之前不会成为正式 annotation。
 - Assistance draft 支持 token-level 本地编辑、错误原因反馈、queue 状态与 token usage 展示；`draft_id + draft_version`、tag schema hash 和句子现状共同防止过期模型结果覆盖人工修改。
+- 当前句存在 assistance draft 时，`Enter` 不再走普通 completion endpoint：未改动时原子 confirm，编辑过时原子 correct；无 draft 的纯手工句仍保持原有的 `Enter` 完成语义。完整工作流见 [滚动式 Assistance](/guide/assistance-workflow)。
 
 当前 backend 和 frontend 已支持 Prodigy / AnnoPilot style annotations JSONL 导入，入口位于右侧 metrics/export panel；导入结果会保留并本地化展示 skip reason counts，方便定位句子未匹配、spans 字段错误和 token 边界错误。
 
@@ -195,7 +196,7 @@ assistance.error.classified
 
 `annotations.imported` 是导入批次 summary event；实际可重放状态仍由导入过程中产生的 `tag.created`、`annotation.deleted`、`annotation.created` 和 `sentence.completed` events 表达。该 summary event 还保存逐行 `source_record_results` manifest，用于追踪外部 Prodigy / AnnoPilot JSONL 每条记录的匹配结果、record hash 和源 session metadata。LLM review event 会包含 `context_sha256`，用于 hash 当次模型调用的完整结构化 review context；即使后续 tags、sentence annotations 或上下文变化，也能审计当时的 Aixhan / OpenAI-compatible review decision。
 
-Assistance events 是 audit-only workflow records；confirm/correct 同时写入 canonical `annotation.created` 与 `sentence.completed` events，rebuild 只使用 canonical events 恢复最终业务状态。详细说明见 [Rolling Assistance](/guide/rolling-assistance)。
+Assistance events 是 audit-only workflow records；confirm/correct 同时写入 canonical `annotation.created` 与 `sentence.completed` events，rebuild 只使用 canonical events 恢复最终业务状态。详细说明见 [滚动式 Assistance](/guide/assistance-workflow)。
 
 ### Docker Deployment
 

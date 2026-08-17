@@ -133,6 +133,35 @@ def test_ready_drafts_reads_api_queue_items() -> None:
     assert experiment.ready_drafts(payload) == [{"id": "ready", "sentence_id": "s-2", "status": "ready"}]
 
 
+def test_wait_for_draft_fails_immediately_with_worker_error() -> None:
+    class FailedJobApi:
+        def json(self, _method: str, _path: str) -> dict:
+            return {
+                "enabled": True,
+                "active_tags": [{"tag_id": "PER"}],
+                "queue": {
+                    "items": [
+                        {
+                            "id": "draft-failed",
+                            "sentence_id": "s-1",
+                            "status": "failed",
+                            "error_message": "model_not_supported",
+                        }
+                    ]
+                },
+            }
+
+    with pytest.raises(experiment.ExperimentError, match="model_not_supported"):
+        experiment.wait_for_assistance_draft(
+            FailedJobApi(),
+            "default",
+            "doc-1",
+            "s-1",
+            timeout_seconds=90,
+            sleep=lambda _seconds: pytest.fail("failed jobs must not be polled again"),
+        )
+
+
 def test_run_experiment_waits_for_ready_draft_and_uses_usage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "openner"
     english = root / "standardized" / "UNER_English_EWT" / "eng"

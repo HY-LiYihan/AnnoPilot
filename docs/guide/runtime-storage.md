@@ -241,7 +241,7 @@ Mutation path 使用 SQLite outbox：domain rows 和 event payload 在同一个 
 
 `annotation_sessions` 保存 Prodigy-style runtime workflow state，例如默认人工会话当前停留的 sentence index。它用于刷新后恢复 reader 位置，不写入 JSONL audit log，避免普通导航操作污染业务事件流。
 
-`assistance_settings` 保存 document-level 开关、滚动队列序号和 knowledge revision。`assistance_jobs` 是 durable queue 与冻结 generation snapshot，使用 status + `lease_until` 支持重启恢复；`assistance_feedback` 保存人工确认前后的 span 差异与错误分类。模型 draft 通过 `annotation_suggestions.assistance_job_id` 关联，但只有 confirm/correct transaction 才会创建正式 annotation。完整状态机见 [Rolling Assistance](/guide/rolling-assistance)。
+`assistance_settings` 保存 document-level 开关、滚动队列序号和 knowledge revision。`assistance_jobs` 是 durable queue 与冻结 generation snapshot，使用 status + `lease_until` 支持重启恢复；`assistance_feedback` 保存人工确认前后的 span 差异与错误分类。模型 draft 通过 `annotation_suggestions.assistance_job_id` 关联，但只有 confirm/correct transaction 才会创建正式 annotation。完整状态机见 [滚动式 Assistance](/guide/assistance-workflow)。
 
 Annotation `source` 当前可能是 `human`、`accepted_suggestion`、`auto_monogloss` 或 `prodigy_import`。`source_suggestion_id` 用于追踪由 suggestion accept 创建的 annotation；`auto_monogloss` 表示右侧效率入口为无 annotation、无 pending suggestion 的未完成句自动创建整句 Monogloss span。
 

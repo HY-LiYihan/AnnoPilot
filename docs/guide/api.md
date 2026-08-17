@@ -85,7 +85,7 @@ POST /api/projects/{project_id}/sentences/{sentence_id}/assistance/decision
 - `draft_id + draft_version` 用于 optimistic concurrency。过期 draft、已有人工 annotation 或非 ready 状态返回 `409`；非法 tag、overlap 或 token range 返回 `400`。
 - Assistance draft 只是 pending suggestion。Confirm/correct 才在一个 transaction 内创建 annotations、完成句子、保存 feedback 并写 outbox events。
 
-完整 activation、worker、verifier 和状态机见 [Rolling Assistance](/guide/rolling-assistance)。
+完整 activation、worker、verifier 和状态机见 [滚动式 Assistance](/guide/assistance-workflow)。
 
 ## Suggestions
 

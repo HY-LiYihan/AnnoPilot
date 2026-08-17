@@ -327,6 +327,16 @@ def assistance_draft_for_sentence(state: dict[str, Any], sentence_id: str) -> di
     return None
 
 
+def failed_assistance_job_for_sentence(state: dict[str, Any], sentence_id: str) -> dict[str, Any] | None:
+    assistance = unwrap_assistance(state)
+    queue = assistance.get("queue", {})
+    items = queue.get("items", []) if isinstance(queue, dict) else []
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and str(item.get("sentence_id")) == sentence_id and item.get("status") == "failed":
+            return item
+    return None
+
+
 def wait_for_assistance_draft(
     api: HttpApi,
     project_id: str,
@@ -351,6 +361,10 @@ def wait_for_assistance_draft(
         draft = assistance_draft_for_sentence(state, sentence_id)
         if draft is not None:
             return draft
+        failed = failed_assistance_job_for_sentence(state, sentence_id)
+        if failed is not None:
+            message = str(failed.get("error_message") or "unknown worker failure")
+            raise ExperimentError(f"Assistance job failed for sentence {sentence_id}: {message}")
         assistance = unwrap_assistance(state)
         if not assistance.get("enabled", True) or not assistance.get("active_tags", []):
             return None

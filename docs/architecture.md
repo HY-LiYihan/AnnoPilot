@@ -230,7 +230,7 @@ annopilot.run_provenance.v1
 5. UI 对 ready draft 可执行 confirm、correct 或 skip。Confirm/correct 在一个 SQLite transaction 中写 annotation、sentence answer、feedback、job state 和 outbox events，并将 `knowledge_revision` 加一。
 6. `draft_id + draft_version`、tag schema hash 和句子现状共同构成 optimistic concurrency boundary；草稿生成期间若已有人工 annotation 或 tag schema 改变，结果不会覆盖人工数据。
 
-详细状态机、数据模型和失败恢复规则见 [Rolling Assistance](/guide/rolling-assistance)。
+详细状态机、数据模型和失败恢复规则见 [滚动式 Assistance](/guide/assistance-workflow)。
 
 ### Import / Export
 
