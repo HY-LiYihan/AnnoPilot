@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .engagement import APPRAISAL_ENGAGEMENT_TAXONOMIES
@@ -101,6 +102,23 @@ APPRAISAL_ENGAGEMENT_TAG_SCHEMA: dict[str, Any] = {
         },
     ],
 }
+
+
+OPENNER_SAMPLE_DATA_DIR = Path(__file__).resolve().parents[2] / "samples"
+OPENNER_TAG_SCHEMA: dict[str, Any] = {
+    "schema_version": "annopilot.tag_schema.v1",
+    "record_type": "tag_schema",
+    "tags": [],
+}
+
+
+def _load_openner_text() -> str:
+    chinese = (OPENNER_SAMPLE_DATA_DIR / "openner_chinese_1000.txt").read_text(encoding="utf-8").rstrip()
+    english = (OPENNER_SAMPLE_DATA_DIR / "openner_english_1000.txt").read_text(encoding="utf-8").rstrip()
+    return f"{chinese}\n{english}\n"
+
+
+OPENNER_ZH_EN_TEXT = _load_openner_text()
 
 
 APPRAISAL_ENGAGEMENT_TEXT = """The researcher said the pilot may help teachers, but it does not prove every classroom will improve.
@@ -343,6 +361,7 @@ class SamplePreset:
     # Loading a sample should open a review queue, not silently create gold labels.
     auto_accept_on_load: bool = False
     complete_sentences_on_load: bool = False
+    clear_tags_on_load: bool = False
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -361,6 +380,18 @@ class SamplePreset:
 
 
 BUILTIN_SAMPLE_PRESETS = {
+    "openner-zh-en-1000": SamplePreset(
+        id="openner-zh-en-1000",
+        title="OpenNER 中文 + English 1000+1000",
+        description="OpenNER 中文 1000 句与英文 1000 句实验样例。默认不创建标签，打开后可手动建立 span labels。",
+        filename="openner-zh-en-1000.txt",
+        text=OPENNER_ZH_EN_TEXT,
+        tag_schema=OPENNER_TAG_SCHEMA,
+        language_pair="zh-en",
+        default_limit_per_sentence=10,
+        default_min_confidence=0.98,
+        clear_tags_on_load=True,
+    ),
     "appraisal-engagement-cn-en": SamplePreset(
         id="appraisal-engagement-cn-en",
         title="Appraisal Engagement 中英样例",

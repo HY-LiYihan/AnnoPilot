@@ -57,6 +57,7 @@ export async function fetchSamplePresets(projectId: string): Promise<SamplePrese
 }
 
 type LoadSamplePresetOptions = {
+  generateSuggestions?: boolean
   autoAcceptSuggestions?: boolean
   completeSentences?: boolean
 }
@@ -70,7 +71,7 @@ export async function loadSamplePreset(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      generate_suggestions: true,
+      generate_suggestions: options.generateSuggestions ?? true,
       auto_accept_suggestions: Boolean(options.autoAcceptSuggestions),
       complete_sentences: Boolean(options.completeSentences),
     }),

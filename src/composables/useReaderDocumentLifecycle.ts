@@ -25,6 +25,8 @@ import {
 } from '../types/domain'
 import { initialSentenceIndex } from './readerDocumentPosition'
 
+const OPENNER_PRESET_ID = 'openner-zh-en-1000'
+
 type SelectionState = {
   clearSelection: () => void
 }
@@ -108,6 +110,9 @@ export function useReaderDocumentLifecycle(options: UseReaderDocumentLifecycleOp
     } else {
       await options.loadProjectTags()
       await options.refreshAuditSummary()
+      if (options.samplePresets.value.some((preset) => preset.id === OPENNER_PRESET_ID)) {
+        await loadBuiltinSamplePreset(OPENNER_PRESET_ID)
+      }
     }
   }
 
@@ -171,7 +176,7 @@ export function useReaderDocumentLifecycle(options: UseReaderDocumentLifecycleOp
   async function loadSamplePresets() {
     try {
       const payload = await fetchSamplePresets(PROJECT_ID)
-      options.samplePresets.value = payload.presets
+      options.samplePresets.value = payload.presets.filter((preset) => preset.id === OPENNER_PRESET_ID)
     } catch {
       options.samplePresets.value = []
     }
@@ -187,6 +192,7 @@ export function useReaderDocumentLifecycle(options: UseReaderDocumentLifecycleOp
     try {
       const preset = options.samplePresets.value.find((item) => item.id === presetId)
       const loaded = await loadSamplePresetApi(PROJECT_ID, presetId, {
+        generateSuggestions: presetId !== OPENNER_PRESET_ID,
         autoAcceptSuggestions: preset?.auto_accept_on_load ?? false,
         completeSentences: preset?.complete_sentences_on_load ?? false,
       })

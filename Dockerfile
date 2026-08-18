@@ -16,6 +16,7 @@ ENV DATA_ROOT=/data/projects \
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend ./backend
+COPY samples ./samples
 COPY --from=frontend /app/dist ./static
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

@@ -36,7 +36,10 @@ def load_preset(
         preset.complete_sentences_on_load if request.complete_sentences is None else request.complete_sentences
     )
     try:
-        storage.import_tag_schema(project_id, preset.tag_schema)
+        if preset.clear_tags_on_load:
+            storage.reset_project(project_id)
+        if preset.tag_schema.get("tags"):
+            storage.import_tag_schema(project_id, preset.tag_schema)
         imported = storage.import_txt(project_id, preset.filename, preset.text.encode("utf-8"))
         suggestion_result = {
             "suggestions_created": 0,

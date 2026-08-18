@@ -295,6 +295,7 @@ def clear_project_runtime_rows(conn: sqlite3.Connection, project_id: str) -> Non
     conn.execute("DELETE FROM annotation_runs WHERE project_id = ?", (project_id,))
     conn.execute("DELETE FROM annotation_sessions WHERE project_id = ?", (project_id,))
     conn.execute("DELETE FROM documents WHERE project_id = ?", (project_id,))
+    conn.execute("DELETE FROM tags WHERE project_id = ?", (project_id,))
 
 
 def _apply_document_import(conn: sqlite3.Connection, project_id: str, event: dict[str, Any]) -> None:

@@ -2005,6 +2005,7 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
         assert presets_response.status_code == 200
         presets = presets_response.json()["presets"]
         expected_preset_ids = [
+            "openner-zh-en-1000",
             "appraisal-engagement-cn-en",
             "appraisal-engagement-news-policy-cn-en",
             "appraisal-engagement-academic-method-cn-en",
@@ -2023,15 +2024,16 @@ def test_load_builtin_appraisal_engagement_sample_preset(tmp_path: Path) -> None
             "appraisal-engagement-calibration-cn-en",
         ]
         assert [preset["id"] for preset in presets] == expected_preset_ids
-        assert all(preset["tag_count"] == 9 for preset in presets)
         preset_by_id = {preset["id"]: preset for preset in presets}
+        assert preset_by_id["openner-zh-en-1000"]["tag_count"] == 0
+        assert all(preset_by_id[preset_id]["tag_count"] == 9 for preset_id in expected_preset_ids[1:])
         assert preset_by_id["appraisal-engagement-cn-en"]["auto_accept_on_load"] is False
         assert preset_by_id["appraisal-engagement-cn-en"]["complete_sentences_on_load"] is False
         assert preset_by_id["appraisal-engagement-calibration-cn-en"]["auto_accept_on_load"] is False
         assert preset_by_id["appraisal-engagement-calibration-cn-en"]["complete_sentences_on_load"] is False
 
         loaded_by_id = {}
-        for preset_id in expected_preset_ids:
+        for preset_id in expected_preset_ids[1:]:
             load_response = client.post(
                 f"/api/projects/default/sample-presets/{preset_id}/load",
                 json={"auto_accept_suggestions": False, "complete_sentences": False},
@@ -5320,9 +5322,7 @@ def test_project_reset_clears_runtime_data_and_replays_cleanly(tmp_path: Path) -
 
         assert client.get("/api/projects/default/documents").json()["documents"] == []
         assert client.get(f"/api/projects/default/documents/{document_id}/summary").status_code == 404
-        assert client.get("/api/projects/default/tags").json()["tags"] == [
-            {**tag, "count": 0, "usage_count": 0, "suggestion_count": 0}
-        ]
+        assert client.get("/api/projects/default/tags").json()["tags"] == []
         audit = client.get("/api/projects/default/audit").json()
         assert audit["event_types"]["project.reset"] == 1
         assert audit["non_replayable_event_count"] == 0
@@ -5347,7 +5347,7 @@ def test_project_reset_clears_runtime_data_and_replays_cleanly(tmp_path: Path) -
     assert rebuild_result.annotations == 0
     assert rebuild_result.suggestions == 0
     assert rebuild_result.runs == 0
-    assert rebuild_result.tags == 1
+    assert rebuild_result.tags == 0
 
 
 def test_audit_reports_replay_issue_details(tmp_path: Path) -> None:
