@@ -9,6 +9,7 @@ from typing import Any
 
 from .assistance_generation import (
     build_assistance_prompt,
+    _model_label_map,
     parse_and_verify_assistance_candidate,
     select_assistance_examples,
 )
@@ -177,6 +178,11 @@ class AssistanceWorker:
                 selected_examples,
                 context["negative_examples"],
             )
+            prompt_metadata = {
+                "prompt_mode": "compact",
+                "prompt_version": "xml-result-v1",
+                "prompt_token_estimate": max(1, len(prompt) // 4),
+            }
             self.service.store_generation_result(
                 job_id,
                 {
@@ -188,6 +194,7 @@ class AssistanceWorker:
                     "retrieved_examples": selected_examples,
                     "usage": {
                         **usage,
+                        **prompt_metadata,
                         "api_calls": provider_attempts,
                         "validation_attempts": provider_attempts,
                         "validation_retries": max(0, provider_attempts - 1),
@@ -242,12 +249,14 @@ class AssistanceWorker:
     @staticmethod
     def _label_map(tags: list[dict[str, Any]]) -> dict[str, str]:
         result: dict[str, str] = {}
+        model_labels = _model_label_map(tags)
         for tag in tags:
             tag_id = str(tag["id"])
             name = str(tag.get("name") or tag_id)
             result[tag_id] = tag_id
             result[name] = tag_id
             result[name.casefold()] = tag_id
+            result[model_labels[tag_id]] = tag_id
         return result
 
     @staticmethod

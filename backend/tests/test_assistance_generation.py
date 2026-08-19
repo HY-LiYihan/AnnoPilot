@@ -25,6 +25,10 @@ def _raw(spans: list[dict[str, object]], *, text: str = TEXT) -> str:
     return json.dumps({"text": text, "spans": spans})
 
 
+def _compact(result: str, explanation: str = "Short explanation") -> str:
+    return json.dumps({"result": result, "explanation": explanation})
+
+
 def test_parse_accepts_empty_and_valid_spans() -> None:
     empty, empty_issues = parse_and_verify_assistance_candidate(_raw([]), TEXT, LABELS, TOKENS)
     valid, valid_issues = parse_and_verify_assistance_candidate(
@@ -54,6 +58,55 @@ def test_parse_reports_offset_text_label_and_overlap_errors() -> None:
 
     codes = {issue["code"] for issue in issues}
     assert {"offset_not_token_boundary", "span_text_mismatch", "invalid_label", "duplicate_span", "overlapping_spans"} <= codes
+
+
+def test_parse_accepts_compact_xml_result_and_normalizes_spans() -> None:
+    candidate, issues = parse_and_verify_assistance_candidate(
+        _compact("<person>Alice</person> visits <location>Paris</location>."), TEXT, LABELS, TOKENS
+    )
+
+    assert issues == []
+    assert candidate["text"] == TEXT
+    assert [(span["text"], span["label"], span["start"], span["end"]) for span in candidate["spans"]] == [
+        ("Alice", "person", 0, 5),
+        ("Paris", "location", 13, 18),
+    ]
+    assert candidate["explanation"] == "Short explanation"
+
+
+def test_compact_xml_result_accepts_empty_annotation() -> None:
+    candidate, issues = parse_and_verify_assistance_candidate(_compact(TEXT), TEXT, LABELS, TOKENS)
+
+    assert issues == []
+    assert candidate["spans"] == []
+
+
+def test_compact_xml_result_rejects_nested_unclosed_unknown_and_changed_text() -> None:
+    _, issues = parse_and_verify_assistance_candidate(
+        _compact("<person><location>Alice</location></person> visits Paris!"), TEXT, LABELS, TOKENS
+    )
+    codes = {issue["code"] for issue in issues}
+    assert {"nested_tag", "text_mismatch"} <= codes
+
+    _, issues = parse_and_verify_assistance_candidate(
+        _compact("<unknown>Alice</unknown> visits <person>Paris"), TEXT, LABELS, TOKENS
+    )
+    codes = {issue["code"] for issue in issues}
+    assert {"invalid_label", "unclosed_tag", "text_mismatch"} <= codes
+
+
+def test_compact_prompt_has_four_sections_and_stays_small() -> None:
+    prompt = build_assistance_prompt(
+        TEXT,
+        [{"id": "person", "name": "Person", "description": "a person"}],
+        {"person": ["Alice", "Bob", "Carol", "Dana", "Eve", "Frank"]},
+        ["No entity here."],
+    )
+
+    assert prompt.index("可用标签：") < prompt.index("标注格式：") < prompt.index("相似样例：") < prompt.index("当前句子：")
+    assert "<person>Alice</person>" in prompt
+    assert prompt.endswith(TEXT)
+    assert len(prompt) < 1800
 
 
 def test_select_examples_keeps_small_pool_and_selects_similar_plus_recent_corrections() -> None:
@@ -108,5 +161,5 @@ def test_generator_includes_retry_context_and_returns_provider_json(monkeypatch)
 
 def test_prompt_only_lists_supplied_labels() -> None:
     prompt = build_assistance_prompt(TEXT, [{"id": "person", "name": "Person"}], {}, [])
-    assert '"id": "person"' in prompt
+    assert "person" in prompt
     assert "location" not in prompt
