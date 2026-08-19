@@ -19,6 +19,23 @@ class LlmSettings:
 
 
 @dataclass(frozen=True)
+class RetrievalSettings:
+    mode: str = "bm25"
+    bm25_top_k: int = 30
+    dense_top_k: int = 30
+    rrf_k: int = 60
+    dense_enabled: bool = False
+    dense_base_url: str = ""
+    dense_api_key: str = ""
+    dense_model: str = "Qwen3-Embedding-0.6B"
+    dense_timeout_seconds: float = 5.0
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.dense_enabled and self.dense_base_url and self.dense_model)
+
+
+@dataclass(frozen=True)
 class LlmModelOption:
     id: str
     family: str
@@ -88,4 +105,20 @@ def get_llm_settings(model_override: str | None = None) -> LlmSettings:
         api_key=os.getenv("LLM_API_KEY", ""),
         model=model_override or os.getenv("LLM_MODEL", "gpt-5.5"),
         timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "20")),
+    )
+
+
+def get_retrieval_settings() -> RetrievalSettings:
+    load_dotenv()
+    mode = os.getenv("ASSISTANCE_RETRIEVAL_MODE", "bm25").strip().lower()
+    return RetrievalSettings(
+        mode=mode if mode in {"bm25", "hybrid"} else "bm25",
+        bm25_top_k=int(os.getenv("BM25_TOP_K", "30")),
+        dense_top_k=int(os.getenv("DENSE_TOP_K", "30")),
+        rrf_k=int(os.getenv("RRF_K", "60")),
+        dense_enabled=os.getenv("DENSE_RETRIEVAL_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"},
+        dense_base_url=os.getenv("DENSE_RETRIEVAL_BASE_URL", "").rstrip("/"),
+        dense_api_key=os.getenv("DENSE_RETRIEVAL_API_KEY", ""),
+        dense_model=os.getenv("DENSE_RETRIEVAL_MODEL", "Qwen3-Embedding-0.6B"),
+        dense_timeout_seconds=float(os.getenv("DENSE_RETRIEVAL_TIMEOUT_SECONDS", "5")),
     )

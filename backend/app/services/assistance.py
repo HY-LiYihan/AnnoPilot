@@ -919,7 +919,7 @@ class AssistanceService:
         conn: sqlite3.Connection,
         project_id: str,
         active_tag_ids: list[str],
-    ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
         examples = {tag_id: [] for tag_id in active_tag_ids}
         corrections = {tag_id: [] for tag_id in active_tag_ids}
         if not active_tag_ids:
@@ -927,7 +927,9 @@ class AssistanceService:
         placeholders = ",".join("?" for _ in active_tag_ids)
         rows = conn.execute(
             f"""
-            SELECT a.tag_id, a.text, a.source, a.created_at
+            SELECT a.tag_id, a.text, a.source, a.created_at,
+                   a.start_char, a.end_char, s.id AS sentence_id,
+                   s.text AS sentence_text, s.start_char AS sentence_start_char
             FROM annotations a
             JOIN sentences s ON s.id = a.sentence_id
             JOIN documents d ON d.id = s.document_id
@@ -937,13 +939,34 @@ class AssistanceService:
             """,
             (project_id, *active_tag_ids),
         ).fetchall()
+        grouped: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
-            text = str(row["text"]).strip()
-            if not text:
-                continue
-            examples.setdefault(row["tag_id"], []).append(text)
-            if row["source"] == "human":
-                corrections.setdefault(row["tag_id"], []).append(text)
+            sentence_id = str(row["sentence_id"])
+            grouped.setdefault(sentence_id, {"sentence_id": sentence_id, "text": str(row["sentence_text"]), "annotations": []})["annotations"].append(dict(row))
+        for group in grouped.values():
+            sentence_text = str(group["text"])
+            relative_annotations = sorted(
+                group["annotations"],
+                key=lambda item: (int(item["start_char"]) - int(item["sentence_start_char"]), int(item["end_char"])),
+            )
+            marked_parts: list[str] = []
+            cursor = 0
+            for annotation in relative_annotations:
+                start = int(annotation["start_char"]) - int(annotation["sentence_start_char"])
+                end = int(annotation["end_char"]) - int(annotation["sentence_start_char"])
+                if start < cursor or start < 0 or end > len(sentence_text) or end <= start:
+                    continue
+                marked_parts.append(sentence_text[cursor:start])
+                marked_parts.append(f"<LABEL_{annotation['tag_id']}>{sentence_text[start:end]}</LABEL_{annotation['tag_id']}>")
+                cursor = end
+            marked_parts.append(sentence_text[cursor:])
+            marked = "".join(marked_parts)
+            by_tag = {str(item["tag_id"]) for item in relative_annotations}
+            for tag_id in by_tag:
+                sample = {"text": sentence_text, "marked_text": marked, "tag_id": tag_id, "sentence_id": group["sentence_id"], "created_at": max(str(item["created_at"]) for item in relative_annotations)}
+                examples.setdefault(tag_id, []).append(sample)
+                if any(item["source"] == "human" and item["tag_id"] == tag_id for item in relative_annotations):
+                    corrections.setdefault(tag_id, []).append(sample)
         return examples, corrections
 
     @staticmethod

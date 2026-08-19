@@ -11,10 +11,12 @@ from .assistance_generation import (
     build_assistance_prompt,
     _model_label_map,
     parse_and_verify_assistance_candidate,
+    retrieve_assistance_examples,
     select_assistance_examples,
 )
 from .hashing import payload_sha256
 from .llm import LlmError
+from .settings import get_retrieval_settings
 from .services.assistance import ASSISTANCE_CONCURRENCY, AssistanceService
 
 
@@ -136,10 +138,11 @@ class AssistanceWorker:
         try:
             context = self.service.get_generation_context(job_id)
             attempt_count = int(context["attempt_count"])
-            selected_examples = select_assistance_examples(
+            selected_examples, retrieval_metadata = retrieve_assistance_examples(
                 context["source_text"],
                 context["examples_by_tag"],
                 context["corrections_by_tag"],
+                settings=get_retrieval_settings(),
             )
             generator = self.generator_factory()
             label_to_id = self._label_map(context["tags"])
@@ -182,6 +185,7 @@ class AssistanceWorker:
                 "prompt_mode": "compact",
                 "prompt_version": "xml-result-v1",
                 "prompt_token_estimate": max(1, len(prompt) // 4),
+                "retrieval": retrieval_metadata,
             }
             self.service.store_generation_result(
                 job_id,
@@ -191,7 +195,7 @@ class AssistanceWorker:
                     "raw_response": raw_response,
                     "model": str(getattr(getattr(generator, "settings", None), "model", getattr(generator, "model", "unknown"))),
                     "prompt_sha256": payload_sha256({"prompt": prompt}),
-                    "retrieved_examples": selected_examples,
+                    "retrieved_examples": {"examples": selected_examples, "metadata": retrieval_metadata},
                     "usage": {
                         **usage,
                         **prompt_metadata,

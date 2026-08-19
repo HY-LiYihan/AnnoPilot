@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import urllib.error
@@ -10,7 +11,9 @@ from itertools import combinations
 from typing import Any
 
 from .llm import LlmError
-from .settings import LlmSettings
+from .retrieval.base import RetrievalCandidate
+from .retrieval.service import RetrievalService
+from .settings import LlmSettings, RetrievalSettings
 
 
 MAX_EXAMPLES_PER_TAG = 20
@@ -388,6 +391,54 @@ def select_assistance_examples(
     return selected
 
 
+def retrieve_assistance_examples(
+    target_text: str,
+    examples_by_tag: dict[str, list[Any]],
+    corrections_by_tag: dict[str, list[Any]],
+    *,
+    settings: RetrievalSettings,
+) -> tuple[dict[str, list[Any]], dict[str, Any]]:
+    """Retrieve a bounded candidate pool, then keep the prompt-sized references."""
+    candidates: list[RetrievalCandidate] = []
+    for tag_id in sorted(set(examples_by_tag) | set(corrections_by_tag)):
+        for index, item in enumerate(_dedupe_examples(list(examples_by_tag.get(tag_id, [])) + list(corrections_by_tag.get(tag_id, [])))):
+            item_key = hashlib.sha256(_stable_example_key(item).encode("utf-8")).hexdigest()[:16]
+            candidates.append(
+                RetrievalCandidate(
+                    id=f"{tag_id}:{index}:{item_key}",
+                    text=_example_text(item),
+                    payload={"tag_id": tag_id, "item": item},
+                )
+            )
+    dense = None
+    if settings.mode == "hybrid" and settings.configured:
+        from .retrieval.dense import DenseRetriever
+
+        dense = DenseRetriever(settings.dense_base_url, settings.dense_api_key, settings.dense_model, settings.dense_timeout_seconds)
+    result = RetrievalService(
+        mode=settings.mode,
+        bm25_top_k=settings.bm25_top_k,
+        dense_top_k=settings.dense_top_k,
+        rrf_k=settings.rrf_k,
+        dense=dense,
+    ).search(target_text, candidates)
+    ranked_by_tag: dict[str, list[Any]] = {}
+    for ranked in result.candidates:
+        tag_id = str(ranked.candidate.payload.get("tag_id") or "")
+        item = ranked.candidate.payload.get("item")
+        if tag_id and item is not None:
+            ranked_by_tag.setdefault(tag_id, []).append(item)
+    # Preserve the compact prompt budget and the established per-tag shape.
+    selected: dict[str, list[Any]] = {}
+    for tag_id, items in ranked_by_tag.items():
+        selected[tag_id] = items[:MAX_EXAMPLES_PER_TAG]
+    for tag_id in set(examples_by_tag) | set(corrections_by_tag):
+        selected.setdefault(tag_id, [])
+    result.metadata["prompt_reference_count"] = min(MAX_REFERENCE_EXAMPLES, sum(len(items) for items in selected.values()))
+    result.metadata["reference_ids"] = [item.candidate.id for item in result.candidates[:MAX_REFERENCE_EXAMPLES]]
+    return selected, result.metadata
+
+
 def _model_label_map(tags: list[dict[str, Any]]) -> dict[str, str]:
     """Map project labels to short XML-safe model labels deterministically."""
     result: dict[str, str] = {}
@@ -416,7 +467,12 @@ def _format_compact_references(
         for item in examples_by_tag.get(tag_id, []):
             text = _example_text(item).strip()
             if text:
-                lines.append(f"<{label}>{text}</{label}>")
+                if isinstance(item, dict) and item.get("marked_text"):
+                    marked = str(item["marked_text"])
+                    marked = marked.replace(f"<LABEL_{tag_id}>", f"<{label}>").replace(f"</LABEL_{tag_id}>", f"</{label}>")
+                    lines.append(marked)
+                else:
+                    lines.append(f"<{label}>{text}</{label}>")
             if len(lines) >= 4:
                 break
         if len(lines) >= 4:
