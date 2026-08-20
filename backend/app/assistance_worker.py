@@ -203,6 +203,8 @@ class AssistanceWorker:
                         "validation_attempts": provider_attempts,
                         "validation_retries": max(0, provider_attempts - 1),
                     },
+                    "run_id": context.get("run_id"),
+                    "draft_version": context.get("draft_version"),
                     "attempt_count": attempt_count,
                 },
             )

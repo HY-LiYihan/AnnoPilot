@@ -10,7 +10,7 @@ from ..hashing import payload_sha256
 
 
 ASSISTANCE_SEED_PER_TAG = 5
-ASSISTANCE_CONCURRENCY = 5
+ASSISTANCE_CONCURRENCY = 10
 ASSISTANCE_LEASE_SECONDS = 600
 ASSISTANCE_ERROR_REASONS = {
     "missed_span",
@@ -169,12 +169,13 @@ class AssistanceService:
                 SELECT s.id, s.sentence_index
                 FROM sentences s
                 WHERE s.document_id = ? AND s.completed = 0
+                  AND s.sentence_index > ?
                   AND NOT EXISTS (SELECT 1 FROM annotations a WHERE a.sentence_id = s.id)
                   AND NOT EXISTS (SELECT 1 FROM assistance_jobs j WHERE j.sentence_id = s.id)
                 ORDER BY s.sentence_index
                 LIMIT ?
                 """,
-                (document_id, needed),
+                (document_id, self._protected_cursor_index(conn, project_id, document_id), needed),
             ).fetchall()
             tags = self.get_tags(conn, project_id)
             active_tags = [tag for tag in tags if tag["id"] in active_tag_ids]
@@ -304,6 +305,7 @@ class AssistanceService:
             job = conn.execute(
                 """
                 SELECT j.*, s.text AS sentence_text, s.start_char AS sentence_start_char,
+                       s.sentence_index,
                        s.completed, st.enabled
                 FROM assistance_jobs j
                 JOIN sentences s ON s.id = j.sentence_id
@@ -320,6 +322,10 @@ class AssistanceService:
                 self._cancel_job(conn, job_id, "human_annotation_started")
                 conn.commit()
                 raise self.conflict_error("Sentence is no longer untouched.")
+            if int(job["sentence_index"]) <= self._protected_cursor_index(conn, job["project_id"], job["document_id"]):
+                self._cancel_job(conn, job_id, "human_cursor_reached_sentence")
+                conn.commit()
+                raise self.conflict_error("Human cursor reached this sentence.")
 
             active_tag_ids = self._json_list(job["active_tag_ids_json"])
             tags = [tag for tag in self.get_tags(conn, job["project_id"]) if tag["id"] in active_tag_ids]
@@ -344,6 +350,7 @@ class AssistanceService:
             negatives = self._negative_examples(conn, job["project_id"], limit=8)
         return {
             "job_id": job_id,
+            "run_id": job["run_id"],
             "project_id": job["project_id"],
             "document_id": job["document_id"],
             "sentence_id": job["sentence_id"],
@@ -355,6 +362,7 @@ class AssistanceService:
             "corrections_by_tag": corrections_by_tag,
             "negative_examples": negatives,
             "knowledge_revision": int(job["knowledge_revision"]),
+            "draft_version": int(job["draft_version"]),
             "attempt_count": int(job["attempt_count"]),
         }
 
@@ -371,7 +379,7 @@ class AssistanceService:
         with self.connect() as conn:
             job = conn.execute(
                 """
-                SELECT j.*, s.text AS sentence_text, s.start_char AS sentence_start_char, s.completed,
+                SELECT j.*, s.text AS sentence_text, s.start_char AS sentence_start_char, s.sentence_index, s.completed,
                        st.enabled
                 FROM assistance_jobs j
                 JOIN sentences s ON s.id = j.sentence_id
@@ -387,10 +395,20 @@ class AssistanceService:
             expected_attempt_count = result.get("attempt_count")
             if expected_attempt_count is not None and int(job["attempt_count"]) != int(expected_attempt_count):
                 raise self.conflict_error("Assistance job attempt is stale.")
+            expected_draft_version = result.get("draft_version")
+            if expected_draft_version is not None and int(job["draft_version"]) != int(expected_draft_version):
+                raise self.conflict_error("Assistance draft version is stale.")
+            expected_run_id = result.get("run_id")
+            if expected_run_id is not None and str(job["run_id"]) != str(expected_run_id):
+                raise self.conflict_error("Assistance run is stale.")
             if bool(job["completed"]) or self._sentence_has_annotations(conn, job["sentence_id"]):
                 self._cancel_job(conn, job_id, "human_annotation_started")
                 conn.commit()
                 raise self.conflict_error("Sentence was manually annotated while assistance was running.")
+            if int(job["sentence_index"]) <= self._protected_cursor_index(conn, job["project_id"], job["document_id"]):
+                self._cancel_job(conn, job_id, "human_cursor_reached_sentence")
+                conn.commit()
+                raise self.conflict_error("Human cursor reached this sentence while assistance was running.")
 
             active_tags = [
                 tag for tag in self.get_tags(conn, job["project_id"])
@@ -563,10 +581,13 @@ class AssistanceService:
             raise self.validation_error(str(exc)) from exc
         now = self.now()
         project_to_flush = project_id
+        superseded_count = 0
+        requeued_count = 0
         with self.connect() as conn:
             job = conn.execute(
                 """
-                SELECT j.*, s.completed, s.answer, s.text AS sentence_text, s.start_char AS sentence_start_char
+                SELECT j.*, s.completed, s.answer, s.text AS sentence_text, s.start_char AS sentence_start_char,
+                       s.sentence_index
                 FROM assistance_jobs j
                 JOIN sentences s ON s.id = j.sentence_id
                 WHERE j.id = ? AND j.project_id = ? AND j.sentence_id = ?
@@ -745,6 +766,14 @@ class AssistanceService:
                         "reason_source": reason_source,
                     },
                 )
+                if normalized_action == "correct":
+                    superseded_count, requeued_count = self._supersede_following_jobs_after_feedback(
+                        conn,
+                        project_id,
+                        job,
+                        feedback_id,
+                        now,
+                    )
                 document_id = job["document_id"]
 
         self.flush_event_outbox(project_to_flush)
@@ -757,6 +786,8 @@ class AssistanceService:
             "completed": normalized_action != "skip",
             "next_sentence_id": next_item["sentence_id"] if next_item else None,
             "queue": status["queue"],
+            "superseded_count": superseded_count,
+            "requeued_count": requeued_count,
         }
 
     def claim_feedback_for_classification(self) -> dict[str, Any] | None:
@@ -835,6 +866,139 @@ class AssistanceService:
                 "UPDATE assistance_feedback SET reason_source = 'pending' WHERE id = ? AND reason_source = 'classifying'",
                 (feedback_id,),
             )
+
+    def _supersede_following_jobs_after_feedback(
+        self,
+        conn: sqlite3.Connection,
+        project_id: str,
+        corrected_job: sqlite3.Row,
+        feedback_id: str,
+        now: str,
+    ) -> tuple[int, int]:
+        document_id = corrected_job["document_id"]
+        corrected_index = int(corrected_job["sentence_index"])
+        protected_index = max(corrected_index, self._protected_cursor_index(conn, project_id, document_id))
+        next_ready = conn.execute(
+            """
+            SELECT s.sentence_index
+            FROM assistance_jobs j
+            JOIN sentences s ON s.id = j.sentence_id
+            WHERE j.project_id = ? AND j.document_id = ?
+              AND j.status IN ('ready', 'skipped')
+              AND s.sentence_index > ?
+            ORDER BY s.sentence_index
+            LIMIT 1
+            """,
+            (project_id, document_id, corrected_index),
+        ).fetchone()
+        if next_ready is not None:
+            protected_index = max(protected_index, int(next_ready["sentence_index"]))
+
+        tag_progress = self._tag_progress(conn, project_id)
+        active_tag_ids = [item["tag_id"] for item in tag_progress if item["active"]]
+        if not active_tag_ids:
+            return 0, 0
+        active_tags = [tag for tag in self.get_tags(conn, project_id) if tag["id"] in active_tag_ids]
+        schema_hash = self._tag_schema_hash(active_tags)
+        settings = self._ensure_settings(conn, project_id, document_id)
+        revision = self._sync_knowledge_revision(conn, project_id, document_id, settings)
+
+        rows = conn.execute(
+            """
+            SELECT j.*, s.sentence_index, s.completed,
+              EXISTS (SELECT 1 FROM annotations a WHERE a.sentence_id = s.id) AS has_annotations
+            FROM assistance_jobs j
+            JOIN sentences s ON s.id = j.sentence_id
+            WHERE j.project_id = ? AND j.document_id = ?
+              AND j.status IN ('queued', 'running', 'ready', 'skipped')
+              AND s.sentence_index > ?
+            ORDER BY s.sentence_index, j.queue_order
+            """,
+            (project_id, document_id, protected_index),
+        ).fetchall()
+
+        superseded = 0
+        requeued = 0
+        for row in rows:
+            old_draft_version = int(row["draft_version"])
+            old_status = str(row["status"])
+            rejected_suggestions = int(
+                conn.execute(
+                    """
+                    UPDATE annotation_suggestions
+                    SET status = 'rejected'
+                    WHERE assistance_job_id = ? AND status = 'pending'
+                    """,
+                    (row["id"],),
+                ).rowcount
+            )
+            self.enqueue_event(
+                conn,
+                project_id,
+                {
+                    "type": "assistance.draft.superseded",
+                    "document_id": document_id,
+                    "sentence_id": row["sentence_id"],
+                    "job_id": row["id"],
+                    "feedback_id": feedback_id,
+                    "old_status": old_status,
+                    "old_draft_version": old_draft_version,
+                    "rejected_suggestion_count": rejected_suggestions,
+                    "reason": "corrected_feedback_requeue",
+                },
+            )
+            superseded += 1
+            if bool(row["completed"]) or bool(row["has_annotations"]):
+                self._cancel_job(conn, row["id"], "superseded_but_sentence_touched")
+                continue
+
+            queue_order = self._next_queue_order(conn, project_id, document_id, now)
+            run_id = self.new_id("run")
+            run_config = {
+                "recipe": "rag_llm_assistance",
+                "assistance_job_id": row["id"],
+                "knowledge_revision": revision,
+                "active_tag_ids": active_tag_ids,
+                "tag_schema_sha256": schema_hash,
+                "seed_per_tag": ASSISTANCE_SEED_PER_TAG,
+                "superseded_by_feedback_id": feedback_id,
+                "previous_run_id": row["run_id"],
+                "previous_draft_version": old_draft_version,
+            }
+            conn.execute(
+                """
+                INSERT INTO annotation_runs (
+                  id, project_id, document_id, recipe, config_json, input_count, suggestion_count, snapshot_complete, created_at
+                ) VALUES (?, ?, ?, 'rag_llm_assistance', ?, 1, 0, 0, ?)
+                """,
+                (run_id, project_id, document_id, json.dumps(run_config, ensure_ascii=False), now),
+            )
+            conn.execute(
+                "INSERT INTO annotation_run_sentences (run_id, sentence_id) VALUES (?, ?)",
+                (run_id, row["sentence_id"]),
+            )
+            conn.execute(
+                """
+                UPDATE assistance_jobs
+                SET run_id = ?, status = 'queued', queue_order = ?, knowledge_revision = ?,
+                    draft_version = draft_version + 1, active_tag_ids_json = ?, tag_schema_sha256 = ?,
+                    prompt_sha256 = NULL, model = NULL, raw_response = NULL, result_json = NULL,
+                    verifier_status = NULL, verifier_issues_json = '[]', attempt_count = 0,
+                    usage_json = '{}', lease_until = NULL, error_message = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    run_id,
+                    queue_order,
+                    revision,
+                    json.dumps(active_tag_ids, ensure_ascii=False),
+                    schema_hash,
+                    now,
+                    row["id"],
+                ),
+            )
+            requeued += 1
+        return superseded, requeued
 
     def _tag_progress(self, conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:
         tags = self.get_tags(conn, project_id)
@@ -1177,6 +1341,20 @@ class AssistanceService:
     @staticmethod
     def _sentence_has_annotations(conn: sqlite3.Connection, sentence_id: str) -> bool:
         return bool(conn.execute("SELECT 1 FROM annotations WHERE sentence_id = ? LIMIT 1", (sentence_id,)).fetchone())
+
+    @staticmethod
+    def _protected_cursor_index(conn: sqlite3.Connection, project_id: str, document_id: str) -> int:
+        row = conn.execute(
+            """
+            SELECT MAX(current_sentence_index) AS cursor_index
+            FROM annotation_sessions
+            WHERE project_id = ? AND document_id = ?
+            """,
+            (project_id, document_id),
+        ).fetchone()
+        if row is None or row["cursor_index"] is None:
+            return -1
+        return int(row["cursor_index"])
 
     @staticmethod
     def _tag_schema_hash(tags: list[dict[str, Any]]) -> str:

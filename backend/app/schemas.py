@@ -350,6 +350,11 @@ class MetricsResponse(BaseModel):
     reviewed_suggestion_count: int = 0
     accuracy: Optional[float]
     accuracy_label: str
+    assistance_accuracy_ewma: Optional[float] = None
+    assistance_accuracy_count: int = 0
+    assistance_exact_match_rate: Optional[float] = None
+    assistance_correction_rate: Optional[float] = None
+    assistance_accuracy_label: str = "Waiting for assistance feedback"
     calibration_count: int = 0
     calibration_disagreement_count: int = 0
     calibration_error_rate: Optional[float] = None
@@ -880,6 +885,8 @@ class AssistanceDecisionResponse(BaseModel):
     completed: bool
     next_sentence_id: Optional[str] = None
     queue: AssistanceQueueResponse
+    superseded_count: int = 0
+    requeued_count: int = 0
 
 
 class RebuildIssueResponse(BaseModel):

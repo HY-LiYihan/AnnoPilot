@@ -25,6 +25,7 @@ import { useReaderReviewQueue } from './useReaderReviewQueue'
 import { useReaderSentenceCompletion } from './useReaderSentenceCompletion'
 import { useReaderAssistance, type LocalAssistanceDraftSpan } from './useReaderAssistance'
 import { emptyMetrics, useReaderDocumentLifecycle } from './useReaderDocumentLifecycle'
+import { overlayAssistanceQueueItems } from './readerQueueDisplay'
 import { sliceByCodePoint } from '../utils/unicode'
 import {
   annotationForToken as findAnnotationForToken,
@@ -32,6 +33,7 @@ import {
   suggestionsWithoutAnnotationOverlaps,
   tokenPrefix as getTokenPrefix,
   tokenStyleForToken,
+  UNASSIGNED_SELECTION_COLOR,
 } from './readerTokenDisplay'
 
 type SentenceAnswer = 'accept' | 'reject' | 'ignore'
@@ -52,6 +54,7 @@ export function useDocumentReader() {
   const isResetting = ref(false)
   const readerError = ref('')
   const activeSuggestionId = ref('')
+  const hoveredAnnotationId = ref('')
   const sentenceElements = ref<Record<string, HTMLElement | null>>({})
 
   const selection = useTokenSelection(sentences)
@@ -209,6 +212,9 @@ export function useDocumentReader() {
     onDecision: handleAssistanceDecision,
   })
   const assistanceDraftActive = computed(() => Boolean(currentAssistanceDraft.value))
+  const displayQueueItems = computed<SentenceQueueItem[]>(() => {
+    return overlayAssistanceQueueItems(queueItems.value, assistanceStatus.value)
+  })
 
   async function completeCurrentSentence(answer: SentenceAnswer = 'accept') {
     if (!currentAssistanceDraft.value) return completeManualSentence(answer)
@@ -325,6 +331,7 @@ export function useDocumentReader() {
   }
 
   async function removeAnnotation(annotationId: string) {
+    if (hoveredAnnotationId.value === annotationId) hoveredAnnotationId.value = ''
     const draftIndex = activeAssistanceAnnotations.value.findIndex((annotation) => annotation.id === annotationId)
     if (currentAssistanceDraft.value && draftIndex >= 0) {
       removeLocalDraftSpan(draftIndex)
@@ -334,6 +341,7 @@ export function useDocumentReader() {
   }
 
   async function removeAnnotations(annotationIds: string[]) {
+    if (annotationIds.includes(hoveredAnnotationId.value)) hoveredAnnotationId.value = ''
     if (currentAssistanceDraft.value) {
       const draftIndexes = annotationIds
         .map((annotationId) => activeAssistanceAnnotations.value.findIndex((annotation) => annotation.id === annotationId))
@@ -480,8 +488,12 @@ export function useDocumentReader() {
     completeCurrentSentence,
     cycleActiveSuggestionTarget,
     currentSentenceIndex,
+    hoveredAnnotationId,
     jumpToNextReviewSentence,
     markCurrentSentenceMonogloss,
+    removeHoveredAnnotation: () => {
+      if (hoveredAnnotationId.value) return removeAnnotation(hoveredAnnotationId.value)
+    },
     rejectCurrentSentenceSuggestions,
     rejectSuggestedSpan,
     reopenCurrentSentence,
@@ -490,6 +502,10 @@ export function useDocumentReader() {
     tags,
     undoLastSpanAction,
   })
+
+  function setHoveredAnnotation(annotationId: string | null) {
+    hoveredAnnotationId.value = annotationId ?? ''
+  }
 
   function setActiveSuggestionTarget(suggestion: SuggestionDef) {
     if (!activeSuggestions.value.some((item) => item.id === suggestion.id)) return
@@ -561,13 +577,15 @@ export function useDocumentReader() {
   }
 
   function tokenStyle(sentence: SentenceDef, tokenIndex: number): Record<string, string> {
+    if (selection.isTokenInDrag(sentence, tokenIndex) || selection.isTokenPending(sentence, tokenIndex)) {
+      return { '--token-color': UNASSIGNED_SELECTION_COLOR }
+    }
     const assistanceAnnotation = annotationForToken(sentence, tokenIndex)
     if (currentAssistanceDraft.value && assistanceAnnotation) {
       return { '--token-color': assistanceAnnotation.tag_color }
     }
     return tokenStyleForToken(sentence, tokenIndex, {
       activeSuggestion: activeSuggestion.value,
-      selectedTag: selectedTag.value,
       isTokenInDrag: selection.isTokenInDrag,
       isTokenPending: selection.isTokenPending,
     })
@@ -629,7 +647,7 @@ export function useDocumentReader() {
     canUndoSpanAction,
     undoLabel,
     hasReviewQueue,
-    queueItems,
+    queueItems: displayQueueItems,
     pendingSelection: selection.pendingSelection,
     pendingSelectionText: selection.pendingSelectionText,
     handleImport: readerDocuments.handleImport,
@@ -657,6 +675,7 @@ export function useDocumentReader() {
     onTokenPointerDown,
     onTokenPointerEnter,
     onTokenPointerUp,
+    setHoveredAnnotation,
     selectCurrentSentenceSpan,
     handleTagClick,
     addTag,

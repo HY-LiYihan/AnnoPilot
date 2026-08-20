@@ -222,6 +222,11 @@ export type Metrics = {
   reviewed_suggestion_count: number
   accuracy: number | null
   accuracy_label: string
+  assistance_accuracy_ewma?: number | null
+  assistance_accuracy_count?: number
+  assistance_exact_match_rate?: number | null
+  assistance_correction_rate?: number | null
+  assistance_accuracy_label?: string
   calibration_count: number
   calibration_disagreement_count: number
   calibration_error_rate: number | null
@@ -538,4 +543,6 @@ export type AssistanceDecisionResponse = {
   completed: boolean
   next_sentence_id?: string | null
   queue: AssistanceQueue
+  superseded_count?: number
+  requeued_count?: number
 }

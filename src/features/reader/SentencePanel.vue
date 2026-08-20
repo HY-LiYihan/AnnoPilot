@@ -98,6 +98,7 @@ const emit = defineEmits<{
   'token-pointer-down': [sentence: SentenceDef, tokenIndex: number, event: PointerEvent]
   'token-pointer-enter': [sentence: SentenceDef, tokenIndex: number]
   'token-pointer-up': [sentence: SentenceDef, tokenIndex: number]
+  'annotation-hover': [annotationId: string | null]
   'select-current-sentence': []
   'mark-current-monogloss': []
   'delete-annotation': [annotationId: string]
@@ -298,6 +299,9 @@ const assistanceReasonKeys: AssistanceErrorReason[] = [
 ]
 
 function tokenSpanClasses(sentence: SentenceDef, tokenIndex: number) {
+  if (props.isTokenInDrag(sentence, tokenIndex)) return predicatePositionClasses(sentence, tokenIndex, props.isTokenInDrag)
+  if (props.isTokenPending(sentence, tokenIndex)) return predicatePositionClasses(sentence, tokenIndex, props.isTokenPending)
+
   const focusedConflictAnnotation = focusedConflictAnnotationForToken(sentence, tokenIndex)
   if (focusedConflictAnnotation) return rangePositionClasses(focusedConflictAnnotation.start_token_index, focusedConflictAnnotation.end_token_index, tokenIndex)
 
@@ -307,10 +311,21 @@ function tokenSpanClasses(sentence: SentenceDef, tokenIndex: number) {
   const suggestion = props.suggestionForToken(sentence, tokenIndex)
   if (suggestion) return rangePositionClasses(suggestion.start_token_index, suggestion.end_token_index, tokenIndex)
 
-  if (props.isTokenInDrag(sentence, tokenIndex)) return predicatePositionClasses(sentence, tokenIndex, props.isTokenInDrag)
-  if (props.isTokenPending(sentence, tokenIndex)) return predicatePositionClasses(sentence, tokenIndex, props.isTokenPending)
-
   return {}
+}
+
+function annotationIdForToken(sentence: SentenceDef, tokenIndex: number) {
+  const annotation = props.annotationForToken(sentence, tokenIndex)
+  if (annotation) return annotation.id
+  if (sentence.index !== props.currentSentenceIndex) return null
+  return props.activeAssistanceAnnotations.find((item) =>
+    item.start_token_index <= tokenIndex && item.end_token_index >= tokenIndex,
+  )?.id ?? null
+}
+
+function handleTokenPointerEnter(sentence: SentenceDef, tokenIndex: number) {
+  emit('annotation-hover', annotationIdForToken(sentence, tokenIndex))
+  emit('token-pointer-enter', sentence, tokenIndex)
 }
 
 function focusedConflictAnnotationForToken(sentence: SentenceDef, tokenIndex: number) {
@@ -366,7 +381,7 @@ function predicatePositionClasses(
 </script>
 
 <template>
-  <section class="editor-panel" :aria-labelledby="documentMeta ? 'editor-title' : undefined" :aria-label="!documentMeta ? labels.emptyTitle : undefined">
+  <section class="editor-panel" data-testid="reader-panel" :aria-labelledby="documentMeta ? 'editor-title' : undefined" :aria-label="!documentMeta ? labels.emptyTitle : undefined">
     <div v-if="documentMeta" class="editor-header">
       <div>
         <p class="section-kicker">{{ labels.kicker }}</p>
@@ -422,6 +437,7 @@ function predicatePositionClasses(
           :key="preset.id"
           type="button"
           class="sample-preset-button"
+          :data-testid="`sample-preset-${preset.id}`"
           :disabled="isUploading || isSuggesting"
           :title="preset.description"
           @click="emit('load-sample-preset', preset.id)"
@@ -445,13 +461,14 @@ function predicatePositionClasses(
       @pointerdown="handleReaderPointerDown"
       @pointerup="handleReaderPointerUp"
       @pointercancel="clearReaderSwipe"
-      @pointerleave="clearReaderSwipe"
+      @pointerleave="clearReaderSwipe(); emit('annotation-hover', null)"
     >
       <section
         v-for="sentence in renderedSentences"
         :key="sentence.id"
         :ref="(element) => emit('set-sentence-element', sentence.id, element)"
         class="sentence-card"
+        :data-testid="`sentence-${sentence.index}`"
         :class="{
           active: sentence.index === currentSentenceIndex,
           dimmed: sentence.index !== currentSentenceIndex,
@@ -470,6 +487,7 @@ function predicatePositionClasses(
           <template v-for="(token, tokenIndex) in sentence.tokens" :key="token.id">
             {{ tokenPrefix(sentence, tokenIndex) }}<button
               class="token"
+              :data-testid="`token-${sentence.index}-${token.token_index}`"
               :class="[
                 {
                   annotated: annotationForToken(sentence, token.token_index),
@@ -483,7 +501,8 @@ function predicatePositionClasses(
               ]"
               :style="tokenStyle(sentence, token.token_index)"
               @pointerdown="emit('token-pointer-down', sentence, token.token_index, $event)"
-              @pointerenter="emit('token-pointer-enter', sentence, token.token_index)"
+              @pointerenter="handleTokenPointerEnter(sentence, token.token_index)"
+              @pointerleave="emit('annotation-hover', null)"
               @pointerup="emit('token-pointer-up', sentence, token.token_index)"
             >{{ token.text }}</button>
           </template>
@@ -773,7 +792,7 @@ function predicatePositionClasses(
           </button>
         </template>
         <template v-else>
-          <button class="accept-button" :disabled="!currentSentence || isSaving" @click="emit('complete')">
+          <button data-testid="complete-sentence" class="accept-button" :disabled="!currentSentence || isSaving" @click="emit('complete')">
             {{ labels.complete }}
           </button>
           <button class="edit-button" :disabled="!currentSentence" @click="emit('previous')">{{ labels.previous }}</button>

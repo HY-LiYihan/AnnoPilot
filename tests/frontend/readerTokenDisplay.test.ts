@@ -7,6 +7,7 @@ import {
   suggestionsWithoutAnnotationOverlaps,
   tokenPrefix,
   tokenStyleForToken,
+  UNASSIGNED_SELECTION_COLOR,
 } from '../../src/composables/readerTokenDisplay.ts'
 
 function makeSentence(overrides = {}) {
@@ -86,10 +87,22 @@ test('active suggestions, passive suggestions, and pending selections use the ex
   assert.deepEqual(tokenStyleForToken(sentence, 0), { '--token-color': '#326bd8' })
   assert.deepEqual(
     tokenStyleForToken(makeSentence(), 0, {
-      selectedTag: { id: 'tag-selected', name: 'Selected', examples: [], shortcut: '1', color: '#7a3db8', count: 0 },
       isTokenPending: () => true,
     }),
-    { '--token-color': '#7a3db8' },
+    { '--token-color': UNASSIGNED_SELECTION_COLOR },
+  )
+})
+
+test('unassigned selection overrides old annotation and suggestion colors', () => {
+  const sentence = makeSentence({ annotations: [makeAnnotation()], suggestions: [makeSuggestion()] })
+
+  assert.deepEqual(
+    tokenStyleForToken(sentence, 0, { isTokenPending: () => true }),
+    { '--token-color': UNASSIGNED_SELECTION_COLOR },
+  )
+  assert.deepEqual(
+    tokenStyleForToken(sentence, 1, { isTokenInDrag: () => true }),
+    { '--token-color': UNASSIGNED_SELECTION_COLOR },
   )
 })
 

@@ -1,12 +1,13 @@
-import type { AnnotationDef, SentenceDef, SuggestionDef, TagDef } from '../types/domain'
+import type { AnnotationDef, SentenceDef, SuggestionDef } from '../types/domain'
 import { sliceByCodePoint } from '../utils/unicode.ts'
 
 type TokenStyleOptions = {
   activeSuggestion?: SuggestionDef | null
-  selectedTag?: TagDef | null
   isTokenInDrag?: (sentence: SentenceDef, tokenIndex: number) => boolean
   isTokenPending?: (sentence: SentenceDef, tokenIndex: number) => boolean
 }
+
+export const UNASSIGNED_SELECTION_COLOR = '#8f98a6'
 
 export function annotationForToken(sentence: SentenceDef, tokenIndex: number) {
   return sentence.annotations.find(
@@ -43,6 +44,9 @@ export function tokenStyleForToken(
   tokenIndex: number,
   options: TokenStyleOptions = {},
 ): Record<string, string> {
+  const isSelected = options.isTokenInDrag?.(sentence, tokenIndex) || options.isTokenPending?.(sentence, tokenIndex)
+  if (isSelected) return { '--token-color': UNASSIGNED_SELECTION_COLOR }
+
   const annotation = annotationForToken(sentence, tokenIndex)
   if (annotation) return { '--token-color': annotation.tag_color }
 
@@ -58,9 +62,6 @@ export function tokenStyleForToken(
 
   const suggestion = suggestionForToken(sentence, tokenIndex)
   if (suggestion) return { '--token-color': suggestion.tag_color }
-
-  const isSelected = options.isTokenInDrag?.(sentence, tokenIndex) || options.isTokenPending?.(sentence, tokenIndex)
-  if (isSelected && options.selectedTag) return { '--token-color': options.selectedTag.color }
 
   return {}
 }

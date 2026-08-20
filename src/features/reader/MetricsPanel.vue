@@ -247,6 +247,27 @@ function accuracyLabel(value: string, labels: UiLabels['metrics']) {
   return value === 'Waiting for review data' ? labels.waitingReviewData : value
 }
 
+function assistanceAccuracyValue(metrics: Metrics) {
+  return typeof metrics.assistance_accuracy_ewma === 'number' ? metrics.assistance_accuracy_ewma : null
+}
+
+function accuracyPercent(metrics: Metrics) {
+  const assistanceValue = assistanceAccuracyValue(metrics)
+  const value = assistanceValue ?? metrics.accuracy
+  return value === null ? '--' : `${(value * 100).toFixed(2)}%`
+}
+
+function accuracyDetail(metrics: Metrics, labels: UiLabels['metrics']) {
+  const assistanceValue = assistanceAccuracyValue(metrics)
+  if (assistanceValue !== null) {
+    const count = metrics.assistance_accuracy_count ?? 0
+    const exact = typeof metrics.assistance_exact_match_rate === 'number' ? ` · exact ${(metrics.assistance_exact_match_rate * 100).toFixed(2)}%` : ''
+    const corrected = typeof metrics.assistance_correction_rate === 'number' ? ` · corrected ${(metrics.assistance_correction_rate * 100).toFixed(2)}%` : ''
+    return `${metrics.assistance_accuracy_label ?? 'Assistance EWMA accuracy'} (${count})${exact}${corrected}`
+  }
+  return accuracyLabel(metrics.accuracy_label, labels)
+}
+
 function queuePreviewText(item: ReviewQueueItem, labels: UiLabels['metrics'], order: ReviewQueueOrder) {
   const suggestion = item.first_suggestion
   const hint = item.action_hint || item.review_guidance?.action_hint || ''
@@ -291,7 +312,7 @@ function shortHash(value: string) {
 </script>
 
 <template>
-  <aside class="side-panel stats-panel" aria-labelledby="stats-panel-title" :aria-label="labels.aria">
+  <aside class="side-panel stats-panel" data-testid="metrics-panel" aria-labelledby="stats-panel-title" :aria-label="labels.aria">
     <div class="panel-heading">
       <div>
         <p class="section-kicker">{{ labels.kicker }}</p>
@@ -301,23 +322,8 @@ function shortHash(value: string) {
     </div>
 
     <div class="stats-quick-actions" :aria-label="labels.aria">
-      <button class="export-button secondary compact" :disabled="!documentMeta" @click="emit('export-prodigy-bundle')">
-        {{ labels.exportProdigyBundle }}
-        <Download :size="17" aria-hidden="true" />
-      </button>
-
-      <button class="export-button secondary compact" :disabled="!documentMeta" @click="emit('export-prodigy')">
+      <button data-testid="export-prodigy" class="export-button secondary compact" :disabled="!documentMeta" @click="emit('export-prodigy')">
         {{ labels.exportProdigy }}
-        <Download :size="17" aria-hidden="true" />
-      </button>
-
-      <button class="export-button secondary compact" :disabled="!documentMeta" @click="emit('export-prodigy-spans')">
-        {{ labels.exportProdigySpans }}
-        <Download :size="17" aria-hidden="true" />
-      </button>
-
-      <button class="export-button secondary compact" @click="emit('export-prodigy-labels')">
-        {{ labels.exportProdigyLabels }}
         <Download :size="17" aria-hidden="true" />
       </button>
 
@@ -413,9 +419,9 @@ function shortHash(value: string) {
       <article class="metric-card">
         <Target :size="22" aria-hidden="true" />
         <span>{{ labels.accuracy }}</span>
-        <strong>{{ metrics.accuracy === null ? '--' : `${Math.round(metrics.accuracy * 100)}%` }}</strong>
+        <strong>{{ accuracyPercent(metrics) }}</strong>
         <small>
-          {{ accuracyLabel(metrics.accuracy_label, labels) }}
+          {{ accuracyDetail(metrics, labels) }}
           <template v-if="reviewSummary(metrics.suggestion_review_counts, labels)"> · {{ labels.reviewMix }} {{ reviewSummary(metrics.suggestion_review_counts, labels) }}</template>
           <template v-if="metrics.calibration_error_rate !== null">
             · {{ labels.calibrationError }} {{ Math.round(metrics.calibration_error_rate * 100) }}% ({{ metrics.calibration_disagreement_count }}/{{ metrics.calibration_count }})

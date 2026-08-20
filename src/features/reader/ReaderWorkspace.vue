@@ -174,6 +174,7 @@ const {
   onTokenPointerDown,
   onTokenPointerEnter,
   onTokenPointerUp,
+  setHoveredAnnotation,
   selectCurrentSentenceSpan,
   handleTagClick,
   addTag,
@@ -231,7 +232,8 @@ const {
 
 const workspaceReaderError = computed(() => readerError.value || assistanceError.value)
 
-const localizedReviewSummary = computed(() => labels.value.tags.suggestionsWaiting(metrics.value.suggestion_count))
+const assistanceReadyCount = computed(() => (assistanceStatus.value?.queue.ready ?? 0) + (assistanceStatus.value?.queue.skipped ?? 0))
+const localizedReviewSummary = computed(() => labels.value.tags.suggestionsWaiting(metrics.value.suggestion_count + assistanceReadyCount.value))
 const annotationConflictItems = computed(() => queueItems.value.filter((sentence) => (sentence.annotation_overlap_count ?? 0) > 0))
 const focusedConflictSentenceIndex = ref<number | null>(null)
 const focusedConflictAnnotationIds = computed(() => {
@@ -331,7 +333,7 @@ async function confirmProjectReset() {
 </script>
 
 <template>
-  <main class="app-shell">
+  <main class="app-shell" data-testid="annopilot-workspace">
     <nav class="topbar" aria-label="Primary">
       <div class="brand-cluster">
         <div>
@@ -479,6 +481,7 @@ async function confirmProjectReset() {
         @token-pointer-down="onTokenPointerDown"
         @token-pointer-enter="onTokenPointerEnter"
         @token-pointer-up="onTokenPointerUp"
+        @annotation-hover="setHoveredAnnotation"
         @select-current-sentence="selectCurrentSentenceSpan"
         @mark-current-monogloss="markCurrentSentenceMonogloss"
         @delete-annotation="removeAnnotation"

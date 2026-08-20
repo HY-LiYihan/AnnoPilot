@@ -259,6 +259,16 @@ class DocumentQueryRepository:
                 """,
                 (document_id, project_id),
             ).fetchall()
+            assistance_feedback_rows = conn.execute(
+                """
+                SELECT action, original_spans_json, final_spans_json
+                FROM assistance_feedback
+                WHERE project_id = ? AND document_id = ?
+                  AND action IN ('confirm', 'correct')
+                ORDER BY created_at, id
+                """,
+                (project_id, document_id),
+            ).fetchall()
             tag_count_rows = conn.execute(
                 """
                 SELECT a.tag_id, COUNT(*) AS count
@@ -332,6 +342,7 @@ class DocumentQueryRepository:
         for row in review_count_rows:
             suggestion_review_counts[row["recommendation"]] = row["count"]
         reviewed_suggestion_count = sum(suggestion_review_counts.values())
+        assistance_accuracy = self._assistance_accuracy_metrics([self._row_dict(row) for row in assistance_feedback_rows])
 
         return {
             "document": {
@@ -367,6 +378,7 @@ class DocumentQueryRepository:
                 "calibration_count": review_total,
                 "calibration_disagreement_count": review_disagreements,
                 "calibration_error_rate": review_disagreements / review_total if review_total else None,
+                **assistance_accuracy,
                 "review_efficiency_curves": review_efficiency_curves,
             },
             "queue": [
@@ -1350,6 +1362,69 @@ class DocumentQueryRepository:
         except json.JSONDecodeError:
             return None
         return payload if isinstance(payload, dict) else None
+
+    @staticmethod
+    def _assistance_accuracy_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        alpha = 0.2
+        ewma: float | None = None
+        count = 0
+        exact_matches = 0
+        corrections = 0
+        for row in rows:
+            action = str(row.get("action") or "")
+            if action not in {"confirm", "correct"}:
+                continue
+            original = DocumentQueryRepository._span_key_set(row.get("original_spans_json"))
+            final = DocumentQueryRepository._span_key_set(row.get("final_spans_json"))
+            score = 1.0 if action == "confirm" else DocumentQueryRepository._typed_span_f1(original, final)
+            if original == final:
+                exact_matches += 1
+            if action == "correct":
+                corrections += 1
+            ewma = score if ewma is None else alpha * score + (1 - alpha) * ewma
+            count += 1
+        return {
+            "assistance_accuracy_ewma": ewma,
+            "assistance_accuracy_count": count,
+            "assistance_exact_match_rate": exact_matches / count if count else None,
+            "assistance_correction_rate": corrections / count if count else None,
+            "assistance_accuracy_label": (
+                f"Assistance EWMA accuracy ({count} decisions)"
+                if count
+                else "Waiting for assistance feedback"
+            ),
+        }
+
+    @staticmethod
+    def _span_key_set(value: Any) -> set[tuple[str, int, int]]:
+        try:
+            spans = json.loads(value or "[]") if isinstance(value, str) else value
+        except json.JSONDecodeError:
+            spans = []
+        if not isinstance(spans, list):
+            return set()
+        result: set[tuple[str, int, int]] = set()
+        for span in spans:
+            if not isinstance(span, dict):
+                continue
+            try:
+                result.add((str(span["tag_id"]), int(span["start_token_index"]), int(span["end_token_index"])))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return result
+
+    @staticmethod
+    def _typed_span_f1(original: set[tuple[str, int, int]], final: set[tuple[str, int, int]]) -> float:
+        if not original and not final:
+            return 1.0
+        if not original or not final:
+            return 0.0
+        true_positive = len(original & final)
+        if true_positive == 0:
+            return 0.0
+        precision = true_positive / len(original)
+        recall = true_positive / len(final)
+        return 2 * precision * recall / (precision + recall)
 
     @staticmethod
     def _label_counts(tags: list[dict[str, Any]], counts: dict[str, int], include_zero: bool = False) -> list[dict[str, Any]]:

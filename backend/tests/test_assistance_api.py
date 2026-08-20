@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 
@@ -94,14 +95,14 @@ def _ready_empty(storage: AnnotationStorage) -> tuple[str, dict]:
     return job_id, context
 
 
-def test_per_tag_seed_activates_five_job_window_and_confirm_is_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_per_tag_seed_activates_ten_job_window_and_confirm_is_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client, storage, document_id, _sentences = _seed_assistance(tmp_path, monkeypatch)
     try:
         status = client.get(f"/api/projects/default/documents/{document_id}/assistance")
         assert status.status_code == 200
         payload = status.json()
         assert [tag["tag_id"] for tag in payload["active_tags"]] == ["PER"]
-        assert payload["queue"]["queued"] == 5
+        assert payload["queue"]["queued"] == 7
         assert payload["tag_progress"][0]["human_verified_count"] == 5
 
         job_id, context = _ready_one(storage)
@@ -164,15 +165,15 @@ def test_concurrent_queue_refill_creates_one_job_per_sentence(
                 "SELECT id FROM annotation_runs WHERE document_id = ? AND recipe = 'rag_llm_assistance'",
                 (document_id,),
             ).fetchall()
-        assert len(jobs) == 5
-        assert len({row["sentence_id"] for row in jobs}) == 5
-        assert len(runs) == 5
+        assert len(jobs) == 7
+        assert len({row["sentence_id"] for row in jobs}) == 7
+        assert len(runs) == 7
     finally:
         client.__exit__(None, None, None)
 
 
 def test_skip_moves_draft_to_tail_without_deleting_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    client, storage, document_id, _sentences = _seed_assistance(tmp_path, monkeypatch)
+    client, storage, document_id, _sentences = _seed_assistance(tmp_path, monkeypatch, sentence_count=20)
     try:
         job_id, context = _ready_one(storage)
         before = client.get(f"/api/projects/default/documents/{document_id}/assistance").json()
@@ -186,7 +187,7 @@ def test_skip_moves_draft_to_tail_without_deleting_it(tmp_path: Path, monkeypatc
         skipped = next(item for item in after["queue"]["items"] if item["id"] == job_id)
         assert skipped["status"] == "skipped"
         assert skipped["spans"] == draft["spans"]
-        assert after["queue"]["queued"] == 5
+        assert after["queue"]["queued"] == 10
     finally:
         client.__exit__(None, None, None)
 
@@ -213,6 +214,97 @@ def test_correct_saves_final_human_spans_and_queues_llm_reason(tmp_path: Path, m
         with storage.connect() as conn:
             feedback = conn.execute("SELECT action, reason_source FROM assistance_feedback WHERE job_id = ?", (job_id,)).fetchone()
         assert tuple(feedback) == ("correct", "pending")
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_correct_requeues_following_unconfirmed_drafts_without_replacing_next_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, storage, document_id, _sentences = _seed_assistance(tmp_path, monkeypatch, sentence_count=20)
+    try:
+        first_job_id, first_context = _ready_one(storage)
+        next_job_id, _next_context = _ready_one(storage)
+        third_job_id, _third_context = _ready_one(storage)
+        running_job_id = storage.assistance_service.claim_jobs(1)[0]
+        running_context = storage.assistance_service.get_generation_context(running_job_id)
+        paris = first_context["tokens"][2]
+
+        response = client.post(
+            f"/api/projects/default/sentences/{first_context['sentence_id']}/assistance/decision",
+            json={
+                "action": "correct",
+                "draft_id": first_job_id,
+                "draft_version": 1,
+                "final_spans": [
+                    {"tag_id": "LOC", "start_token_index": paris["token_index"], "end_token_index": paris["token_index"]}
+                ],
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["superseded_count"] >= 2
+        assert response.json()["requeued_count"] >= 2
+
+        with storage.connect() as conn:
+            next_job = conn.execute("SELECT status, draft_version FROM assistance_jobs WHERE id = ?", (next_job_id,)).fetchone()
+            third_job = conn.execute("SELECT status, draft_version FROM assistance_jobs WHERE id = ?", (third_job_id,)).fetchone()
+            running_job = conn.execute("SELECT status, draft_version FROM assistance_jobs WHERE id = ?", (running_job_id,)).fetchone()
+            third_pending = conn.execute(
+                "SELECT COUNT(*) FROM annotation_suggestions WHERE assistance_job_id = ? AND status = 'pending'",
+                (third_job_id,),
+            ).fetchone()[0]
+
+        assert tuple(next_job) == ("ready", 1)
+        assert tuple(third_job) == ("queued", 2)
+        assert tuple(running_job) == ("queued", 2)
+        assert third_pending == 0
+
+        with pytest.raises(ConflictError):
+            storage.assistance_service.store_generation_result(
+                running_job_id,
+                {
+                    "candidate": {"text": running_context["source_text"], "spans": []},
+                    "run_id": running_context["run_id"],
+                    "draft_version": running_context["draft_version"],
+                    "attempt_count": running_context["attempt_count"],
+                },
+            )
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_assistance_accuracy_ewma_updates_from_confirm_and_correct(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, storage, document_id, _sentences = _seed_assistance(tmp_path, monkeypatch, sentence_count=20)
+    try:
+        confirmed_job_id, confirmed_context = _ready_one(storage)
+        confirm_response = client.post(
+            f"/api/projects/default/sentences/{confirmed_context['sentence_id']}/assistance/decision",
+            json={"action": "confirm", "draft_id": confirmed_job_id, "draft_version": 1},
+        )
+        assert confirm_response.status_code == 200
+
+        corrected_job_id, corrected_context = _ready_one(storage)
+        paris = corrected_context["tokens"][2]
+        correct_response = client.post(
+            f"/api/projects/default/sentences/{corrected_context['sentence_id']}/assistance/decision",
+            json={
+                "action": "correct",
+                "draft_id": corrected_job_id,
+                "draft_version": 1,
+                "final_spans": [
+                    {"tag_id": "LOC", "start_token_index": paris["token_index"], "end_token_index": paris["token_index"]}
+                ],
+            },
+        )
+        assert correct_response.status_code == 200
+
+        metrics = client.get(f"/api/projects/default/documents/{document_id}/summary").json()["metrics"]
+        assert metrics["assistance_accuracy_count"] == 2
+        assert metrics["assistance_accuracy_ewma"] == pytest.approx(0.8)
+        assert metrics["assistance_exact_match_rate"] == pytest.approx(0.5)
+        assert metrics["assistance_correction_rate"] == pytest.approx(0.5)
     finally:
         client.__exit__(None, None, None)
 
@@ -337,5 +429,21 @@ def test_stale_draft_version_returns_conflict_without_mutation(tmp_path: Path, m
         with storage.connect() as conn:
             job = conn.execute("SELECT status FROM assistance_jobs WHERE id = ?", (job_id,)).fetchone()
         assert job["status"] == "ready"
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_prodigy_export_does_not_include_unconfirmed_assistance_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, storage, document_id, _sentences = _seed_assistance(tmp_path, monkeypatch)
+    try:
+        _job_id, context = _ready_one(storage)
+        response = client.get(f"/api/projects/default/documents/{document_id}/export.prodigy.jsonl")
+        assert response.status_code == 200
+        records = [json.loads(line) for line in response.text.splitlines()]
+        draft_record = next(record for record in records if record["meta"]["sentence_id"] == context["sentence_id"])
+        assert draft_record["spans"] == []
+        assert draft_record["meta"]["suggestion_count"] == 1
     finally:
         client.__exit__(None, None, None)
