@@ -110,6 +110,19 @@ test('sentence completion and span shortcuts dispatch the expected actions', () 
   assert.deepEqual(dispatch(' ').calls, [['complete', 'ignore']])
 })
 
+test('space removes the hovered annotation before applying sentence shortcuts', () => {
+  const removed = []
+  const result = dispatch(' ', {}, {
+    hoveredAnnotationId: { value: 'annotation-1' },
+    removeHoveredAnnotation: () => removed.push('annotation-1'),
+  })
+
+  assert.equal(result.handled, true)
+  assert.equal(result.prevented, true)
+  assert.deepEqual(removed, ['annotation-1'])
+  assert.deepEqual(result.calls, [])
+})
+
 test('navigation shortcuts move relative to the active sentence', () => {
   assert.deepEqual(dispatch('ArrowDown').calls, [['set-sentence', 5]])
   assert.deepEqual(dispatch('ArrowUp').calls, [['set-sentence', 3]])

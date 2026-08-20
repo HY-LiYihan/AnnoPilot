@@ -30,6 +30,7 @@ export type KeyboardShortcutActions = {
   cycleActiveSuggestionTarget: (direction: 1 | -1) => void
   jumpToNextReviewSentence: () => void
   markCurrentSentenceMonogloss: () => void | Promise<void>
+  removeHoveredAnnotation?: () => void | Promise<void>
   rejectCurrentSentenceSuggestions: () => void | Promise<void>
   rejectSuggestedSpan: (suggestion: SuggestionDef) => void | Promise<void>
   reopenCurrentSentence: () => void | Promise<void>
@@ -43,6 +44,7 @@ export type ReaderKeyboardShortcutOptions = KeyboardShortcutActions & {
   activeSuggestion: ReadableValue<SuggestionDef | null>
   activeSuggestions: ReadableValue<SuggestionDef[]>
   currentSentenceIndex: ReadableValue<number>
+  hoveredAnnotationId?: ReadableValue<string>
   tags: ReadableValue<TagDef[]>
 }
 
@@ -89,6 +91,12 @@ export function handleReaderKeyboardShortcut(
   if (key === 'Enter') {
     event.preventDefault()
     void options.completeCurrentSentence()
+    return true
+  }
+
+  if ((event.code === 'Space' || key === ' ') && options.hoveredAnnotationId?.value) {
+    event.preventDefault()
+    void options.removeHoveredAnnotation?.()
     return true
   }
 
