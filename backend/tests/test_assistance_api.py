@@ -95,14 +95,14 @@ def _ready_empty(storage: AnnotationStorage) -> tuple[str, dict]:
     return job_id, context
 
 
-def test_per_tag_seed_activates_ten_job_window_and_confirm_is_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_per_tag_seed_activates_five_job_window_and_confirm_is_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client, storage, document_id, _sentences = _seed_assistance(tmp_path, monkeypatch)
     try:
         status = client.get(f"/api/projects/default/documents/{document_id}/assistance")
         assert status.status_code == 200
         payload = status.json()
         assert [tag["tag_id"] for tag in payload["active_tags"]] == ["PER"]
-        assert payload["queue"]["queued"] == 7
+        assert payload["queue"]["queued"] == 5
         assert payload["tag_progress"][0]["human_verified_count"] == 5
 
         job_id, context = _ready_one(storage)
@@ -165,9 +165,9 @@ def test_concurrent_queue_refill_creates_one_job_per_sentence(
                 "SELECT id FROM annotation_runs WHERE document_id = ? AND recipe = 'rag_llm_assistance'",
                 (document_id,),
             ).fetchall()
-        assert len(jobs) == 7
-        assert len({row["sentence_id"] for row in jobs}) == 7
-        assert len(runs) == 7
+        assert len(jobs) == 5
+        assert len({row["sentence_id"] for row in jobs}) == 5
+        assert len(runs) == 5
     finally:
         client.__exit__(None, None, None)
 
@@ -187,7 +187,7 @@ def test_skip_moves_draft_to_tail_without_deleting_it(tmp_path: Path, monkeypatc
         skipped = next(item for item in after["queue"]["items"] if item["id"] == job_id)
         assert skipped["status"] == "skipped"
         assert skipped["spans"] == draft["spans"]
-        assert after["queue"]["queued"] == 10
+        assert after["queue"]["queued"] == 5
     finally:
         client.__exit__(None, None, None)
 
